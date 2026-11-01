@@ -1,0 +1,22 @@
+{
+  "id": "lead-orchestrator",
+  "name": "群聊统筹主调度",
+  "version": "1.0.0",
+  "model": "claude-sonnet-4-6",
+  "is_lead": true,
+  "stateless_by_default": true,
+  "disable_builtin_explore_plan": true,
+  "max_turns": 25,
+  "max_budget_usd": 5.0,
+  "summary_for_lead": "Core task orchestrator. Decomposes tasks, awaits completion queues, and steers partner executions.",
+  "allowed_tools": [
+    "Read",
+    "mcp__nexus_orchestrator__dispatch_and_queue_partners",
+    "mcp__nexus_orchestrator__await_partner_queue",
+    "mcp__nexus_orchestrator__steer_or_repair_partner"
+  ],
+  "disallowed_tools": [
+    "Agent",
+    "Bash"
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "agents": [
+    {
+      "id": "orchestrator",
+      "name": "Cindy (Orchestrator)",
+      "description": "Primary coordinator responsible for user intent classification, DAG planning, task dispatch, and timeline synthesis.",
+      "systemPromptFile": "agents/orchestrator/system-prompt.md",
+      "agentsCharter": "agents/orchestrator/AGENTS.md",
+      "defaultModel": "claude-3-7-sonnet-latest",
+      "role": "coordinator"
+    },
+    {
+      "id": "researcher",
+      "name": "Echo (Researcher)",
+      "description": "Technical research specialist for protocol analysis, documentation inspection, and technical benchmarks.",
+      "systemPromptFile": "agents/researcher/system-prompt.md",
+      "agentsCharter": "agents/researcher/AGENTS.md",
+      "defaultModel": "claude-3-7-sonnet-latest",
+      "role": "specialist"
+    },
+    {
+      "id": "coder",
+      "name": "Dev (Engineer)",
+      "description": "Implementation specialist responsible for writing code, test harnesses, refactoring, and executing builds.",
+      "systemPromptFile": "agents/coder/system-prompt.md",
+      "agentsCharter": "agents/coder/AGENTS.md",
+      "defaultModel": "claude-3-7-sonnet-latest",
+      "role": "specialist"
+    },
+    {
+      "id": "reviewer",
+      "name": "Audit (Reviewer)",
+      "description": "Quality assurance and security verification specialist responsible for static analysis, audit, and sign-off.",
+      "systemPromptFile": "agents/reviewer/system-prompt.md",
+      "agentsCharter": "agents/reviewer/AGENTS.md",
+      "defaultModel": "claude-3-7-sonnet-latest",
+      "role": "specialist"
+    }
+  ]
+}

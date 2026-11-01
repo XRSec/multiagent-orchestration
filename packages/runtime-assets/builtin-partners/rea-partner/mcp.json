@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "rea_bridge": {
+      "command": "node",
+      "args": ["./scripts/rea-bridge-mcp.mjs"],
+      "disabled": false,
+      "autoApprove": ["decompile_function", "analyze_entropy"]
+    }
+  }
+}
