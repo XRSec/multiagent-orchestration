@@ -33,8 +33,16 @@ export default function SessionHeader({
               </span>
             )}
           </div>
-          <div className="text-[10px] text-slate-500 font-mono">
-            Session UUID: {session.id.slice(0, 8)}... (Claude CLI Sandboxed)
+          <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2">
+            <span>Room: {session.id}</span>
+            <span>·</span>
+            <span>Seq: #{session.messages ? session.messages.length : 0}</span>
+            {isGroup && (
+              <>
+                <span>·</span>
+                <span className="text-slate-400">Organizer: lead-orchestrator</span>
+              </>
+            )}
           </div>
         </div>
       </div>

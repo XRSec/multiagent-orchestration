@@ -1,0 +1,58 @@
+/** @type {import('tailwindcss').Config} */
+export default {
+  darkMode: 'class',
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  theme: {
+    extend: {
+      colors: {
+        surface: 'var(--surface)',
+        'surface-elevated': 'var(--surface-elevated)',
+        'surface-elevated-soft': 'var(--surface-elevated-soft)',
+        'surface-card': 'var(--surface-card-ivory)',
+        'surface-chip': 'var(--surface-chip)',
+        'surface-hover': 'var(--surface-hover)',
+        'surface-hover-soft': 'var(--surface-hover-soft)',
+        'border-default': 'var(--border-default)',
+        'text-primary': 'var(--text-primary)',
+        'text-secondary': 'var(--text-secondary)',
+        'text-tertiary': 'var(--text-tertiary)',
+        'text-disabled': 'var(--text-disabled)',
+        'accent-cta': 'var(--accent-cta-bg)',
+        'accent-cta-fg': 'var(--accent-pure-cta-fg)',
+        'accent-hover': 'var(--accent-hover)',
+        'sidebar-bg': 'var(--sidebar-bg)',
+        'content-area': 'var(--content-area-bg)',
+      },
+      fontFamily: {
+        sans: [
+          '-apple-system',
+          'BlinkMacSystemFont',
+          '"PingFang SC"',
+          '"Hiragino Sans GB"',
+          '"HarmonyOS Sans SC"',
+          '"Microsoft YaHei UI"',
+          '"Segoe UI"',
+          'system-ui',
+          'sans-serif',
+        ],
+        mono: [
+          'ui-monospace',
+          'SFMono-Regular',
+          'Menlo',
+          'Monaco',
+          'Consolas',
+          'monospace',
+        ],
+      },
+      borderRadius: {
+        sm: '4px',
+        md: '8px',
+        lg: '12px',
+        xl: '16px',
+        '2xl': '20px',
+        '3xl': '24px',
+      },
+    },
+  },
+  plugins: [],
+};

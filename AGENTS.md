@@ -29,6 +29,7 @@ locale: en-US
     * `- [IPC_SQLITE_SPEC](./docs/dev-rules/ipc-and-sqlite.md) :: [LOAD_IF: modifying apps/desktop/src/main/db/** or preload/**]`
     * `- [SCRIPT_STANDARDS_SPEC](./docs/dev-rules/script-standards.md) :: [LOAD_IF: authoring or modifying scripts/** or test runners]`
     * `- [WEB_PARSER_STUDIO_SPEC](./docs/dev-rules/web-parser-and-studio.md) :: [LOAD_IF: modifying apps/desktop/src/renderer/**]`
+    * `- [BOT_GROUP_ORCHESTRATION_SPEC](./docs/dev-rules/bot-group-orchestration.md) :: [LOAD_IF: modifying group chat, partner storage, or multi-repo mounting]`
   * **[3.2] Core Directory Contracts**:
     * **[3.2.1]** `/apps/desktop/src/main/cli-pool/`: Manages `claude` child processes, parses UTF-8 NDJSON lines, dispatches `control_request (subtype: "interrupt")` frames over `stdin`, and enforces a `30,000ms` silent-stdout watchdog timer.
     * **[3.2.2]** `/apps/desktop/src/main/orchestrator/`: Implements the in-process `nexus-orchestrator-mcp` server bound exclusively to `lead-orchestrator` (`3` tools: `dispatch_and_queue_partners`, `await_partner_queue`, `steer_or_repair_partner`).

@@ -1,5 +1,8 @@
 import React from 'react';
 import { Bot, User, Wrench, ChevronDown, ChevronRight, CornerDownRight, ListOrdered } from 'lucide-react';
+import IntentPreflightCard from './control-plane/IntentPreflightCard.jsx';
+import ProgressiveDisclosureCard from './control-plane/ProgressiveDisclosureCard.jsx';
+import ToolDecayScrubberCard from './control-plane/ToolDecayScrubberCard.jsx';
 
 export default function ChatTimeline({ messages, activePartner }) {
   return (
@@ -84,6 +87,11 @@ function TimelineMessageItem({ msg }) {
                 排队递送中 (In-flight Queue)
               </span>
             )}
+            {msg.sequence && (
+              <span className="text-[10px] font-mono text-slate-500 bg-slate-800/80 px-1 rounded">
+                #{msg.sequence}
+              </span>
+            )}
             <span className="text-[11px] text-slate-400">你</span>
           </div>
 
@@ -119,11 +127,21 @@ function TimelineMessageItem({ msg }) {
 
       <div className="flex-1 space-y-3">
         <div className="flex items-center space-x-2">
+          {msg.sequence && (
+            <span className="text-[10px] font-mono text-slate-500 bg-slate-800/80 px-1 rounded">
+              #{msg.sequence}
+            </span>
+          )}
           <span className="text-xs font-semibold text-slate-200">
             {msg.senderName || 'Orchestrator'}
           </span>
           <span className="text-[10px] font-mono text-slate-500">{msg.timestamp}</span>
         </div>
+
+        {/* 1. 意图预检分析卡片 (小模型前置分析 & 多轮蒸馏上下文) */}
+        {msg.preflight && (
+          <IntentPreflightCard preflight={msg.preflight} />
+        )}
 
         {/* Text Body */}
         {msg.content && (
@@ -132,11 +150,24 @@ function TimelineMessageItem({ msg }) {
           </div>
         )}
 
-        {/* Tool Invocations */}
+        {/* 2. 三层渐进披露卡片 (Tier 1 折叠 -> Tier 2 微胶囊 -> Tier 3 全量切片) */}
+        {msg.progressiveResource && (
+          <ProgressiveDisclosureCard {...msg.progressiveResource} />
+        )}
+
+        {/* 3. 历史工具输出阶梯衰减卡片 (Step Decay Scrubber) */}
         {msg.toolCalls && msg.toolCalls.length > 0 && (
           <div className="space-y-2">
             {msg.toolCalls.map((tool, idx) => (
-              <ToolCallCard key={idx} tool={tool} />
+              <ToolDecayScrubberCard
+                key={idx}
+                toolName={tool.name}
+                step={tool.step || (idx + 1)}
+                currentTurnStep={msg.currentTurnStep || 6}
+                args={tool.args}
+                rawOutput={typeof tool.result === 'string' ? tool.result : JSON.stringify(tool.result, null, 2)}
+                status={tool.status}
+              />
             ))}
           </div>
         )}

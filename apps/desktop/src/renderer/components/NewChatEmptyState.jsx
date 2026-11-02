@@ -19,6 +19,17 @@ const SUGGESTED_PROMPTS = [
   },
 ];
 
+const ICON_MAP = { Bot, Cpu, Shield };
+
+function resolvePartnerIcon(p) {
+  if (typeof p?.icon === 'function') return p.icon;
+  if (typeof p?.icon === 'string' && ICON_MAP[p.icon]) return ICON_MAP[p.icon];
+  if (typeof p?.avatar === 'string' && ICON_MAP[p.avatar]) return ICON_MAP[p.avatar];
+  if (p?.id?.includes('architect')) return Cpu;
+  if (p?.id?.includes('rea')) return Shield;
+  return Bot;
+}
+
 export default function NewChatEmptyState({ partners, onSelectPrompt, onSelectPartner }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-8 text-center max-w-2xl mx-auto space-y-8 select-none">
@@ -73,7 +84,7 @@ export default function NewChatEmptyState({ partners, onSelectPrompt, onSelectPa
         </div>
         <div className="grid grid-cols-3 gap-2">
           {partners.map((partner) => {
-            const Icon = partner.icon;
+            const Icon = resolvePartnerIcon(partner);
             return (
               <div
                 key={partner.id}

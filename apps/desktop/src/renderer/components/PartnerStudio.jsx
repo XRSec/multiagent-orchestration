@@ -1,6 +1,17 @@
 import React from 'react';
 import { Bot, Shield, Cpu, FolderGit2, CheckCircle2, Clock } from 'lucide-react';
 
+const ICON_MAP = { Bot, Cpu, Shield };
+
+function resolvePartnerIcon(p) {
+  if (typeof p?.icon === 'function') return p.icon;
+  if (typeof p?.icon === 'string' && ICON_MAP[p.icon]) return ICON_MAP[p.icon];
+  if (typeof p?.avatar === 'string' && ICON_MAP[p.avatar]) return ICON_MAP[p.avatar];
+  if (p?.id?.includes('architect')) return Cpu;
+  if (p?.id?.includes('rea')) return Shield;
+  return Bot;
+}
+
 export default function PartnerStudio({ partners, activePartnerId, onSelectPartner }) {
   return (
     <div className="w-72 bg-surface/80 border-r border-border flex flex-col h-full backdrop-blur-md">
@@ -25,7 +36,7 @@ export default function PartnerStudio({ partners, activePartnerId, onSelectPartn
 
         {partners.map((partner) => {
           const isSelected = partner.id === activePartnerId;
-          const Icon = partner.icon;
+          const Icon = resolvePartnerIcon(partner);
 
           return (
             <div

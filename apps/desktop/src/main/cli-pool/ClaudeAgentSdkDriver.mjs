@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { query, createSdkMcpServer, tool } from '@anthropic-ai/claude-agent-sdk';
+import { SdkPipelineAdapter } from '../../../../../packages/agent-control-plane/SdkPipelineAdapter.mjs';
 
 const RUNTIME_ROOT = path.join(os.homedir(), '.multiagent-orchestration');
 
@@ -25,6 +26,9 @@ export class ClaudeAgentSdkDriver extends EventEmitter {
     this.memorySteeringDirective = null;
     this.isRunning = false;
     this.activeSessionId = options.sessionId || null;
+    this.pipeline = options.pipeline || new SdkPipelineAdapter({
+      cacheDir: path.join(RUNTIME_ROOT, 'cache', 'capsules')
+    });
   }
 
   _loadManifest() {
@@ -107,6 +111,13 @@ export class ClaudeAgentSdkDriver extends EventEmitter {
     this.isRunning = true;
     const combinedSystemPrompt = this._assembleSystemPrompt();
 
+    // Phase 1: UserPromptSubmit through Control Plane Pipeline
+    const preflight = this.pipeline.handleUserPromptSubmit(prompt, {
+      sessionId: this.activeSessionId,
+      rawTools: (this.manifest.allowed_tools || []).map(name => ({ name }))
+    });
+    const effectivePrompt = preflight.lockedPromptBundle?.fullPrompt || prompt;
+
     // In-memory PreToolUse hook configuration
     const hooks = {
       PreToolUse: [
@@ -121,6 +132,16 @@ export class ClaudeAgentSdkDriver extends EventEmitter {
                 additionalContext: `[STEERING_OVERRIDE]: Requirements revised. Abort obsolete path and proceed with: ${directive}`
               };
             }
+            // Phase 2: PreToolUse Control Plane Interception
+            const preAction = this.pipeline.handlePreToolUse({
+              toolName: hookArgs.tool || hookArgs.toolName,
+              args: hookArgs.args || hookArgs.parameters
+            });
+            if (preAction && preAction.action === 'USE_CAPSULE') {
+              return {
+                additionalContext: `[CAPSULE_FAST_LOAD]: ${preAction.capsule.capsuleText}`
+              };
+            }
             return {};
           }
         }
@@ -130,6 +151,11 @@ export class ClaudeAgentSdkDriver extends EventEmitter {
           matcher: '*',
           hook: async (hookArgs) => {
             this.emit('tool_post_check', hookArgs);
+            // Phase 3: PostToolUse Output Slimming & Step-based Scrubbing
+            this.pipeline.handlePostToolUse({
+              toolName: hookArgs.tool || hookArgs.toolName,
+              rawOutput: hookArgs.output || hookArgs.result || ''
+            });
             return {};
           }
         }
@@ -149,7 +175,7 @@ export class ClaudeAgentSdkDriver extends EventEmitter {
 
     try {
       const stream = query({
-        prompt,
+        prompt: effectivePrompt,
         options: queryOptions
       });
 

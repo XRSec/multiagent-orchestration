@@ -114,3 +114,25 @@ export interface WatchdogConfig {
    - Spawn recovery process immediately with:
      `claude -p --resume "<SESSION_UUID>" --input-format stream-json --output-format stream-json ...`
    - Log automated watchdog recovery event to audit database.
+
+---
+
+## 6. Bot Group Coordination & Multi-Repo Directory Architecture
+
+For collaborative taskforce execution (governed by [BOT_GROUP_ORCHESTRATION_SPEC](./dev-rules/bot-group-orchestration.md)):
+
+### 6.1 Two-Tier Directory Decoupling Model
+1. **Group Private Storage Folder (`~/.multiagent-orchestration/groups/<id>/`)**:
+   - Stores the group's own assets: `GROUP_CHARTER.md`, shared blackboard memory `GROUP_MEMORY.md`, division plans (`plans/`), and intermediate execution logs.
+   - Decoupled from user codebases: Zero internal coordination clutter is written to customer projects.
+2. **Mounted Target Projects (`mountedDirs`)**:
+   - The actual repositories being analyzed and patched (e.g. `/Users/xr/IDEA.localized/cliproxyapi`, `/Users/xr/IDEA.localized/Prism-Browser`).
+   - Injected into tool sandbox whitelists so partners operate directly across repositories without directory replication.
+
+### 6.2 Session Channels & Context Increments
+- **Canonical 1:1 Direct Chat**: Exactly 1 persistent session per partner (`dm_<id>`).
+- **Hidden Group Lane Session**: Exactly 1 persistent session per `(group, partner)` (`route_key: group:<groupId>`).
+- **Thread Lane Isolation**: Discrete topic threads run in independent sessions (`route_key: group:<groupId>:thread:<rootMessageId>`), preventing sub-conversations from polluting the main timeline.
+- **Incremental Turn Context**: Host tracks `lastSeenSequence` watermark per member, delivering only new peer message deltas wrapped in `<untrusted-json-block>`, strictly preserving System Prompt integrity.
+- **Owner Intent Boundary (PR #8075)**: Automatic tool execution review derives exclusively from verified human owner text (`autoReviewUserText`), preventing peer quote-card privilege escalation.
+

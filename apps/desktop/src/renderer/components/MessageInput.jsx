@@ -1,6 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, CornerDownLeft, Sparkles, Clock, AtSign, Bot } from 'lucide-react';
 
+function resolvePartnerIcon(p) {
+  if (typeof p?.icon === 'function') return p.icon;
+  return Bot;
+}
+
 export default function MessageInput({
   onSendMessage,
   isExecuting,
@@ -114,7 +119,7 @@ export default function MessageInput({
 
           <div className="max-h-48 overflow-y-auto space-y-0.5">
             {candidates.map((partner, idx) => {
-              const Icon = partner.icon;
+              const Icon = resolvePartnerIcon(partner);
               const isSelected = idx === mentionIndex;
               return (
                 <div
