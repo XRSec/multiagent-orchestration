@@ -353,3 +353,18 @@ Mobile 使用现有文件缓存后端的 `cache/chat-history-v1/` 目录，以�
 sequence/cursor 在协议上保留十进制字符串，计算不得经过不安全的 JavaScript Number；本地索引使用经过范围校验的 64 位表示，或可保持数值顺序的编码，不能直接按可变长字符串排序。原始 JSON 不足以替代分页与关联索引。
 
 旧本地 `bot_group_members.lastSeenSequence` 是伙伴交付进度，不是用户已读；旧 bot_profile 外键无法代表跨账号人类成员。新模型需明确区分，不能只把旧表改名后直接作为统一 Chat 表。
+
+### 11.3 账号切换数据库就绪屏障与竞争消除（2026-11-03）
+
+在多账号切换与重新连接链路中，曾存在因旧账号 `DbClient` 卸载（`clearCurrentDbClient`）至新账号数据库打开（`setCurrentDbClient`）之间的瞬时（约 49ms）异步间隙，导致并发到来的 IPC 或子系统查询抛出 `DbClient not ready` 异常。
+
+本轮基线已通过双重屏障机制彻底根除该竞争：
+1. **`whenDbReady` 队列屏障 (`current.ts`)**：
+   - 在数据库切换期间，到达的查询不再直接同步报错，而是注册进队列栅栏 Promise。
+   - 当新账号数据库成功初始化并调用 `setCurrentDbClient` 时，排队的查询自动原子释放；若切换失败则统一拒绝，实现 0ms 暴露窗口。
+2. **`setAccountSwitchReconnect` 同步屏障 (`authManager.ts`)**：
+   - 规定底层 SQLite 连接完全就绪必须作为 `appSessionState` 状态发射的前置绝对栅栏。
+   - 严禁在数据库未挂载完成前向渲染进程广播新账号会话，确保前台视图接收到登录事件时数据库已 100% 可用。
+3. **`cindy-brain` 幂等卡片重新分配 (`pendingGhostCardReassignments`)**：
+   - 跨账号生命周期重分配卡片时，使用幂等 Set 追踪，杜绝重复分配导致的幽灵卡片状态污染。
+

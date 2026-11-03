@@ -3,6 +3,7 @@
  *
  * 普通调用不能等网络（离线时关于页要立刻显示本地版本）；checkLatest 只在线上
  * 版本严格更高时报告可更新，与启动安装「保留不旧于 manifest 的本地版本」同口径。
+ * 仅对活跃主引擎 Claude Code 进行探测，已废弃的 Codex/Pi 拒绝执行，避免无谓日志与探测。
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -79,15 +80,21 @@ describe('maker:agent:binary-version', () => {
     registerMakerBinaryVersionIpc();
   });
 
-
   it('rejects an untrusted renderer before probing or fetching the manifest', async () => {
     h.trust.mockImplementation(() => {
       throw new Error('PERMISSION_DENIED');
     });
-    h.versions.set('/managed/codex', 'codex-cli 0.145.0');
+    h.versions.set('/managed/claude-code', '2.1.258 (Claude Code)');
     h.fetchManifest.mockReturnValue(new Promise(() => {}));
 
-    await expect(invoke('codex', { checkLatest: true })).rejects.toThrow('PERMISSION_DENIED');
+    await expect(invoke('claude-code', { checkLatest: true })).rejects.toThrow('PERMISSION_DENIED');
+    expect(h.execFile).not.toHaveBeenCalled();
+    expect(h.fetchManifest).not.toHaveBeenCalled();
+  });
+
+  it('rejects codex and pi as invalid parameters with zero probe execution', async () => {
+    await expect(invoke('codex')).rejects.toThrow('INVALID_PARAMS');
+    await expect(invoke('pi')).rejects.toThrow('INVALID_PARAMS');
     expect(h.execFile).not.toHaveBeenCalled();
     expect(h.fetchManifest).not.toHaveBeenCalled();
   });
@@ -97,9 +104,9 @@ describe('maker:agent:binary-version', () => {
     h.trust.mockImplementation(() => {
       throw new Error('PERMISSION_DENIED');
     });
-    h.versions.set('/managed/codex', 'codex-cli 0.145.0');
+    h.versions.set('/managed/claude-code', '2.1.258 (Claude Code)');
 
-    await expect(invoke('codex')).resolves.toMatchObject({ version: 'codex-cli 0.145.0' });
+    await expect(invoke('claude-code')).resolves.toMatchObject({ version: '2.1.258 (Claude Code)' });
     expect(h.trust).not.toHaveBeenCalled();
   });
 
@@ -117,39 +124,22 @@ describe('maker:agent:binary-version', () => {
   });
 
   it('reports an update only when the channel version is strictly newer', async () => {
-    h.versions.set('/managed/codex', 'codex-cli 0.145.0');
-    h.fetchManifest.mockResolvedValue({ codexPackage: installable('0.146.0') });
-    await expect(invoke('codex', { checkLatest: true })).resolves.toMatchObject({
-      latestVersion: '0.146.0',
+    h.versions.set('/managed/claude-code', '2.1.258 (Claude Code)');
+    h.fetchManifest.mockResolvedValue({ claudeCode: installable('2.1.259') });
+    await expect(invoke('claude-code', { checkLatest: true })).resolves.toMatchObject({
+      latestVersion: '2.1.259',
       updateAvailable: true,
       latestCheckFailed: false,
     });
   });
 
-  it('does not offer an update from a legacy codex manifest field the installer cannot consume', async () => {
-    h.versions.set('/managed/codex', 'codex-cli 0.145.0');
-    h.fetchManifest.mockResolvedValue({ codex: { version: '0.146.0' } });
-    // The manifest was read; a missing installable asset is "no update", not a failed check.
-    await expect(invoke('codex', { checkLatest: true })).resolves.toMatchObject({
-      latestVersion: null,
-      updateAvailable: false,
-      latestCheckFailed: false,
-    });
-  });
-
-  it.each(['0.145.0', '0.144.9'])('does not offer a no-op update when the channel has %s', async (latest) => {
-    h.versions.set('/managed/codex', 'codex-cli 0.145.0');
-    h.fetchManifest.mockResolvedValue({ codexPackage: installable(latest) });
-    await expect(invoke('codex', { checkLatest: true })).resolves.toMatchObject({
+  it.each(['2.1.258', '2.1.257'])('does not offer a no-op update when the channel has %s', async (latest) => {
+    h.versions.set('/managed/claude-code', '2.1.258 (Claude Code)');
+    h.fetchManifest.mockResolvedValue({ claudeCode: installable(latest) });
+    await expect(invoke('claude-code', { checkLatest: true })).resolves.toMatchObject({
       latestVersion: latest,
       updateAvailable: false,
     });
-  });
-
-  it('never offers the About update for Pi, which has its own kernel manager', async () => {
-    h.versions.set('/managed/pi', 'pi 0.84.4');
-    h.fetchManifest.mockResolvedValue({ pi: installable('0.90.0') });
-    await expect(invoke('pi', { checkLatest: true })).resolves.toMatchObject({ updateAvailable: false });
   });
 
   it('keeps the local version and reports a failed check when the manifest is unreachable', async () => {
@@ -164,75 +154,64 @@ describe('maker:agent:binary-version', () => {
   });
 
   it('reports a failed check when fetchManifest resolves without a manifest', async () => {
-    h.versions.set('/managed/codex', 'codex-cli 0.145.0');
+    h.versions.set('/managed/claude-code', '2.1.258 (Claude Code)');
     h.fetchManifest.mockResolvedValue(null);
-    await expect(invoke('codex', { checkLatest: true })).resolves.toMatchObject({
-      version: 'codex-cli 0.145.0',
+    await expect(invoke('claude-code', { checkLatest: true })).resolves.toMatchObject({
+      version: '2.1.258 (Claude Code)',
       latestVersion: null,
       updateAvailable: false,
       latestCheckFailed: true,
     });
   });
 
-
   it('re-probes on checkLatest instead of comparing a cached --version', async () => {
-    h.versions.set('/managed/codex', 'codex-cli 0.145.0');
-    h.fetchManifest.mockResolvedValue({ codexPackage: installable('0.146.0') });
-    await expect(invoke('codex', { checkLatest: true })).resolves.toMatchObject({
-      version: 'codex-cli 0.145.0',
+    h.versions.set('/managed/claude-code', '2.1.258 (Claude Code)');
+    h.fetchManifest.mockResolvedValue({ claudeCode: installable('2.1.259') });
+    await expect(invoke('claude-code', { checkLatest: true })).resolves.toMatchObject({
+      version: '2.1.258 (Claude Code)',
       updateAvailable: true,
     });
 
-    h.versions.set('/managed/codex', 'codex-cli 0.146.0');
-    await expect(invoke('codex')).resolves.toMatchObject({ version: 'codex-cli 0.145.0' });
-    await expect(invoke('codex', { checkLatest: true })).resolves.toMatchObject({
-      version: 'codex-cli 0.146.0',
-      latestVersion: '0.146.0',
+    h.versions.set('/managed/claude-code', '2.1.259 (Claude Code)');
+    await expect(invoke('claude-code')).resolves.toMatchObject({ version: '2.1.258 (Claude Code)' });
+    await expect(invoke('claude-code', { checkLatest: true })).resolves.toMatchObject({
+      version: '2.1.259 (Claude Code)',
+      latestVersion: '2.1.259',
       updateAvailable: false,
     });
   });
 
   it('does not advertise an update the installer would reject', async () => {
-    h.versions.set('/managed/codex', 'codex-cli 0.145.0');
+    h.versions.set('/managed/claude-code', '2.1.258 (Claude Code)');
     h.fetchManifest.mockResolvedValue({
-      codexPackage: { version: '0.146.0', file: 'runtime/0.146.0/pkg' },
+      claudeCode: { version: '2.1.259', file: 'runtime/2.1.259/pkg' },
     });
-    await expect(invoke('codex', { checkLatest: true })).resolves.toMatchObject({
-      latestVersion: null,
-      updateAvailable: false,
-    });
-
-    h.fetchManifest.mockResolvedValue({
-      codexPackage: installable('0.146.0', 'codex/win32-x64/0.146.0/pkg'),
-    });
-    await expect(invoke('codex', { checkLatest: true })).resolves.toMatchObject({
+    await expect(invoke('claude-code', { checkLatest: true })).resolves.toMatchObject({
       latestVersion: null,
       updateAvailable: false,
     });
   });
 
-
   it('does not advertise an update whose sha256 the downloader would reject', async () => {
-    h.versions.set('/managed/codex', 'codex-cli 0.145.0');
+    h.versions.set('/managed/claude-code', '2.1.258 (Claude Code)');
     for (const sha256 of ['', 'not-hex', 'abcd', 'g'.repeat(64), 'a'.repeat(63), 'a'.repeat(65)]) {
-      const asset = installable('0.146.0');
+      const asset = installable('2.1.259');
       asset.sha256 = sha256;
-      h.fetchManifest.mockResolvedValue({ codexPackage: asset });
-      await expect(invoke('codex', { checkLatest: true })).resolves.toMatchObject({
+      h.fetchManifest.mockResolvedValue({ claudeCode: asset });
+      await expect(invoke('claude-code', { checkLatest: true })).resolves.toMatchObject({
         latestVersion: null,
         updateAvailable: false,
       });
     }
   });
 
-
   it('does not advertise an update whose size the downloader would reject', async () => {
-    h.versions.set('/managed/codex', 'codex-cli 0.145.0');
+    h.versions.set('/managed/claude-code', '2.1.258 (Claude Code)');
     for (const size of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      const asset = installable('0.146.0');
+      const asset = installable('2.1.259');
       asset.size = size;
-      h.fetchManifest.mockResolvedValue({ codexPackage: asset });
-      await expect(invoke('codex', { checkLatest: true })).resolves.toMatchObject({
+      h.fetchManifest.mockResolvedValue({ claudeCode: asset });
+      await expect(invoke('claude-code', { checkLatest: true })).resolves.toMatchObject({
         latestVersion: null,
         updateAvailable: false,
       });
@@ -240,7 +219,7 @@ describe('maker:agent:binary-version', () => {
   });
 
   it('rejects malformed options', async () => {
-    await expect(invoke('codex', { checkLatest: 'yes' })).rejects.toThrow();
-    await expect(invoke('codex', 'checkLatest')).rejects.toThrow();
+    await expect(invoke('claude-code', { checkLatest: 'yes' })).rejects.toThrow();
+    await expect(invoke('claude-code', 'checkLatest')).rejects.toThrow();
   });
 });

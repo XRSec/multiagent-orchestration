@@ -166,7 +166,9 @@ export function SkillhubHomeContent({
     initialCategoryFilter: initialSearch.get('category') ?? CATEGORY_ALL,
   });
   const categoryScope = marketRequest.scope === 'team' ? 'team' : 'market';
-  const { categories } = useCategoryList(categoryScope);
+  const { categories } = useCategoryList(categoryScope, {
+    enabled: active && catalogTab !== 'local',
+  });
   const previousMarketRequest = useRef(marketRequest);
   useEffect(() => {
     setCatalogScope(marketRequest.scope);

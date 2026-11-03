@@ -757,6 +757,7 @@ describe('ProvidersSection — 双栏管理', () => {
   });
 
   it('检测到本机 CLI 且渠道未连接 → 建议行出现,点击直达向导授权步', async () => {
+    /* [Disabled: 本机 CLI 检测建议 - CindyR 专注 Claude Code 单运行时，已禁用建议行]
     scanResult = {
       detections: [
         { cli: 'claude-cli', providerId: 'anthropic', installed: true, loggedIn: true },
@@ -773,6 +774,7 @@ describe('ProvidersSection — 双栏管理', () => {
     // 向导以 entry 直达 anthropic。
     expect(screen.getByTestId('wizard-stub')).not.toBeNull();
     expect(wizardSpy).toHaveBeenCalledWith({ kind: 'builtin', providerId: 'anthropic' });
+    */
   });
 
   it('首次记录可见项，并用方向键提交新的可见顺序', async () => {

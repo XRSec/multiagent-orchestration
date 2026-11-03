@@ -4567,11 +4567,58 @@ const registerIpcHandlers = () => {
   ipcMain.on('voice-input:data:get', (event) => {
     event.returnValue = { settings: null, history: [] };
   });
+  ipcMain.on('voice-input:data:migrate-legacy', (event) => {
+    event.returnValue = { settings: null, history: [] };
+  });
+  ipcMain.on('voice-input:get-microphone-permission-cached', (event) => {
+    event.returnValue = { ok: false, status: 'denied', error: 'disabled' };
+  });
+  ipcMain.on('voice-input:get-system-permissions-cached', (event) => {
+    event.returnValue = {
+      microphone: { ok: false, status: 'denied', error: 'disabled' },
+      inputMonitoring: { ok: false, status: 'denied', error: 'disabled' },
+      accessibility: { ok: false, status: 'denied', error: 'disabled' },
+    };
+  });
+  ipcMain.on('voice-input:get-readiness-cached', (event) => {
+    event.returnValue = null;
+  });
+  ipcMain.on('voice-input:audio', () => {});
   ipcMain.handle('voice-conversation:call-status', async () => ({ active: false }));
   ipcMain.handle('voice-input:consume-shortcut-recovery-failure', async () => ({ failed: false }));
   ipcMain.handle('voice-input:global-shortcut:set', async () => ({ success: true }));
   ipcMain.handle('voice-input:prewarm', async () => undefined);
   ipcMain.handle('voice-input:benchmark-fixture-audio', async () => null);
+  ipcMain.handle('voice-input:cancel', async () => ({ ok: true }));
+  ipcMain.handle('voice-input:stop', async () => ({ ok: true }));
+  ipcMain.handle('voice-input:audio-drain', async () => ({ ok: true }));
+  ipcMain.handle('voice-input:start', async () => ({ ok: false, error: 'Voice input is disabled' }));
+  ipcMain.handle('voice-input:request-microphone-permission', async () => ({ ok: false, error: 'disabled' }));
+  ipcMain.handle('voice-input:set-renderer-microphone-permission-verified', async () => ({ ok: true }));
+  ipcMain.handle('voice-input:get-system-permissions', async () => ({
+    microphone: { ok: false, status: 'denied', error: 'disabled' },
+    inputMonitoring: { ok: false, status: 'denied', error: 'disabled' },
+    accessibility: { ok: false, status: 'denied', error: 'disabled' },
+  }));
+  ipcMain.handle('voice-input:open-microphone-settings', async () => ({ ok: false, error: 'disabled' }));
+  ipcMain.handle('voice-input:open-input-monitoring-settings', async () => ({ ok: false, error: 'disabled' }));
+  ipcMain.handle('voice-input:request-input-monitoring-permission', async () => ({ ok: false, status: 'denied' }));
+  ipcMain.handle('voice-input:mute-system-audio', async () => ({ ok: true }));
+  ipcMain.handle('voice-input:restore-system-audio', async () => ({ ok: true }));
+  ipcMain.handle('voice-input:get-readiness', async () => ({ ready: false, issues: [] }));
+  ipcMain.handle('voice-input:model-selection:get', async () => ({ ok: false, error: 'disabled' }));
+  ipcMain.handle('voice-input:model-selection:set', async () => ({ ok: false, error: 'disabled' }));
+  ipcMain.handle('voice-input:model-selection:reload', async () => ({ ok: false, error: 'disabled' }));
+  ipcMain.handle('voice-input:open-settings', async () => ({ ok: true }));
+  ipcMain.handle('voice-input:settings:update', async () => ({}));
+  ipcMain.handle('voice-input:settings:update-shortcut', async () => ({ ok: true }));
+  ipcMain.handle('voice-input:global-overlay-position-reset', async () => ({ ok: true }));
+  ipcMain.handle('voice-input:global-restore-target-focus', async () => ({ ok: true }));
+  ipcMain.handle('voice-input:speaker-filter:status', async () => ({ available: false, enrolled: false }));
+  ipcMain.handle('voice-input:speaker-filter:download-models', async () => ({ available: false, enrolled: false }));
+  ipcMain.handle('voice-input:speaker-filter:cancel-download', async () => ({ available: false, enrolled: false }));
+  ipcMain.handle('voice-input:speaker-filter:enroll', async () => ({ ok: false, error: 'disabled' }));
+  ipcMain.handle('voice-input:speaker-filter:delete-profile', async () => ({ available: false, enrolled: false }));
   ipcMain.handle('binding:list-attached', async () => []);
   ipcMain.handle('remote-desktop:state', async () => ({ enabled: false, running: false, available: false, supported: false, controller: null }));
   ipcMain.handle('remote-desktop:permissions', async () => ({ screen: false, accessibility: false, audio: false }));

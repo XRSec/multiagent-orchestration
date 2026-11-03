@@ -33,6 +33,9 @@ locale: en-US
   * **[2.3] Thread Session Physical Isolation**:
     * Route Key: `group:<group_id>:thread:<root_message_id>`.
     * Invariant: Dedicated hidden lane created exclusively upon invocation inside a thread; `0` leakage into main group context.
+  * **[2.4] Multi-Lane Concurrency Contract & Fault Isolation**:
+    * **[2.4.1] HTTP 400 & Malformed Input Isolation**: `readMessage` and `executionLane` in `chatServer.ts` MUST catch HTTP 400 `INVALID_INPUT` / `ChatResponseError` and fallback to `${room}:main` (`0` unhandled promise rejections).
+    * **[2.4.2] Candidate Pre-Read Fault Isolation**: In `claimBesideRuns`, pre-read failure on an individual candidate MUST NOT abort adjacent task evaluations; adjacent thread tasks MUST be claimed and executed concurrently.
 
 * **[3] SEQUENCE MONOTONICITY & DELTA INJECTION**
   * **[3.1] Monotonic Sequence Law**:

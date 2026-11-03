@@ -8,7 +8,7 @@ CindyR 是基于 Cindy 官方客户端进行的**深度去脂瘦身（Diet）与
 
 ## ⚡ 核心纪律与代码修改规范（最高原则）
 
-在后续的所有开发任务中，无论是单 Agent 执行还是多 subagent 协同，必须严格贯彻以下四条铁律：
+在后续的所有开发任务中，无论是单 Agent 执行还是多 subagent 协同，必须严格贯彻以下核心铁律：
 
 ### 1. 禁用不删除原则（禁止物理删除）
 - 禁用任何现有功能模块、服务、路由或配置时，**严禁物理删除原有代码**。
@@ -34,6 +34,34 @@ CindyR 是基于 Cindy 官方客户端进行的**深度去脂瘦身（Diet）与
 - **Provider（供应商）**：是指提供 API 与模型能力的组织实体，必须保持原厂名称（如 `name: 'Anthropic'`）。
 - **Agent（运行时）**：是指在其下运行的 Agent 引擎类型（即 `agents: ['claude-code']`）。
 - 严禁将供应商名称篡改为 Agent 名称或其它混淆名称。
+
+### 5. IPC 安全 Stub 必须兜底原则（杜绝未捕获异常与 RunLoop 假死）
+- 凡在渲染进程（React Hook、生命周期 cleanup）或 `preload.ts` 中暴露的 IPC 通道，若对应主进程模块已被禁用，**必须在 `bootstrap-electron.ts` 中显式注册安全兜底 Stub**（如 `voice-input:cancel` 返回 `{ ok: true }`）。
+- 严禁留空抛出 `No handler registered`，防止组件卸载时触发未捕获 Promise Rejection，造成渲染进程事件循环堵塞或 macOS Mach Port (`IMKCFRunLoopWakeUpReliable`) 通信挂起。
+
+### 6. 开发环境双实例隔离原则（避免 SQLite 锁与端口竞争）
+- 因品牌配置中 `userDataDirName: 'Cindy'`，本地开发实例若不加隔离，会与系统安装的 `/Applications/Cindy.app` 共享同一个数据目录 `~/Library/Application Support/Cindy/`。
+- 这会导致 `localDb.sqlite` WAL 锁冲突（开发版启动超时自动退出）与 Native Helper / Socket 争抢假死。
+- **开发启动必须附加 `--isolated=dev`**（使用独立数据目录 `Cindy-dev2-dev`）或在调试前彻底退出安装版（`pkill -f "/Applications/Cindy.app"`）。
+
+### 7. 清单级能力关闭与离线优先原则（抑制网络噪音与握手报错）
+- 对不可达或已下线的外部云端服务（如 SkillHub 市场），在 `config/endpoint*.json` 中将对应端点置为空串 `""`。
+- 主进程利用端点架构预留的 `UNSUPPORTED_CAPABILITY` 机制在套接字建立前短路拦截，从根源杜绝底层 Chromium SSL 握手重置与网络中断报错。
+- IPC 层捕获此类错误时降级为 `log.debug` 并返回合法安全空结构（如 `{ success: true, items: [] }`），严禁在无自建服务环境下向控制台刷屏抛出致命堆栈。
+
+### 8. 提前 IPC 注册与异步就绪门禁原则（杜绝冷启无处理器报错）
+- 渲染层可能在应用启动早期调用的业务 IPC（如 `maker:project-automation:*`），**必须在 `bootstrap-electron.ts` 的 `registerMakerIpcsAfterSplash` 中提前完成注册**。
+- 处理器内部必须通过异步就绪门禁（如 `withLoader` 配合 `whenSchedulerReady()`，超时阈值 `15000ms`）等待下层服务就绪，严禁因服务启动延迟抛出 `No handler registered`。
+- 底层子系统（`custom-mcp-registry`、`git-snapshot`、`session-archive-sync`、`cindy-brain`）数据库操作必须前置 `await whenDbReady()`。
+
+### 9. 账号切换数据库连接屏障原则（消除 49ms 竞争窗口）
+- 账号切换、注销或重新连接时，主进程必须通过 `current.ts` 中的 `whenDbReady` 队列屏障挂起并发查询，并在 `authManager` 中通过 `setAccountSwitchReconnect` 确保数据库连接就绪先于会话广播（`appSessionState`）。
+- 严禁在数据库实例尚未就绪时向渲染进程发射就绪信号，杜绝瞬时 `DbClient not ready` 竞争报错。
+- `cindy-brain` 针对卡片重新分配必须实施幂等跟踪（`pendingGhostCardReassignments`）。
+
+### 10. 多线程并发容错与候选隔离原则（保障多 Lane 独立吞吐）
+- 在 `chatServer.ts` 中，`readMessage` 与 `executionLane` 遇到 HTTP 400 `INVALID_INPUT` 或已清理的消息实体时，必须捕获并优雅降级回退至 `${room}:main`，严禁抛出未捕获的 Promise Rejection。
+- 在 `claimBesideRuns` 扫描并发任务时，单个候选消息预读失败必须局部隔离，严禁阻断后续相邻候选的认领，确保不同线程任务正常并发调度与执行。
 
 ---
 

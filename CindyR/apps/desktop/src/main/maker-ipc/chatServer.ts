@@ -2235,10 +2235,12 @@ function createChatServer(local: BotGroupChatService, deps: BotGroupChatServiceD
   /** Reads one message by ID; a message the reader can no longer see resolves to undefined. */
   async function readMessage(roomId: string, messageId: string, work = false): Promise<Message | undefined> {
     try {
-      const message = await (work ? workApi : api)<Message>(`/conversations/${roomId}/messages/${id.parse(messageId)}`);
+      const parsedId = id.safeParse(messageId);
+      if (!parsedId.success) return undefined;
+      const message = await (work ? workApi : api)<Message>(`/conversations/${roomId}/messages/${parsedId.data}`);
       return message?.id === messageId && Array.isArray(message.content) ? message : undefined;
     } catch (error) {
-      if (error instanceof ChatResponseError && [403, 404, 410].includes(error.status)) return undefined;
+      if (error instanceof ChatResponseError && ([400, 403, 404, 410].includes(error.status) || error.message === 'INVALID_INPUT')) return undefined;
       throw error;
     }
   }
@@ -2607,8 +2609,15 @@ function createChatServer(local: BotGroupChatService, deps: BotGroupChatServiceD
     const room = execution.conversation_id;
     if (execution.plan_id) return `${room}:plan:${execution.plan_id}`;
     if (!ordinaryExecution(execution)) return `${room}:main`;
-    const source = await readMessage(room, execution.source_message_id, work);
-    return source?.threadRootId ? `${room}:thread:${source.threadRootId}` : `${room}:main`;
+    try {
+      const source = await readMessage(room, execution.source_message_id, work);
+      return source?.threadRootId ? `${room}:thread:${source.threadRootId}` : `${room}:main`;
+    } catch (error) {
+      if (error instanceof ChatResponseError && ([400, 403, 404, 410].includes(error.status) || error.message === 'INVALID_INPUT')) {
+        return `${room}:main`;
+      }
+      throw error;
+    }
   }
   /** Reads a turn's conversation once at a time; a failed read is tried again on the next claim pass. */
   function resolveLane(run: Running) {
@@ -2695,7 +2704,15 @@ function createChatServer(local: BotGroupChatService, deps: BotGroupChatServiceD
       for (const row of queued) {
         if (!mayRequest()) return;
         let lane: string;
-        try { lane = await executionLane(row, true); } catch { continue; }
+        try {
+          lane = await executionLane(row, true);
+        } catch (error) {
+          if (error instanceof ChatResponseError && ([400, 403, 404, 410].includes(error.status) || error.message === 'INVALID_INPUT')) {
+            lane = `${room}:main`;
+          } else {
+            continue;
+          }
+        }
         if (lanes.has(lane)) { hints.delete(row.id); continue; }
         // A claim failure (such as a rate limit) is reported to the poll, and keeps the notice.
         if (!mayRequest()) return;

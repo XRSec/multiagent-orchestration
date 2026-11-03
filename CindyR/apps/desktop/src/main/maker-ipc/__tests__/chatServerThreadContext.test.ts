@@ -373,6 +373,43 @@ describe('Chat Server Thread context reaches the Agent input', () => {
     expect(sessions()).toEqual([laneOf('nova', pricing.id), laneOf('nova', release.id)]);
   });
 
+  it('does not drop concurrent thread claims when reading a queued message returns HTTP 400 INVALID_INPUT', async () => {
+    listExecutions = true;
+    const laneOf = (local: string, threadRootId?: string) => `lane-${local}${threadRootId ? `:${threadRootId}` : ''}`;
+    deps.ensureLane = vi.fn(async ({ botId, threadRootId }: { botId: string; threadRootId?: string }) =>
+      ({ ok: true, sessionId: laneOf(botId, threadRootId) })) as unknown as BotGroupChatServiceDeps['ensureLane'];
+    const sessions = () => vi.mocked(deps.dispatch).mock.calls.map(call => call[0].targetSessionId);
+
+    const pricing = post('定价要不要调？');
+    const release = post('发布前要不要先冻结主干？');
+    trigger(post('@Nova 你怎么看定价？', { threadRootId: pricing.id, mentions: [bots[0].id] }));
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(sessions()).toEqual([laneOf('nova', pricing.id)]);
+
+    const badMessageId = uuid(++ids);
+    const badExecution: FakeExecution = {
+      id: uuid(++ids), conversation_id: roomId, source_message_id: badMessageId, bot_id: bots[0].id,
+      requester_id: ownerId, context_seq: String(seq), epoch: 1, status: 'queued', access_mode: 'chat', access_revision: 1,
+    };
+    executions.set(badExecution.id, badExecution);
+    queue.set(bots[0].id, [...(queue.get(bots[0].id) ?? []), badExecution]);
+
+    const [validOther] = trigger(post('@Nova 发布这边呢？', { threadRootId: release.id, mentions: [bots[0].id] }));
+
+    const defaultHandler = handle;
+    fixture.handle.mockImplementation((route: string, method: string, body: Record<string, unknown> | undefined, actor?: string) => {
+      if (route.includes(`/messages/${badMessageId}`)) {
+        return { status: 400, body: { error: { code: 'INVALID_INPUT', message: 'INVALID_INPUT' } } };
+      }
+      return defaultHandler(route, method, body, actor);
+    });
+
+    await vi.advanceTimersByTimeAsync(4000);
+
+    expect(sessions()).toContain(laneOf('nova', release.id));
+    expect(executions.get(validOther.id)!.status).toBe('running');
+  });
+
   it.each([['everyone', undefined, ['nova', 'pico']], ['one companion', 0, ['nova']]] as const)(
     'runs only the server-targeted companions for a Thread mention of %s', async (_label, target, expected) => {
       const root = post('只要伙伴能管理任务，是不是就拿到了所有权限？');

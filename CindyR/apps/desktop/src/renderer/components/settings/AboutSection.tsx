@@ -3,9 +3,8 @@
  *
  * 版本号:
  *   - 应用版本号:仅国内版显示,值由 window.electronAPI.appDisplayVersion 同步注入
- *   - Claude Code / Codex 版本号: spawn 当前应用使用的 binary `--version`,再比较当前通道的
- *     线上版本;菜单样式与 Pi 共用 HarnessVersionMenuRow,更新仍是重启后由启动流程安装
- *   - Pi 版本号与内核更新由 PiKernelVersionRow 管理
+ *   - Claude Code 版本号: spawn 当前应用使用的 binary `--version`,再比较当前通道的
+ *     线上版本;更新仍是重启后由启动流程安装
  *
  * 卡片样式与 NotificationSection / FeishuBotSection 同级 (rounded-xl / Board border)。
  */
@@ -25,13 +24,12 @@ import { useAutoUpdateSettings } from '@/hooks/useAutoUpdateSettings';
 import { useAnalyticsSettings } from '@/hooks/useAnalyticsSettings';
 import { useLogUploadSettings } from '@/hooks/useLogUploadSettings';
 import { OpenLogsRow, UploadLogsRow } from '@/components/log-support/LogSupportActions';
-import { PiKernelVersionRow } from './PiKernelVersionRow';
 import { HARNESS_MENU_ITEM_CLASS, HarnessMenuFootnote, HarnessVersionMenuItem, HarnessVersionMenuRow } from './HarnessVersionMenuRow';
 import { DefaultOverrideControls } from './DefaultOverrideControls';
 import { CURRENT_CINDY_REGION } from '../../../shared/brandRegion';
 import { LEGAL_LINKS } from '../../../shared/legalLinks';
 
-type UpdatableAgentKind = 'claude-code' | 'codex';
+type UpdatableAgentKind = 'claude-code';
 
 interface AgentVersionState {
   loading: boolean;
@@ -165,7 +163,6 @@ function renderVersion(state: AgentVersionState, t: (key: string) => string): st
 export function AgentVersionsRows() {
   const { t } = useTranslation();
   const claudeCode = useAgentBinaryVersion('claude-code');
-  const codex = useAgentBinaryVersion('codex');
 
   return (
     <>
@@ -176,16 +173,6 @@ export function AgentVersionsRows() {
         state={claudeCode.state}
         onCheck={claudeCode.check}
       />
-      <Divider />
-      <AgentVersionRow
-        kind="codex"
-        name="Codex"
-        label={t('settings.about.codexVersionLabel')}
-        state={codex.state}
-        onCheck={codex.check}
-      />
-      <Divider />
-      <PiKernelVersionRow />
       <Divider />
     </>
   );

@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useDialogExit } from '@/hooks/useDialogExit';
 import { WINDOW_DRAG_STYLE, WINDOW_NO_DRAG_STYLE } from '@/components/layout/windowDrag';
-import { Check, Info, Search } from 'lucide-react';
+import { Check, Info, Search, SlidersHorizontal } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -1605,6 +1605,7 @@ export function AddProviderWizard({
             {wizardTitle}
           </h3></Dialog.Title>
           {step === 1 ? (
+            /* [Disabled: 顶栏自定义按钮已整合进选项列表]
             <button
               type="button"
               disabled={saving}
@@ -1613,6 +1614,8 @@ export function AddProviderWizard({
             >
               {t('settings.providers.wizard.customAction')}
             </button>
+            */
+            null
           ) : (
           <div className="flex shrink-0 items-center gap-4">
             {stepLabels.map((label, i) => {
@@ -1669,6 +1672,38 @@ export function AddProviderWizard({
         >
           {step === 1 && (
             <>
+              {/* [Claude Code Only] 仅保留 Anthropic 和 自定义两种选项 */}
+              <div
+                className="min-h-0 flex-1 overflow-y-auto border-y px-3 py-3 flex flex-col gap-2"
+                style={{ borderColor: 'var(--border-default)' }}
+              >
+                {(() => {
+                  const anthropic = providers.find((p) => p.id === 'anthropic') ?? oauthChoices[0];
+                  return (
+                    <ProviderRow
+                      key="anthropic"
+                      icon={cardIcon({ providerId: 'anthropic', name: 'Anthropic' })}
+                      name="Anthropic"
+                      meta={t('settings.providers.wizard.metaOAuth')}
+                      onClick={() => {
+                        if (anthropic) pickOauth(anthropic);
+                      }}
+                    />
+                  );
+                })()}
+
+                <ProviderRow
+                  key="custom"
+                  icon={<SlidersHorizontal size={15} className="text-[var(--text-secondary)]" />}
+                  name={t('settings.providers.wizard.groupCustom')}
+                  meta={t('settings.providers.custom.dialog.desc')}
+                  onClick={() => {
+                    if (!savingRef.current) onOpenCustomForm();
+                  }}
+                />
+              </div>
+
+              {/* [Disabled: 预设搜索与多渠道画廊 - 仅保留 Anthropic 与自定义两种选项]
               <div className="px-4 pb-3">
                 <div className="relative">
                   <SettingsTextInput
@@ -1687,7 +1722,7 @@ export function AddProviderWizard({
                 </div>
               </div>
 
-              {/* 目录:单列列表(2026-07 定稿,替代三列卡片宫格),唯一的滚动区。 */}
+              // 目录:单列列表(2026-07 定稿,替代三列卡片宫格),唯一的滚动区。
               <div
                 className="min-h-0 flex-1 overflow-y-auto border-y px-2 pb-2"
                 style={{ borderColor: 'var(--border-default)' }}
@@ -1842,7 +1877,7 @@ export function AddProviderWizard({
                   </>
                 )}
               </div>
-
+              */}
             </>
           )}
 

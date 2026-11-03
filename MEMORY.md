@@ -1,62 +1,54 @@
-# Multiagent Orchestration 核心架构记忆 (MEMORY.md)
-
-本文档是 `multiagent-orchestration` 仓库的项目级记忆索引，为所有智能体与开发者提供统一的顶层架构认知。
-
+---
+doc_id: MULTIAGENT_ORCHESTRATION_MEMORY_ROOT
+version: 2.1.0
+description: Core repository architectural invariants, topologies, and execution contracts.
+type: REPO_MEMORY_AST
+target: LLM_PARSER_ONLY
+locale: en-US
 ---
 
-## 1. 仓库定位与架构边界
+# [0] ROOT: MULTIAGENT-ORCHESTRATION ARCHITECTURAL MEMORY
 
-- **项目定位**：`multiagent-orchestration` 是多智能体编排引擎与协同框架系统工程，涵盖群聊时间线、多 Agent 拓扑、无头 CLI 进程池、流式解析与进程内编排 MCP。
-- **CindyR 关系**：`CindyR/` 是作为配套使用的深度去脂桌面客户端（基于 Cindy 官方客户端改造），收敛为 Claude Code 单运行时。
-- **根目录规范独立性**：根目录的 `AGENTS.md`、`CLAUDE.md`、`UPDATE.md` 以及 `docs/` 属于全局项目级规范，**严禁软链接至子模块 CindyR**。
+* **[1] REPOSITORY TAXONOMY & BOUNDARIES**
+  * **[1.1] Orchestration Scope**: Covers group chat timelines, multi-agent topologies, headless CLI process pools, stream parsing, and in-process orchestration MCP servers.
+  * **[1.2] CindyR Submodule Relation**: `CindyR/` operates as a downstream lightweight desktop client (Electron) dieted strictly to the Claude Code single-runtime.
+  * **[1.3] Symlink Prohibition**: Root files (`AGENTS.md`, `CLAUDE.md`, `UPDATE.md`, `MEMORY.md`, `/docs/`) MUST NOT be symlinked to `CindyR/`.
 
----
+* **[2] TOPOLOGY & PROTOCOL CONTRACTS (`docs/protocols/`)**
+  * **[2.1] Group Chat Timeline**:
+    * **[2.1.1]** Messages persisted sequentially with strictly monotonic sequence integers.
+    * **[2.1.2]** Storage MUST reside exclusively in user directory `~/.multiagent-orchestration/groups/<room_slug>/` (`0` code repository pollution).
+    * **[2.1.3]** Direct `@partner` mentions trigger target headless agent runtimes.
+  * **[2.2] Machine Action Protocol (MAP)**: Headless subagents MUST encapsulate typed JSON actions within `<!-- CINDY_MAP:BEGIN -->...<!-- CINDY_MAP:END -->` (`0` unstructured text actions).
+  * **[2.3] P2P Isolated Query**: Inter-agent hypothesis validation uses ephemeral `p2p_*` namespaces; maximum recursion depth: `CallDepth <= 3`.
+  * **[2.4] Pipeline Relay**: Sequential state machine (`researcher -> coder -> reviewer`); upstream agent suspends upon handoff.
+  * **[2.5] Concurrent Dispatch**: Tasks split into parallel executions; subagent processes join at barrier synchronizers.
+  * **[2.6] Dual-Channel Steering**:
+    * **[2.6.1] Soft Steering**: Injects `additionalContext` or blocks tool execution via `PreToolUse` hook mailbox; preserves `300s` prompt cache.
+    * **[2.6.2] Hard Steering**: Dispatches `control_request: interrupt` frame to stdin to terminate hung execution loops.
 
-## 2. 核心协作拓扑与协议规范
+* **[3] RUNTIME ENGINES & ORCHESTRATOR MCP**
+  * **[3.1] Primary Driver**: `@anthropic-ai/claude-agent-sdk` streaming NDJSON inside Electron / Node.js main processes.
+  * **[3.2] Secondary Driver**: Native `claude` CLI headless child processes (`--print --input-format stream-json --output-format stream-json --dangerously-skip-permissions`).
+  * **[3.3] Nexus Orchestrator MCP (`nexus-orchestrator-mcp`)**: Bound exclusively to Lead Orchestrator; exports `3` tools: `dispatch_and_queue_partners`, `await_partner_queue`, `steer_or_repair_partner`.
+  * **[3.4] Single-Runtime Diet Invariant**: Heterogeneous engines (`codex`, `pi`) are completely purged; binary probing, version checks, and UI selectors scope strictly to `claude-code`.
 
-系统支持六大协作拓扑与状态机，所有交互契约详见 `docs/protocols/`：
+* **[4] DOCUMENTATION ROUTING TREE (`docs/`)**
+  * **[4.1]** `docs/architecture.md`: System lifecycle and process architecture.
+  * **[4.2]** `docs/axioms/STANDING_ORDER.md`: Foundational AST grammar, line budgets, and machine-first laws.
+  * **[4.3]** `docs/protocols/`: Full protocol specifications (MAP, steering, MCP, partner contracts).
+  * **[4.4]** `docs/dev-rules/`: Storage, NDJSON pool, IPC/SQLite, script standards, web studio rules.
 
-1. **群聊时间线 (Group Chat Timeline)**：
-   - 消息以严格单调自增 `sequence` 顺序持久化。
-   - 数据存储于用户目录 `~/.multiagent-orchestration/groups/<room_slug>/`，不污染业务代码仓。
-   - 支持通过 `@伙伴名` 定向唤醒并驱动对应 Agent。
-2. **机器动作协议 (MAP Envelope)**：
-   - 无头子进程通过 `<!-- CINDY_MAP:BEGIN -->...<!-- CINDY_MAP:END -->` 传递强类型 JSON 动作，杜绝非结构化纯文本传递。
-3. **P2P 隔离查询 (P2P Query)**：
-   - Agent 之间使用临时命名空间 `p2p_*` 进行私有技术假设核验，递归深度严格限制 $CallDepth \le 3$。
-4. **管道接力 (Pipeline Relay)**：
-   - 顺序串行状态机（如 `researcher -> coder -> reviewer`），移交时上游智能体挂起。
-5. **并发分发 (Fan-Out / Fan-In Dispatch)**：
-   - 任务并行拆解、异步子进程并发驱动与栅栏同步聚合。
-6. **双通道实时动态转向 (Dual-Channel Steering)**：
-   - **软转向**：通过 `PreToolUse` Hook 内存信箱注入 `additionalContext` 或阻断调用，保留 5 分钟 Prompt Cache。
-   - **硬转向**：向 stdin 派发 `control_request: interrupt` 帧中止阻塞，防止假死挂起。
-
----
-
-## 3. 运行时驱动与进程内 MCP
-
-- **Primary Driver**：`@anthropic-ai/claude-agent-sdk`，在 Electron / Node.js 主进程以流式 NDJSON 运行。
-- **Secondary Driver**：原生 `claude` CLI headless 子进程（`--print --input-format stream-json --output-format stream-json --dangerously-skip-permissions`）。
-- **进程内 MCP 服务 (`nexus-orchestrator-mcp`)**：
-  - 仅挂载至 `Lead Orchestrator`。
-  - 提供 `dispatch_and_queue_partners`、`await_partner_queue`、`steer_or_repair_partner` 三大编排元工具。
-
----
-
-## 4. 根文档地图 (`docs/`)
-
-- `docs/architecture.md`：总架构设计与进程生命周期
-- `docs/axioms/STANDING_ORDER.md`：全局 AST 树拓扑与规范法则
-- `docs/protocols/`：MAP、转向、MCP、Partner 合约、分发、接力、P2P 协议全集
-- `docs/dev-rules/`：Bot Group 存储、NDJSON 进程池、IPC/SQLite、脚本规范、Web Parser
-- `docs/claude-managed-agents/`：Anthropic 官方托管 Agent 规范对齐与本地映射
-
----
-
-## 5. 开发纪律与底线
-
-1. **安全删除**：严禁使用 `rm`，必须使用 `/opt/xrsec/.env/rmfile`。
-2. **代码修改**：单文件行数 $\le 600$ 行；CindyR 代码禁用一律使用 `/* [Disabled: ...] */` 注释包裹，严禁物理删除。
-3. **Git 交付**：推送前必须 squash 零散 commit。
-4. **语言要求**：全局中文思考与回复。
+* **[5] OPERATIONAL DISCIPLINES & INVARIANTS**
+  * **[5.1] Safe Deletion**: Plain `rm` MUST NOT be used; deletion MUST route through `/opt/xrsec/.env/rmfile`.
+  * **[5.2] Script Size Budget**: Single script files MUST NOT exceed `600` lines (warning threshold: `500` lines, hard split: `800` lines).
+  * **[5.3] Non-Destructive Code Diet**: Disabled code in `CindyR/` MUST use block comments `/* [Disabled: <reason>] */`; physical code deletion is prohibited.
+  * **[5.4] Git Delivery**: Unpushed commits MUST be squashed before remote push (`git squash before push`).
+  * **[5.5] IPC Fallback Stub Invariant**: Every IPC channel declared in `preload.ts` or renderer hooks MUST register a fallback stub if the underlying module is disabled; unhandled `No handler registered` errors are prohibited.
+  * **[5.6] Multi-Instance Isolation Invariant**: Local development instances MUST execute with `--isolated=dev`; sharing `userDataDirName: 'Cindy'` with `/Applications/Cindy.app` is prohibited (`localDb.sqlite` WAL lock conflict avoidance).
+  * **[5.7] Manifest-Level Capability Shutoff**: Unreachable or offline cloud services (e.g., `cindySkillHubApiBaseUrl = ""`) MUST use manifest-level empty strings to trigger `UNSUPPORTED_CAPABILITY` before socket initiation; IPC layers MUST degrade to `log.debug` and return safe empty DTOs.
+  * **[5.8] Eager IPC Registration & Database Readiness Barrier**: Handlers for `maker:project-automation:*` MUST register eagerly in `registerMakerIpcsAfterSplash` with `15,000ms` `withLoader` readiness barrier; subsystem DB operations MUST wait on `await whenDbReady()`.
+  * **[5.9] Database Switching Race Condition Guard**: Account switches MUST resolve SQLite reconnection barrier (`setAccountSwitchReconnect` & `whenDbReady` queue) prior to session emission (`0ms` `DbClient not ready` window).
+  * **[5.10] Multi-Thread Concurrency Fault Tolerance**: Thread message pre-reads encountering HTTP 400 `INVALID_INPUT` MUST fallback to `${room}:main`; candidate failures in `claimBesideRuns` MUST NOT abort adjacent concurrent claims.
+  * **[5.11] Frontend Component SSOT & Anti-Flicker Guard**: Companion onboarding MUST use `BotProfileCreateForm.tsx` as SSOT with `useSyncExternalStore` default model binding; companion store hydration MUST acquire `hydrateFromDatabase` lock to eliminate UI list flickering.
+  * **[5.12] UI Entrypoint Diet Invariant**: When an underlying service or IPC channel is disabled (e.g., remote desktop), all associated renderer UI entry points, triggers, and nested submenus (e.g., `MachineSwitcherMenu.tsx`, `MainLayout.tsx`) MUST be suppressed via non-destructive block comments (`0` orphan interactive triggers).

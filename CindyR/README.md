@@ -49,23 +49,21 @@ Provider and service billing still apply.
 
 </details>
 
-## Keep your favorite agents. Get a better way to work.
+## Powered by Claude Code. Built for Focused Performance.
 
-Already using Claude Code or Codex? Cindy brings them together with **Pi**,
-then adds a shared interface, multi-device access, tools and a companion of
-your own.
+CindyR is the lightweight, dedicated **Claude Code single-runtime edition** of Cindy.
+All heterogeneous legacy runtimes (Codex and Pi) are deprecated and disabled in this edition,
+providing an ultra-responsive, highly stable AI workbench focused strictly on Claude Code.
 
-| Harness | What it brings |
+| Harness | Status & Capabilities |
 | --- | --- |
-| **Claude Code** | Claude Code's agent workflow, with Cindy's interface and connected tools. |
-| **Codex** | Codex's coding workflow, available alongside your other agents. |
-| **Pi** | A lean, open-source, extensible agent with support for multiple model providers. |
+| **Claude Code** | **Primary Active Engine** — Full-duplex NDJSON streaming, native CLI process pooling, in-process MCP orchestration, and deep desktop tool integration. |
+| **Codex** | *Deprecated & Disabled* — Purged from runtime matrix, binary version checks, and UI selectors. |
+| **Pi** | *Deprecated & Disabled* — Purged from runtime matrix, binary version checks, and UI selectors. |
 
-Choose a supported harness and model combination, and change it as the work
-evolves. Your session stays in Cindy; switching harnesses hands off or rebuilds
-the engine context rather than making their internal states identical.
+Enjoy a sub-second startup, zero background CLI probe polling, and rock-solid session stability.
 
-**One agent not enough? Let her lead a team.** Use different agents for planning,
+**One agent not enough? Let her lead a team.** Use Claude Code partners for planning,
 parallel implementation and independent review, with a shared goal and clear
 acceptance criteria.
 

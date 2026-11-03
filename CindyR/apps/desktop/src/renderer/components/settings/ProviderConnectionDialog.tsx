@@ -243,7 +243,8 @@ interface RuntimeFields extends RuntimeFillDraft {
   videoApi?: 'xai-videos';
 }
 
-function followsDefaultConnection(agent: DialogAgentKind, value: RuntimeFields, source: RuntimeFields): boolean {
+function followsDefaultConnection(agent: DialogAgentKind, value?: RuntimeFields, source?: RuntimeFields): boolean {
+  if (!value || !source) return false;
   return value.baseUrl.trim() === source.baseUrl.trim() && value.apiKey === source.apiKey &&
     JSON.stringify(value.headers) === JSON.stringify(source.headers) &&
     JSON.stringify(value.models) === JSON.stringify(source.models) &&
@@ -550,8 +551,10 @@ export function ProviderConnectionDialog({
   });
   const [activeTab, setActiveTab] = useState<DialogAgentKind>(
     () =>
-      draft?.agent ?? (focusAgent && VISIBLE_AGENTS.includes(focusAgent as DialogAgentKind) ? focusAgent as DialogAgentKind : null) ??
-      ((initial && VISIBLE_AGENTS.find((a) => initial.runtimes[a])) || (simpleAdding ? 'pi' : 'claude-code')),
+      (draft?.agent && VISIBLE_AGENTS.includes(draft.agent as DialogAgentKind) ? (draft.agent as DialogAgentKind) : null) ??
+      (focusAgent && VISIBLE_AGENTS.includes(focusAgent as DialogAgentKind) ? (focusAgent as DialogAgentKind) : null) ??
+      (initial && VISIBLE_AGENTS.find((a) => initial.runtimes[a])) ??
+      'claude-code',
   );
   const [hasKey, setHasKey] = useState<Record<DialogAgentKind, boolean>>({
     'claude-code': false,
@@ -573,8 +576,8 @@ export function ProviderConnectionDialog({
   // entirely local, credential-free draft; independent engines must not lose auth.
   // Keep the key input visible so adding credentials switches back to API-key mode.
   const authMode: CustomProviderAuthMode = simpleAdding && selectedAuthMode !== 'oauth'
-    ? rt[activeTab].baseUrl.trim() && Object.values(rt).every(fields =>
-        !fields.apiKey.trim() && !fields.headers.some(header => header.name.trim()) &&
+    ? (rt[activeTab]?.baseUrl.trim() ?? '') && Object.values(rt).every(fields =>
+        fields && !fields.apiKey.trim() && !fields.headers.some(header => header.name.trim()) &&
         (!fields.baseUrl.trim() || isLoopbackProviderUrl(fields.baseUrl.trim())) &&
         (!fields.modelsUrl.trim() || isLoopbackProviderUrl(fields.modelsUrl.trim())))
       ? 'none' : 'apiKey'
@@ -813,12 +816,12 @@ export function ProviderConnectionDialog({
         if (simpleAdding) {
           const source = activeTab;
           for (const agent of AGENTS) {
-            if (agent === source || !followsDefaultConnection(agent, prev[agent], prev[source])) continue;
-            const next = { ...updated[agent] };
+            if (agent === source || !prev[agent] || !prev[source] || !followsDefaultConnection(agent, prev[agent], prev[source])) continue;
+            const next = { ...(updated[agent] ?? emptyRuntime(agent)) };
             for (const field of ['baseUrl', 'apiKey', 'headers', 'models'] as const) {
               if (JSON.stringify(prev[agent][field]) === JSON.stringify(prev[source][field]) &&
-                  JSON.stringify(updated[agent][field]) === JSON.stringify(prev[agent][field])) {
-                Object.assign(next, { [field]: updated[source][field] });
+                  JSON.stringify(updated[agent]?.[field]) === JSON.stringify(prev[agent][field])) {
+                Object.assign(next, { [field]: updated[source]?.[field] });
               }
             }
             updated[agent] = next;
@@ -827,7 +830,7 @@ export function ProviderConnectionDialog({
         const normalized = Object.fromEntries(
           AGENTS.map((agent) => [
             agent,
-            normalizeRuntimeImageGenerationCapability(agent, updated[agent]),
+            normalizeRuntimeImageGenerationCapability(agent, updated[agent] ?? emptyRuntime(agent)),
           ]),
         ) as Record<DialogAgentKind, RuntimeFields>;
         // Do not consume the catalog marker while the user is still editing.
@@ -835,10 +838,11 @@ export function ProviderConnectionDialog({
         // ownership is decided once below from the persisted baseline and the
         // final serialized values.
         for (const agent of AGENTS) {
+          if (!prev[agent] || !normalized[agent]) continue;
           for (const kind of ['models', 'headers'] as const) {
             const before = prev[agent][kind];
             const after = normalized[agent][kind];
-            if (before.length !== after.length) continue;
+            if (!before || !after || before.length !== after.length) continue;
             after.forEach((row, index) => {
               if (!rowIds.current.has(row)) rowIds.current.set(row, rowId(before[index]));
             });
@@ -1014,11 +1018,11 @@ export function ProviderConnectionDialog({
 
   const [detection, setDetection] = useState<{ signature: string; preset?: ProviderPreset; pending?: boolean; ambiguous?: boolean; code?: string } | null>(null);
   const discoveryCache = useRef(new Map<DialogAgentKind, { signature: string; promise: Promise<DetectionCatalog> }>(
-    draft?.catalog ? [[draft.agent, { signature: `${draft.agent}:${providerModelFetchRequestSignature(rt[draft.agent], authMode)}`,
+    draft?.catalog ? [[draft.agent, { signature: `${draft.agent}:${providerModelFetchRequestSignature(rt[draft.agent] ?? emptyRuntime(draft.agent), authMode)}`,
       promise: Promise.resolve(draft.catalog) }]] : [],
   ));
   const importedOnce = useRef(new Set<DialogAgentKind>(draft ? [draft.agent] : []));
-  const detectionSignature = `${activeTab}:${providerModelFetchRequestSignature(rt[activeTab], authMode)}`;
+  const detectionSignature = `${activeTab}:${providerModelFetchRequestSignature(rt[activeTab] ?? emptyRuntime(activeTab), authMode)}`;
   const detectionContext = useRef({ name, activeTab, onDetected, signature: detectionSignature });
   const previousDetectionSignatures = useRef(new Map<DialogAgentKind, string>());
   detectionContext.current = { name, activeTab, onDetected, signature: detectionSignature };
@@ -1085,12 +1089,12 @@ export function ProviderConnectionDialog({
     // Correlation only, scoped to this renderer; randomUUID requires a secure context.
     const requestId = `detect-${Date.now()}-${++detectionRequestSequence}`;
     const agent = activeTab;
-    const fields = rt[agent];
+    const fields = rt[agent] ?? emptyRuntime(agent);
     const signature = detectionSignature;
     const previousSignature = previousDetectionSignatures.current.get(agent);
     previousDetectionSignatures.current.set(agent, signature);
     if (previousSignature && previousSignature !== signature) {
-      setRtSynced(prev => ({ ...prev, [agent]: { ...prev[agent], models: prev[agent].models.map(model => {
+      setRtSynced(prev => ({ ...prev, [agent]: { ...(prev[agent] ?? emptyRuntime(agent)), models: (prev[agent]?.models ?? []).map(model => {
         const { discoveredMetadata: _metadata, discoveredCost: _cost, ...userFields } = model;
         return userFields;
       }) } }));
@@ -1229,7 +1233,7 @@ export function ProviderConnectionDialog({
   const patch = useCallback(
     (agent: DialogAgentKind, fn: (f: RuntimeFields) => RuntimeFields) => {
       setRtSynced((prev) => {
-        const current = prev[agent];
+        const current = prev[agent] ?? emptyRuntime(agent);
         const next = restoreHydratedKey(agent, fn(current));
         const endpointChanged =
           current.baseUrl.trim() !== next.baseUrl.trim() ||
@@ -1464,7 +1468,7 @@ export function ProviderConnectionDialog({
     [setRtSynced],
   );
 
-  const f = rt[activeTab];
+  const f = rt[activeTab] ?? emptyRuntime(activeTab);
   const mediaOnly = f.models.some(model => model.id.trim()) && !firstProviderChatModel(f.models, catalogModels?.[activeTab]);
   const boundPreset = presets.find(preset => preset.id === f.catalogPresetId);
   const templateBound = Boolean(f.catalogPresetId);
@@ -1489,7 +1493,7 @@ export function ProviderConnectionDialog({
   }, [presets]);
 
   const connectionTestRef = useRef<{ id: string; agent: DialogAgentKind; signature: string } | null>(null);
-  const connectionSignature = providerConnectionTestRequestSignature(runtimeProbeFields(activeTab, rt[activeTab], catalogModels?.[activeTab]), authMode);
+  const connectionSignature = providerConnectionTestRequestSignature(runtimeProbeFields(activeTab, rt[activeTab] ?? emptyRuntime(activeTab), catalogModels?.[activeTab]), authMode);
   const cancelConnectionTest = useCallback(() => {
     const current = connectionTestRef.current;
     if (!current) return;
@@ -1508,7 +1512,7 @@ export function ProviderConnectionDialog({
   const handleTest = useCallback(async () => {
     if (connectionTestRef.current || modelFetchInFlightRef.current || picker) return;
     const agent = activeTab;
-    const rf = rt[agent];
+    const rf = rt[agent] ?? emptyRuntime(agent);
     const probeFields = runtimeProbeFields(agent, rf, catalogModels?.[agent]);
     const defaultBaseUrl = rf.baseUrl.trim();
     const firstModelConfig = firstProviderChatModel(rf.models, catalogModels?.[agent]);
@@ -1638,7 +1642,7 @@ export function ProviderConnectionDialog({
   /** 获取模型列表：用当前 Tab 表单值 GET 列模型端点（key 仅内存透传），成功后开勾选弹层。 */
   const handleFetchModels = useCallback(async () => {
     const agent = activeTab;
-    const rf = rt[agent];
+    const rf = rt[agent] ?? emptyRuntime(agent);
     if (
       modelFetchInFlightRef.current ||
       runtimeFill ||
@@ -1931,7 +1935,7 @@ export function ProviderConnectionDialog({
       const failedEndpointEdit = VISIBLE_AGENTS.find((agent) => {
         if (!keyHydrationFailed[agent]) return false;
         const baseline = savedBaselineFor(agent);
-        const draft = rt[agent];
+        const draft = rt[agent] ?? emptyRuntime(agent);
         return (
           baseline != null &&
           (draft.baseUrl.trim() !== baseline.baseUrl.trim() ||
@@ -1948,8 +1952,9 @@ export function ProviderConnectionDialog({
     const keys: RuntimeKeys = {};
     for (const a of VISIBLE_AGENTS) {
       const rf = rt[a];
+      if (!rf) continue;
       // 上游规则：pi 目录预选时，仍跟随默认连接、未独立配置的 runtime 整段跳过。
-      if (simpleAdding && activeTab === 'pi' && !rt.pi.catalogPresetId && a !== 'pi'
+      if (simpleAdding && activeTab === 'pi' && !rt.pi?.catalogPresetId && a !== 'pi'
         && (!draft?.config.runtimes[a] || followsDefaultConnection(a, rf, rt.pi))) continue;
       if (!rf.baseUrl.trim()) {
         // 未配置的 runtime 整段跳过。但用户若已在这里选过协议，跳过即静默丢弃该选择；
@@ -2591,7 +2596,7 @@ export function ProviderConnectionDialog({
                     <>
                       <Mark size={14} className="shrink-0" />
                       <span className="whitespace-nowrap">{t(meta.labelKey)}</span>
-                      {rt[agent].baseUrl.trim().length > 0 && (
+                      {(rt[agent]?.baseUrl.trim().length ?? 0) > 0 && (
                         <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--remote-status-ready)]" />
                       )}
                     </>

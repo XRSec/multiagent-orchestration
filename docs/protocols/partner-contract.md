@@ -61,3 +61,16 @@ The host reads `manifest.json` on startup to register the partner into the UI ro
 1. **Auto-Injection**: On every spawn, the host inspects `memories/MEMORY.md`. If present, the first 200 lines (or $\le 25\text{KB}$) are injected into the agent prompt.
 2. **Subagent Self-Update**: The partner's `SOUL.md` directs the model to use `Edit` or `Write` on `memories/MEMORY.md` whenever new permanent rules, edge cases, or corrections occur.
 3. **Human In-The-Loop (HITL) Curation**: The host UI provides a direct Markdown editor bound to `memories/MEMORY.md`. Human edits take effect instantly on the subsequent run without requiring model retraining or prompt recompilation.
+
+---
+
+### 3.3 Frontend Component SSOT & Default Model Binding
+1. **Unified Creation Form**: `BotProfileCreateForm.tsx` serves as the Single Source of Truth (SSOT) across both full-screen guided companion onboarding view and modal dialog (`0` duplicated form implementations).
+2. **Dynamic Model Synchronization**: Companion onboarding form dynamically binds to the workspace default model via `useSyncExternalStore` (`0` hardcoded model desynchronization).
+3. **Anti-Flicker Store Hydration**: `hydrateFromDatabase()` in `botStore.ts` acquires an in-flight promise lock during SQLite hydration, eliminating false-empty companion lists in renderer views.
+
+---
+
+### 3.4 Ghost Skill Projection Boundary & Dev CSP
+1. **Cold-Start Skill Projection**: Skill projection across account boundaries enforces `isGhostSkillProjectionBoundaryStableForOwner` with exponential backoff retry (`max_retries: 3`, factor: `1.5`) and post-commit hook `skillsPostCommitStep` in `authManager`.
+2. **Dev CSP Compliance**: Development Content Security Policy (`DEV_CSP`) is injected via `devCspPlugin` in `vite.renderer.config.ts` with loopback origin matching (`localhost`, `127.0.0.1`) in `csp.ts`.

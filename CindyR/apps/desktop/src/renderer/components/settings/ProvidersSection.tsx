@@ -2382,6 +2382,7 @@ function ListRow({
 }
 
 /** 检测建议行:本机 CLI 已安装且对应渠道未连接时出现;点击直达向导的授权步。 */
+/* [Disabled: 本机 CLI 检测建议 - CindyR 专注 Claude Code 单运行时，无需冗余建议行]
 function SuggestionRow({
   detection,
   provider,
@@ -2431,6 +2432,7 @@ function SuggestionRow({
     </button>
   );
 }
+*/
 
 // ---------------------------------------------------------------------------
 // Section
@@ -2561,6 +2563,7 @@ export function ProvidersSection() {
   }, []);
 
   // 本机 CLI 扫描:挂载时一次(失败静默空数组;检测建议是增强,不是依赖)。
+  /* [Disabled: 本机 CLI 扫描建议]
   useEffect(() => {
     let cancelled = false;
     void window.electronAPI.maker
@@ -2573,6 +2576,7 @@ export function ProvidersSection() {
       cancelled = true;
     };
   }, []);
+  */
 
   // SortableJS drop 后先由 React 乐观铺左栏可见顺序，等 PROVIDER_CHANGED 回来的 main
   // 快照与目标一致再清掉覆盖；隐藏项是否有持久化槽位只由 Main 判定，Renderer 不猜。
@@ -2784,6 +2788,9 @@ export function ProvidersSection() {
 
   // 检测建议:CLI 已安装 + 对应渠道存在于目录 + 未连接,且**未以任何形态占行**
   // (OpenAI reconnect-required 已在主列表时,不再重复出建议行)。
+  // [Disabled: 本机 CLI 检测建议 - CindyR 专注 Claude Code 单运行时，无需冗余建议行]
+  const suggestions: Array<{ detection: LocalCliDetection; provider: ProviderView }> = [];
+  /*
   const suggestions = useMemo(() => {
     const listedIds = new Set(listProviders.map((p) => p.id));
     return detections
@@ -2794,6 +2801,7 @@ export function ProvidersSection() {
           !!s.provider && !s.provider.connected && !s.provider.removed,
       );
   }, [detections, byId, listProviders]);
+  */
 
   /**
    * 深链定位(?connect=<id> / ?wizard=1 / ?import=<opaque-id>):providers
@@ -3291,6 +3299,7 @@ export function ProvidersSection() {
                   selectShare(shareId);
                 }}
               />
+              {/* [Disabled: 本机 CLI 检测建议 - 移除模型供应商页面的建议行漏网之鱼]
               {suggestions.length > 0 && (
                 <>
                   <span
@@ -3311,6 +3320,7 @@ export function ProvidersSection() {
                   ))}
                 </>
               )}
+              */}
             </div>
             <div id="settings-search-settings-providers-addProvider"
               className="flex flex-col gap-2 border-t p-2"

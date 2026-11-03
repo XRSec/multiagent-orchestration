@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import { app, net } from 'electron';
 import { getCurrentUserId } from '../authManager';
 import { ensureBaseUrl } from '../manifestService';
+import { getClientEndpoint } from '../clientEndpointsService';
 import { createLogger } from '../logger';
 import * as installService from './installService';
 import { SkillhubMarketService } from './marketService';
@@ -127,6 +128,8 @@ export class SkillhubAutoSyncService {
   }
 
   runOnceAfterLogin(): Promise<void> {
+    const baseUrl = getClientEndpoint('cindySkillHubApiBaseUrl');
+    if (!baseUrl) return Promise.resolve();
     const userId = this.deps.getCurrentUserId();
     if (!userId) return Promise.resolve();
     if (this.completedUserId === userId) return Promise.resolve();

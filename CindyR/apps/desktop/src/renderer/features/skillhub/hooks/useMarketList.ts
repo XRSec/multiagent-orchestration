@@ -704,7 +704,11 @@ const inflightCategories = new Map<
   Map<SkillhubCatalogScope, Promise<CategoryListState>>
 >();
 
-export function useCategoryList(scope: SkillhubCatalogScope = 'market'): CategoryListState {
+export function useCategoryList(
+  scope: SkillhubCatalogScope = 'market',
+  options?: { enabled?: boolean },
+): CategoryListState {
+  const enabled = options?.enabled ?? true;
   const target = useSkillhubTarget();
   const api = useSkillhubBrowseApi();
   const owner = getDataOwnerGeneration();
@@ -715,6 +719,7 @@ export function useCategoryList(scope: SkillhubCatalogScope = 'market'): Categor
   });
 
   useEffect(() => {
+    if (!enabled) return;
     if (target && !target.ready) return;
     let cancelled = false;
     const ownerInflight =
@@ -738,7 +743,7 @@ export function useCategoryList(scope: SkillhubCatalogScope = 'market'): Categor
       }
     });
     return () => { cancelled = true; };
-  }, [owner, scope, api, target?.ready]);
+  }, [enabled, owner, scope, api, target?.ready]);
 
   return state.owner === owner && state.scope === scope ? state.value : EMPTY_CATEGORY_STATE;
 }

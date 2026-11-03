@@ -635,6 +635,11 @@ export function registerSkillhubIpc(options: RegisterSkillhubIpcOptions): void {
         return await marketService.sync(params);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        const code = (err as { code?: string }).code;
+        if (code === 'UNSUPPORTED_CAPABILITY' || code === 'NETWORK_ERROR') {
+          log.debug('[skillhub:sync] unavailable or offline:', code);
+          return { success: true, results: [], availableUninstalledCount: 0 };
+        }
         log.error('[skillhub:sync] failed:', err);
         return { success: false, error: message };
       }
@@ -648,6 +653,11 @@ export function registerSkillhubIpc(options: RegisterSkillhubIpcOptions): void {
         return await marketService.listMarket(params);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        const code = (err as { code?: string }).code;
+        if (code === 'UNSUPPORTED_CAPABILITY' || code === 'NETWORK_ERROR') {
+          log.debug('[skillhub:list-market] unavailable or offline:', code);
+          return { success: true, items: [], nextCursor: null };
+        }
         log.error('[skillhub:list-market] failed:', err);
         return { success: false, error: message };
       }
@@ -812,7 +822,12 @@ export function registerSkillhubIpc(options: RegisterSkillhubIpcOptions): void {
         return await marketService.listCategories(scope, params?.includeEmpty !== false);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        log.warn('list-categories failed', message);
+        const code = (err as { code?: string }).code;
+        if (code === 'UNSUPPORTED_CAPABILITY' || code === 'NETWORK_ERROR') {
+          log.debug('list-categories unavailable or offline:', code);
+        } else {
+          log.warn('list-categories failed', message);
+        }
         return { success: true, categories: [], totalCount: 0, myTotalCount: 0 };
       }
     },

@@ -41,11 +41,16 @@ sequenceDiagram
     Host->>Watchdog: De-register session
 ```
 
+### 2.1 Boot Gate & Eager IPC Registration Invariant
+1. **Eager Registration**: `maker:project-automation:*` IPC handlers (`pending-imports`, `reconcile`, `list-consents`, `revoke-consent`, `upsert-schedule`, `remove-schedule`) are registered eagerly during `registerMakerIpcsAfterSplash` (`bootstrap-electron.ts`).
+2. **Asynchronous Readiness Gate**: Handlers wrap execution in a `15,000ms` asynchronous barrier (`withLoader`) awaiting `whenSchedulerReady()`, preventing `No handler registered` failures during frontend cold-start.
+3. **Database Readiness Barrier**: Subsystems (`custom-mcp-registry`, `git-snapshot`, `session-archive-sync`, `cindy-brain`) gate all SQLite operations behind `await whenDbReady()`.
+
 ---
 
 ## 3. Subprocess Launch Invariants & CLI Flag Configuration
 
-The host engine initiates worker processes with strict parameter matrices depending on the agent category:
+The host engine initiates worker processes with strict parameter matrices depending on the agent category. All legacy heterogeneous runtimes (Codex, Pi) have been completely deprecated and purged; Claude Code serves as the sole execution engine:
 
 ### 3.1 Standard Subprocess Parameter Matrix
 
@@ -135,4 +140,5 @@ For collaborative taskforce execution (governed by [BOT_GROUP_ORCHESTRATION_SPEC
 - **Thread Lane Isolation**: Discrete topic threads run in independent sessions (`route_key: group:<groupId>:thread:<rootMessageId>`), preventing sub-conversations from polluting the main timeline.
 - **Incremental Turn Context**: Host tracks `lastSeenSequence` watermark per member, delivering only new peer message deltas wrapped in `<untrusted-json-block>`, strictly preserving System Prompt integrity.
 - **Owner Intent Boundary (PR #8075)**: Automatic tool execution review derives exclusively from verified human owner text (`autoReviewUserText`), preventing peer quote-card privilege escalation.
+- **Thread Concurrency Fault Tolerance**: `readMessage` and `executionLane` handle HTTP 400 `INVALID_INPUT` and `ChatResponseError` without throwing unhandled promise rejections, defaulting to `${room}:main`; `claimBesideRuns` isolates pre-read candidate failures, allowing adjacent thread tasks to claim and execute concurrently.
 

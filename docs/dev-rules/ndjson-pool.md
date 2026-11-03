@@ -21,6 +21,10 @@ locale: en-US
   * **[1.3] Prohibited Protocols**:
     * PTY / TUI terminal emulation: Strictly banned (unstructured ANSI stream, zero reliable JSON barrier).
     * ACP (Agent Client Protocol): Banned (multi-engine compromise layer that strips Claude-native fork and in-flight hooks).
+  * **[1.4] Deprecation & Purge of Legacy Runtimes (Codex & Pi)**:
+    * `[1.4.1]` Heterogeneous engines (`codex`, `pi`) are completely purged from active process scheduling. System architecture converges on Claude Code as the single execution runtime.
+    * `[1.4.2]` Binary version IPC (`maker:agent:binary-version`) restricts `agentKind` exclusively to `claude-code`. Requests for `codex` or `pi` return `{ error: 'agent_disabled', binaryPath: null, version: null }` (`0` CLI probe commands, `0` version polling).
+    * `[1.4.3]` User interfaces (`AboutSection.tsx`, `ModelSelector.tsx`) MUST render strictly the Claude Code runtime row (`0` empty placeholders, `0` "not installed" rows).
 
 * **[2] IN-MEMORY STEERING & IN-PROCESS MCP ARCHITECTURE**
   * **[2.1] In-Memory PreToolUse Hook**:

@@ -5,14 +5,12 @@
  * 把首行输出回给 renderer 的 About 面板。
  *
  * 设计:
- *   - Claude/Codex 在 prepare 成功后优先读 getReadyBinaryPath(),必要时可读受管缓存；
- *     Pi 是可选资产，只允许使用本次 prepare 成功的路径，失败时不能复用旧缓存。
- *   - Claude/Codex 按 binaryPath 缓存结果；Pi 现读，以反映受管／原生更新。
+ *   - Claude Code 在 prepare 成功后优先读 getReadyBinaryPath(),必要时可读受管缓存；
+ *   - Claude Code 按 binaryPath 缓存结果；
  *   - 5s 超时, 失败时返回 { error }。
  *   - checkLatest 时再比较当前通道 manifest；普通调用不等网络。
  */
 
-import { registerPiKernelIpc } from './pi-kernel.js';
 import { ipcMain } from 'electron';
 import { execFile } from 'node:child_process';
 
@@ -79,18 +77,16 @@ function getLatestManifest(): Promise<Manifest | null> {
 
 // Same fields as agent-binaries CONFIG. Only an asset the installer can
 // actually consume (complete metadata, this platform) may advertise an update.
-const MANIFEST_FIELD: Record<AgentBinaryKind, string> = {
+const MANIFEST_FIELD: Record<'claude-code', string> = {
   'claude-code': 'claudeCode',
-  codex: 'codexPackage',
-  pi: 'pi',
 };
 
 // downloader/index.ts rejects anything that is not exactly 64 hex chars.
 const DOWNLOAD_SHA256 = /^[0-9a-fA-F]{64}$/;
 
 function latestVersionFor(kind: AgentBinaryKind, manifest: Manifest | null): string | null {
-  if (!manifest) return null;
-  const asset = getVendorAsset(manifest, MANIFEST_FIELD[kind]);
+  if (!manifest || kind !== 'claude-code') return null;
+  const asset = getVendorAsset(manifest, MANIFEST_FIELD['claude-code']);
   if (!asset || !vendorAssetMatchesPlatform(asset, getPlatformKey())) return null;
   // download() rejects a non-hex sha256; a non-positive expectedSize makes a
   // normal Content-Length fail the transport check and keep the old runtime.
@@ -102,7 +98,7 @@ function latestVersionFor(kind: AgentBinaryKind, manifest: Manifest | null): str
 // Same ordering the startup installer uses to keep a local runtime that is not
 // older than the manifest, so the About action never offers a no-op relaunch.
 function isUpdateAvailable(kind: AgentBinaryKind, version: string | null, latestVersion: string | null): boolean {
-  if (kind === 'pi' || !version || !latestVersion) return false;
+  if (kind !== 'claude-code' || !version || !latestVersion) return false;
   const current = parseBinaryVersionOutput(version, '');
   const latest = normalizeBinaryVersion(latestVersion);
   return !!current && !!latest && !isBinaryVersionNotOlder(current, latest);
@@ -124,22 +120,23 @@ async function probeLocalVersion(
   agentKind: AgentBinaryKind,
   options?: { bypassCache?: boolean },
 ): Promise<Omit<AgentBinaryVersionResult, 'latestVersion' | 'updateAvailable' | 'latestCheckFailed'>> {
+  if (agentKind !== 'claude-code') {
+    return { kind: agentKind, binaryPath: null, version: null, error: 'agent_disabled' };
+  }
   const binaryPath = resolveBinaryPath(agentKind);
   // 执行前复核路径确为受管二进制(CodeQL js/command-line-injection 防御纵深)
   if (!binaryPath || !isVettedAgentBinaryPath(agentKind, binaryPath)) {
     return { kind: agentKind, binaryPath: null, version: null, error: 'binary_not_ready' };
   }
 
-  // Pi is always live. checkLatest also skips the process cache so an in-place
-  // self-update is compared against the manifest instead of a stale --version.
-  const cached = agentKind === 'pi' || options?.bypassCache ? undefined : versionCache.get(binaryPath);
+  const cached = options?.bypassCache ? undefined : versionCache.get(binaryPath);
   if (cached) {
     return { kind: agentKind, binaryPath, version: cached };
   }
 
   try {
     const version = await spawnVersion(binaryPath);
-    if (agentKind !== 'pi') versionCache.set(binaryPath, version);
+    versionCache.set(binaryPath, version);
     return { kind: agentKind, binaryPath, version };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -148,14 +145,14 @@ async function probeLocalVersion(
   }
 }
 
-function isAgentBinaryKind(value: unknown): value is AgentBinaryKind {
-  return value === 'claude-code' || value === 'codex' || value === 'pi';
+function isAgentBinaryKind(value: unknown): value is 'claude-code' {
+  return value === 'claude-code';
 }
 
 function resolveBinaryPath(kind: AgentBinaryKind): string | null {
+  if (kind !== 'claude-code') return null;
   const ready = getReadyBinaryPath(kind);
   if (ready) return ready;
-  if (kind === 'pi') return null;
   const cached = getCachedBinaryStatus(kind);
   return cached.binaryReady && cached.binaryPath ? cached.binaryPath : null;
 }
@@ -184,7 +181,6 @@ function spawnVersion(binaryPath: string): Promise<string> {
 }
 
 export function registerMakerBinaryVersionIpc(): void {
-  registerPiKernelIpc();
   log.info('registering maker:agent:binary-version IPC handler');
 
   ipcMain.handle(
@@ -195,7 +191,7 @@ export function registerMakerBinaryVersionIpc(): void {
       // its own allowlist, so that path keeps the remote version read.
       if (!isDeviceLinkInvoke()) assertTrustedAppRendererEvent(event);
       if (!isAgentBinaryKind(agentKind)) {
-        throwIpcError('INVALID_PARAMS', 'agentKind required (claude-code | codex | pi)');
+        throwIpcError('INVALID_PARAMS', 'agentKind required (claude-code)');
       }
       const { checkLatest } = parseOptions(rawOptions);
 
