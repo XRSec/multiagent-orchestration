@@ -1,57 +1,41 @@
 # Original User Request
 
-## Initial Request — 2026-11-02T05:24:06Z
+## Initial Request — 2026-11-02T16:34:10Z
 
-全面借鉴与复用 Cindy 的 UI 视觉质感与模块划分，将其重塑并落地为四大生产级完整界面（伙伴私聊、伙伴群聊、伙伴配置抽屉、群聊配置抽屉），基于 Mock 数据实现完整界面与交互闭环。
+将 multiagent-orchestration 群聊与多智能体协同能力完整接入到 apps/web/ 前端应用中，重点实现群聊房间管理、历史消息流展示、以及 @伙伴 触发真实 Agent 执行与流式渲染。
 
-Working directory: /Users/xr/IDEA.localized/multiagent-orchestration
 Integrity mode: development
 
-Reference material:
-- Cindy 桌面端前端源码: `extensions/cindy/apps/desktop/src/renderer/`
-  - 群聊视图：`features/bots/BotGroupChatView.tsx`、`BotGroupComposer.tsx`、`BotGroupTimelineItem.tsx`、`BotGroupPlan.tsx`、`BotGroupLiveStatus.tsx`
-  - 群聊配置：`features/bots/BotGroupSettingsDrawer.tsx`、`ChatGroupSettings.tsx`、`ChatGroupMembersTab.tsx`
-  - 伙伴相关界面：`features/bots/`、`components/chat/`
-- 当前项目前端目录: `apps/desktop/src/renderer/`
+参考规范与已有实现：
+- docs/dev-rules/bot-group-orchestration.md
+- scripts/lib/room-storage.ts
+- scripts/lib/partner-scaffold.ts
+- scripts/lib/agent-driver.ts
+- scripts/cli-room.ts
 
 ## Requirements
 
-### R1. 伙伴私聊与群聊核心视图
-构建伙伴 1:1 独立私聊页面（含头像、角色徽标、状态指示器及消息气泡），以及伙伴群聊页面（包含多 Agent 时间轴气泡、Cindy 风格的分工计划卡 BotGroupPlan、实时进行中状态条及 @ 点名路由交互）。所有界面基于 Mock 数据驱动，具备完整的交互与渲染能力。
+### R1. 房间列表与管理（apps/web/）
+在 apps/web/ 前端界面中实现群聊房间的展示与切换，支持查看并选择预设的 multiagent-orchestration 房间及其他可用房间，保持房间状态与底层持久化（~/.multiagent-orchestration/groups/<room_slug>/）同步。
 
-### R2. 伙伴配置与群聊配置抽屉
-构建伙伴配置抽屉/页面（支持查看与编辑伙伴 SOUL.md、MEMORY.md、已挂载技能与双平面隔离沙箱路径展示），以及群聊配置抽屉/页面（支持群聊名称修改、成员增删与头像栈、群主/负责人设置、发言模式切换、群工作目录配置以及退出/解散操作）。
+### R2. 历史消息流展示与序列同步
+界面完整渲染房间的历史消息流，严格按照底层单调自增 sequence 顺序展示，包含发送者元数据（用户或对应伙伴身份），支持加载与回溯历史消息。
 
-### R3. 工程规范与代码解耦
-所有新增或重构的前端组件严格遵守仓库单文件行数规范（单文件 <= 600 行，达到 500 行进行预警和模块拆分），保持清晰的组件与状态解耦结构，且项目类型检查与构建无报错。
+### R3. 消息发送与 @伙伴 驱动交互
+提供消息输入框，支持用户发送文本消息；支持通过 @伙伴 语法指定伙伴并触发对应的 Agent 驱动逻辑，将真实 Agent 的响应流式或即时渲染到当前群聊消息流中。
 
-## Verification Resources
-- 本地 Vite 开发服务器：`http://127.0.0.1:3000`（或 `pnpm dev`）
-- 代码质量与规范校验命令：`pnpm typecheck`（或工程相应 lint/typecheck 脚本）及代码行数检查
+### R4. 数据流桥接与前后端协同
+建立 apps/web/ 前端与底层群聊存储（room-storage）及 Agent 驱动（agent-driver）之间的数据通信通道，确保消息收发、Agent 触发与执行状态变更在前端能够即时响应与更新。
 
 ## Acceptance Criteria
 
-### 伙伴私聊与群聊视图
-- [ ] 伙伴私聊页面具备独立的 1:1 对话流、伙伴头像展示、角色徽标及在线/运行状态指示器
-- [ ] 伙伴群聊页面渲染多 Agent 差异化时间轴气泡与消息流
-- [ ] 伙伴群聊页面包含 Cindy 风格的分工计划卡（BotGroupPlan）与任务阶段展示
-- [ ] 伙伴群聊页面具备实时进行中状态条（BotGroupLiveStatus）
-- [ ] 输入框（Composer）支持 @ 点名呼叫特定伙伴进行路由交互
+### 功能完整性
+- [ ] apps/web/ 前端可正常列出并切换群聊房间（包括 multiagent-orchestration 预设房间）
+- [ ] 房间内消息流按底层 sequence 序列准确渲染，发送者信息与内容完整展示
+- [ ] 用户在输入框输入并发送消息后，消息即时追加至房间流并持久化
+- [ ] 输入框中包含 @<伙伴名称> 时，能成功触发对应伙伴 Agent 并在界面中渲染其回复
 
-### 伙伴配置与群聊配置抽屉
-- [ ] 伙伴配置抽屉支持查看与编辑伙伴 SOUL.md 与 MEMORY.md 文本内容
-- [ ] 伙伴配置抽屉展示已挂载技能列表以及双平面隔离沙箱路径
-- [ ] 群聊配置抽屉支持修改群聊名称与群工作目录
-- [ ] 群聊配置抽屉支持群成员增删列表与头像栈展示
-- [ ] 群聊配置抽屉支持设置群主/负责人角色与发言模式切换
-- [ ] 群聊配置抽屉包含退出群聊/解散群聊的操作交互
-
-### 工程规范与构建质量
-- [ ] `apps/desktop/src/renderer/` 中本次新增及修改的所有前端源码文件，单文件行数均不超过 600 行
-- [ ] 前端工程通过类型检查（`pnpm typecheck`）且无编译错误
-- [ ] 在 `http://127.0.0.1:3000` 本地预览环境中四大页面可正常导航、渲染并完成 Mock 数据交互闭环
-
-
-## Follow-up — 2026-11-02T07:02:38Z
-
-请检查当前工作区：所有 M2 和 M3 的 12 个组件已全部实现完毕，tests/test-cindy-ui.mjs 35 项断言全绿通过。请验证并完成最终交付收尾。
+### 工程与构建验证
+- [ ] 执行 pnpm typecheck 无类型错误
+- [ ] 执行 pnpm test 测试通过
+- [ ] 执行 pnpm web:dev 前端服务可正常启动并在浏览器中完成上述核心交互流程

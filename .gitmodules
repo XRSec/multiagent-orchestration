@@ -1,3 +1,0 @@
-[submodule "extensions/cindy"]
-	path = extensions/cindy
-	url = https://github.com/makecindy/cindy.git

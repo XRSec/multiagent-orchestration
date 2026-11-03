@@ -1,46 +1,37 @@
-为 multiagent-orchestration 项目中的 @anthropic-ai/claude-agent-sdk Runtime 构建系统底座级 / 控制平面（Control Plane）Helper。将 8 项核心原子能力彻底解耦独立实现，并梳理与调整其在 Claude Code Agent SDK 生命周期管道中的精准执行顺序与流转集成。主会话以 Claude ID `2efe9e50-4306-497b-8b76-c112ffbd5d78` 为基础模拟对话，不调用真实云端大模型，主要用于验证与测试这 8 项辅助能力及管道流转。
+将 multiagent-orchestration 群聊与多智能体协同能力完整接入到 apps/web/ 前端应用中，重点实现群聊房间管理、历史消息流展示、以及 @伙伴 触发真实 Agent 执行与流式渲染。
 
-Working directory: /Users/xr/IDEA.localized/multiagent-orchestration
 Integrity mode: development
+
+参考规范与已有实现：
+- docs/dev-rules/bot-group-orchestration.md
+- scripts/lib/room-storage.ts
+- scripts/lib/partner-scaffold.ts
+- scripts/lib/agent-driver.ts
+- scripts/cli-room.ts
 
 ## Requirements
 
-### R1. 原子能力彻底解耦独立实现
-必须将 8 项核心能力完全拆开独立设计与实现，模块解耦，绝不拼成 1 个大杂烩或所谓的 3 个：
-- 能力 1：意图预检（Pre-flight Intent Analysis & Routing），毫秒级分析本轮需求，计算最小必要能力；包含顺延词（"ok", "继续", "好"）的 0ms 旁路直通。
-- 能力 2：Prompt Cache 保护（KV Cache Locking），System Prompt 绝对静态化保证，变动指令严格采用尾部注入规范（Tail Injection），锁定云端大模型 95%+ KV 缓存命中。
-- 能力 3：上下文去脂与三层渐进披露（3-Tier Progressive Disclosure），Layer 1（名称/元数据折叠，0成本）；Layer 2（≤180 字符高密微胶囊 Capsule）；Layer 3（按需深挖切片）。
-- 能力 4：历史工具输出阶梯衰减（Step-based Tool Output Scrubbing），针对多轮执行中累积的大型工具输出，按固定步长周期（Chunk-aligned step=6）进行头尾截断与摘要衰减，既防雪球效应，又防历史抖动击穿 Cache。
-- 能力 5：Prompt 提炼 + 缓存（Prompt Distillation & Prefix Cache），冗余客套指令精炼，静态前缀与动态参数冷热分离，维护确定性前缀缓存。
-- 能力 6：Tools 提炼 + 缓存（Tools Schema Slimming & Pre-compiled Cache），工具 Schema 精炼（去无用描述/示例），按意图动态暴露最小集，静态 Schema 哈希预编译缓存。
-- 能力 7：MCP 提炼 + 缓存（MCP Meta-Tooling & Snapshot Cache），外部 MCP 接口折叠为元工具（如 `gateway.list_tools` + `gateway.call_tool`），工具列表快照本地缓存。
-- 能力 8：Skill 提炼 + 缓存（Skill Distillation & Capsule Cache），类似 superpowers 的巨型技能首次读取后渐进蒸馏为 ≤180 字符胶囊，建立强哈希校验落盘缓存。
-代码模块遵循项目现有规范与架构（可置于 packages/ 或 apps/），由团队根据 monorepo 架构最佳实践落地。
+### R1. 房间列表与管理（apps/web/）
+在 apps/web/ 前端界面中实现群聊房间的展示与切换，支持查看并选择预设的 multiagent-orchestration 房间及其他可用房间，保持房间状态与底层持久化（~/.multiagent-orchestration/groups/<room_slug>/）同步。
 
-### R2. SDK 生命周期流水线编排与执行顺序调整
-在 Claude Code Agent SDK 生命周期（如 PreToolUse 钩子、Context 过滤管道、Message 转换、MCP 注册）中梳理并调整好各能力的精准执行顺序与流水线流转，确保作为类似 cindy_help 机制的底座 Helper 静默/自动调用。
+### R2. 历史消息流展示与序列同步
+界面完整渲染房间的历史消息流，严格按照底层单调自增 sequence 顺序展示，包含发送者元数据（用户或对应伙伴身份），支持加载与回溯历史消息。
 
-### R3. 模拟对话驱动验证
-以 Claude ID `2efe9e50-4306-497b-8b76-c112ffbd5d78` 为基准配置模拟对话环境；主会话不发起真实模型调用，全部通过 Mock 对话驱动与测试这 8 项能力的提炼、裁剪、缓存以及 SDK 生命周期管道流转。
+### R3. 消息发送与 @伙伴 驱动交互
+提供消息输入框，支持用户发送文本消息；支持通过 @伙伴 语法指定伙伴并触发对应的 Agent 驱动逻辑，将真实 Agent 的响应流式或即时渲染到当前群聊消息流中。
 
-## Verification Resources
-- 自动化单元测试套件：针对 8 项原子能力分别编写独立的自动化单元测试用例。
-- Mock SDK Pipeline 集成测试：基于 mock SDK pipeline 事件流与模拟对话上下文执行集成测试。
+### R4. 数据流桥接与前后端协同
+建立 apps/web/ 前端与底层群聊存储（room-storage）及 Agent 驱动（agent-driver）之间的数据通信通道，确保消息收发、Agent 触发与执行状态变更在前端能够即时响应与更新。
 
 ## Acceptance Criteria
 
-### 模块解耦与单元测试
-- [ ] 8 项原子能力各自作为独立模块解耦实现，各模块无不合理的相互强耦合
-- [ ] 每个原子能力模块均有独立、可全绿运行的自动化单元测试用例：
-  - [ ] 意图预检模块测试包含对顺延词（"ok", "继续", "好"）的 0ms 旁路直通验证
-  - [ ] Prompt Cache 保护模块测试验证 System Prompt 静态化与尾部注入规范
-  - [ ] 上下文去脂模块测试验证三层披露（Layer 1 折叠、Layer 2 ≤180 字符微胶囊、Layer 3 按需切片）
-  - [ ] 历史工具输出阶梯衰减模块测试验证基于 chunk-aligned step=6 的截断与摘要衰减
-  - [ ] Prompt 提炼模块测试验证冷热分离与确定性前缀缓存
-  - [ ] Tools 提炼模块测试验证 Schema 精炼与哈希缓存
-  - [ ] MCP 提炼模块测试验证元工具折叠（gateway.list_tools/call_tool）与快照缓存
-  - [ ] Skill 提炼模块测试验证 ≤180 字符胶囊生成与强哈希校验
+### 功能完整性
+- [ ] apps/web/ 前端可正常列出并切换群聊房间（包括 multiagent-orchestration 预设房间）
+- [ ] 房间内消息流按底层 sequence 序列准确渲染，发送者信息与内容完整展示
+- [ ] 用户在输入框输入并发送消息后，消息即时追加至房间流并持久化
+- [ ] 输入框中包含 @<伙伴名称> 时，能成功触发对应伙伴 Agent 并在界面中渲染其回复
 
-### 管道生命周期流转与模拟验证
-- [ ] 在 Claude Code Agent SDK 生命周期各阶段（PreToolUse 钩子、Context 过滤管道、Message 转换、MCP 注册）中，8 项能力的执行次序清晰、定义完备
-- [ ] 提供基于 Claude ID `2efe9e50-4306-497b-8b76-c112ffbd5d78` 模拟对话场景的 SDK 集成测试，全程无需调用真实外部模型接口，测试运行通过
+### 工程与构建验证
+- [ ] 执行 pnpm typecheck 无类型错误
+- [ ] 执行 pnpm test 测试通过
+- [ ] 执行 pnpm web:dev 前端服务可正常启动并在浏览器中完成上述核心交互流程
