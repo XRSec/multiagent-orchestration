@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(rtk ls *)"
+    ]
+  },
+  "disabledMcpServers": [
+    "cua-driver",
+    "pi-web-access",
+    "scheduled-tasks"
+  ],
+  "enabledPlugins": {
+    "nowledge-mem@nowledge-community": false
+  },
+  "skillOverrides": {
+    "impeccable": "user-invocable-only",
+    "gemini-research-exporter": "user-invocable-only",
+    "vps-headless-gemini": "user-invocable-only",
+    "pi-process-testing": "user-invocable-only",
+    "vps-browser-deployment": "user-invocable-only"
+  }
+}

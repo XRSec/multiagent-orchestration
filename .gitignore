@@ -3,7 +3,9 @@ node_modules/
 .sessions/
 *.log
 .env
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/skills/
 dist/
 coverage/
 multiagent-orchestration-old/
