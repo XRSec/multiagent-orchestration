@@ -811,6 +811,8 @@ export interface BotsReparentDelegationsResult {
 
 export interface BotsCreateDelegationArgs {
   maxActiveChildren: number;
+  /** Admission ceiling enforced in the worker transaction (I4). Defaults to 1. */
+  maxDepth?: number;
   delegation: {
     id: string;
     requestingBotId: string;

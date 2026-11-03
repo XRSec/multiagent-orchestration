@@ -24,7 +24,7 @@ const h = vi.hoisted(() => ({ root: '', botId: '', created: false, verified: fal
   snapshot: null as unknown as ImportSnapshot, store: null as unknown as ReturnType<typeof createCompanionEnvironmentStore>,
   routines: [] as Routine[], pause: vi.fn(), lifecycle: vi.fn(), sourceEnvironment: {} as Record<string, string>, native: false, invitation: vi.fn(),
   profile: { config: {} } as Record<string, unknown>, importMedia: vi.fn(), writeProfile: vi.fn(), importDocument: vi.fn(), readName: vi.fn(), secretValues: new Map<string, string>(),
-  connectImBot: vi.fn(),
+  connectImBot: vi.fn(), reconcile: vi.fn(async () => null), mirroredWrite: vi.fn(), recordMirror: vi.fn(),
 }));
 vi.mock('electron', () => ({ app: { getPath: () => h.root, getAppPath: () => process.cwd(), isPackaged: false } }));
 vi.mock('../../appSessionState.js', () => ({ activeOwnerScopeKey: () => h.root, ownerScopedUserDataPath: () => h.root, getActiveAppSession: () => ({ dataOwnerId: 'fixture-owner' }), isAppSessionBoundaryPending: () => h.boundary }));
@@ -33,12 +33,15 @@ vi.mock('../../localDb/ipc/bots.js', () => ({
   getBotRemoteResourceSource: vi.fn(),
   createBotProfile: vi.fn(), createBotCanonicalSession: async () => ({ canonicalSessionId: 'chat' }),
   prepareImportedBotInvitation: h.invitation,
-  getBotMemoryService: () => ({ importDocument: h.importDocument }), reconcileBotProfileFolder: async () => {},
+  getBotMemoryService: () => ({ importDocument: h.importDocument }), reconcileBotProfileFolder: h.reconcile,
 }));
 vi.mock('../../localDb/ipc/botAvatarSelection.js', () => ({ validateBotAvatarBuffer: vi.fn(), decodeBotAvatarImage: vi.fn() }));
 vi.mock('../../maker-ipc/botProfileFolder.js', () => ({ BOT_PROFILE_TEXT_MAX_BYTES: 100000, readBotProfileFolder: async () => h.profile, writeBotProfileFolder: h.writeProfile,
   ensureBotWorkspaceDir: async () => { const directory = path.join(h.root, 'bots', h.botId, 'workspace'); await fs.mkdir(directory, { recursive: true }); return directory; },
 }));
+// Import must NOT go through the host mirror (it would classify imported text as 'stale').
+vi.mock('../../maker-ipc/botProfileMirrorMarkerStore.js', () => ({ writeBotProfileFolderMirrored: h.mirroredWrite, recordBotProfileMirror: h.recordMirror,
+  recordBotProfileMirrorIfUnchanged: h.recordMirror, rewriteBotProfileMirrorIfCurrent: h.mirroredWrite, readBotProfileFolderWithMarker: vi.fn(), readBotProfileMirrorMarker: vi.fn() }));
 vi.mock('@cindy/mcps', () => ({ resolveLiziMcpSessionContext: () => ({ sessionId: 'chat' }) }));
 vi.mock('../sources.js', () => ({ createImportSourceReader: vi.fn(() => ({ readName: h.readName })), discoverImportSources: vi.fn(async () => [h.snapshot.source]), inspectImportSource: vi.fn(async () => h.snapshot) }));
 vi.mock('../openclawCron.js', () => ({ readOpenClawCronDatabase: vi.fn() }));
@@ -98,7 +101,7 @@ beforeEach(async () => {
   vi.mocked(getBotRemoteResourceSource).mockReset().mockImplementation(async () => { if (!h.created) throw new Error('[NOT_FOUND]'); return { canonicalSessionId: 'chat' } as never; });
   vi.mocked(createBotProfile).mockReset().mockImplementation(async input => { h.created = true; h.botId = (input as { id: string }).id; return {} as never; });
   vi.mocked(createMessage).mockReset();
-  h.profile = { config: {} }; h.importMedia.mockReset().mockResolvedValue('cindy-media://blobs/fixture.png');
+  h.profile = { config: {} }; h.reconcile.mockClear(); h.mirroredWrite.mockClear(); h.recordMirror.mockClear(); h.importMedia.mockReset().mockResolvedValue('cindy-media://blobs/fixture.png');
   h.writeProfile.mockReset().mockImplementation(async (_root, _bot, patch) => { h.profile = { ...h.profile, ...patch }; }); h.importDocument.mockReset().mockResolvedValue(undefined);
   vi.mocked(decodeBotAvatarImage).mockReset();
   vi.mocked(discoverImportSources).mockReset().mockImplementation(async () => [h.snapshot.source]);
@@ -704,6 +707,12 @@ it.each([false, true])('redacts all known credentials from profile/memory copies
   const result = await startCompanionImport(selection, 'fixture');
   await vi.waitFor(async () => expect((await getCompanionImportResult(selection.requestId))?.status).toBe('complete'));
   const profile = h.writeProfile.mock.calls[0]![2];
+  // Import writes SOUL/USER through the plain (unmarked) writer and then reconciles: no host
+  // marker is recorded, so the imported text classifies as 'edited' and is derived.
+  expect(h.reconcile).toHaveBeenCalledWith(result.botId);
+  expect(h.writeProfile.mock.invocationCallOrder[0]!).toBeLessThan(h.reconcile.mock.invocationCallOrder[0]!);
+  expect(h.mirroredWrite).not.toHaveBeenCalled();
+  expect(h.recordMirror).not.toHaveBeenCalled();
   const publicText = JSON.stringify([profile, h.importDocument.mock.calls]);
   for (const secret of secrets) expect(publicText).not.toContain(secret);
   expect(publicText).not.toContain('fake-unselected-key');

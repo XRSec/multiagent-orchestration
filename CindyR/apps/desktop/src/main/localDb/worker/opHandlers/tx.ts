@@ -10,6 +10,7 @@ import { botProfileModelSelectionChanged } from '../../../../shared/botModelChai
 import { dbToMakerAgentKind } from '../../../../shared/agentKindConversion.js';
 import { parseScheduledModelBaseline } from '../../../../shared/scheduledModelBaseline.js';
 import { normalizeBotName } from '../../../../shared/botCreation.js';
+import { assertDelegationAdmissible, isPositiveProfileVersion, parseDelegationLineage } from '../../../../shared/botDelegationLineage.js';
 import { inferBotTemplatePresetId } from '../../../../shared/botTemplatePreset.js';
 // inproc 回滚口：仅在 XDT_DB_INPROC=true 时使用。
 // 默认热路径走 file worker（dbWorker.ts + dispatcher），这里要和同名 tx handler 保持一致。
@@ -1083,12 +1084,52 @@ function botsReparentDelegations(
   })();
 }
 
-function botsCreateDelegation(db: Database.Database, args: unknown): void {
+/**
+ * Authoritative admission gate (I4): recompute lineage/depth from the delegation that owns the
+ * parent session and reject cycles, self-targets, over-depth and unfrozen target versions.
+ * Must run inside the createDelegation transaction, before any row is inserted.
+ */
+function admitDelegationInTx(db: Database.Database, input: {
+  parentSessionId: string;
+  requesterBotId: string;
+  targetBotId: string | null;
+  targetProfileVersion: number | null;
+  maxDepth: number;
+}): { lineage: string[]; depth: number } {
+  const parentRow = db.prepare(`SELECT lineage_json AS lineageJson, depth FROM bot_delegations
+    WHERE child_session_id = ? ORDER BY created_at DESC LIMIT 1`)
+    .get(input.parentSessionId) as { lineageJson: string; depth: number } | undefined;
+  const parentLineage = parentRow ? parseDelegationLineage(parentRow.lineageJson) : [];
+  if (parentLineage === null) throw new Error('DELEGATION_LINEAGE_INVALID');
+  return assertDelegationAdmissible({
+    parentLineage,
+    parentDepth: parentRow?.depth ?? 0,
+    requesterBotId: input.requesterBotId,
+    targetBotId: input.targetBotId,
+    targetProfileVersion: input.targetProfileVersion,
+    maxDepth: input.maxDepth,
+  });
+}
+
+function parseCreateDelegationArgs(args: unknown) {
   const p = asRecord(args, 'bots.createDelegation args');
   const d = asRecord(p.delegation, 'delegation');
-  const requestingBotId = expectString(d.requestingBotId, 'delegation.requestingBotId');
-  const maxActiveChildren = expectNumber(p.maxActiveChildren, 'maxActiveChildren');
-  const createdAt = expectNumber(d.createdAt, 'delegation.createdAt');
+  // Advisory only: validated for wire-contract compatibility, recomputed by the admission gate (I4).
+  expectString(d.lineageJson, 'delegation.lineageJson');
+  expectNumber(d.depth, 'delegation.depth');
+  return {
+    p, d,
+    requestingBotId: expectString(d.requestingBotId, 'delegation.requestingBotId'),
+    maxActiveChildren: expectNumber(p.maxActiveChildren, 'maxActiveChildren'),
+    createdAt: expectNumber(d.createdAt, 'delegation.createdAt'),
+    maxDepth: p.maxDepth == null ? 1 : expectNumber(p.maxDepth, 'maxDepth'),
+    parentSessionId: expectString(d.parentSessionId, 'delegation.parentSessionId'),
+  };
+}
+
+function botsCreateDelegation(db: Database.Database, args: unknown): void {
+  const { p, d, requestingBotId, maxActiveChildren, createdAt, maxDepth, parentSessionId } =
+    parseCreateDelegationArgs(args);
   db.transaction(() => {
     const count = db.prepare(`SELECT COUNT(*) AS count FROM bot_delegations
       WHERE requesting_bot_id = ? AND status IN ('queued','running','waiting')`)
@@ -1099,6 +1140,9 @@ function botsCreateDelegation(db: Database.Database, args: unknown): void {
     const targetProfileVersion = d.targetProfileVersion === null || d.targetProfileVersion === undefined
       ? null
       : expectNumber(d.targetProfileVersion, 'delegation.targetProfileVersion');
+    const admitted = admitDelegationInTx(db, {
+      parentSessionId, requesterBotId: requestingBotId, targetBotId, targetProfileVersion, maxDepth,
+    });
     const s = asRecord(p.session, 'session');
     insertBotSession(db, s);
     const childSessionId = expectString(d.childSessionId, 'delegation.childSessionId');
@@ -1118,12 +1162,13 @@ function botsCreateDelegation(db: Database.Database, args: unknown): void {
        last_error, created_at, accepted_at, completed_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, NULL, 0, 'queued', NULL, NULL, ?, NULL, NULL, ?)`)
       .run(delegationId, requestingBotId, targetBotId,
-        expectString(d.parentSessionId, 'delegation.parentSessionId'), childSessionId,
+        parentSessionId, childSessionId,
         expectString(d.objective, 'delegation.objective'), expectString(d.contextRefsJson, 'delegation.contextRefsJson'),
         expectString(d.permissionSnapshotJson, 'delegation.permissionSnapshotJson'),
-        expectString(d.lineageJson, 'delegation.lineageJson'),
+        // was: expectString(d.lineageJson,...) / expectNumber(d.depth,...) — superseded by admission gate (I4)
+        JSON.stringify(admitted.lineage),
         targetProfileVersion,
-        expectNumber(d.depth, 'delegation.depth'),
+        admitted.depth,
         createdAt, createdAt);
   })();
 }
@@ -1143,6 +1188,10 @@ function botsReopenDelegation(
   const targetProfileVersion = p.targetProfileVersion === null || p.targetProfileVersion === undefined
     ? null
     : expectNumber(p.targetProfileVersion, 'targetProfileVersion');
+  // Reopen re-runs an existing lineage: only the frozen target version is checked here (I4).
+  if (targetBotId !== null && !isPositiveProfileVersion(targetProfileVersion)) {
+    throw new Error('DELEGATION_TARGET_VERSION_MISSING');
+  }
   const reopenedAt = expectNumber(p.reopenedAt, 'reopenedAt');
   const maxActiveChildren = expectNumber(p.maxActiveChildren, 'maxActiveChildren');
 

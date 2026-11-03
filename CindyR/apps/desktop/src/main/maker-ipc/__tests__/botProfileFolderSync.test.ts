@@ -12,8 +12,10 @@ import type { BotProfileFolderContent } from '../botProfileFolder';
 import {
   botProfileFolderMatchesSnapshot,
   syncBotProfileFromFolder,
+  type BotProfileFolderSyncDeps,
   type BotProfileSnapshot,
 } from '../botProfileFolderSync';
+import { fingerprintBotProfileText, type BotProfileMirrorMarker } from '../botProfileMirrorMarker';
 
 function folder(overrides: Partial<BotProfileFolderContent> = {}): BotProfileFolderContent {
   return {
@@ -158,5 +160,122 @@ describe('对账', () => {
       snapshot: snapshot({ identitySource: '改过的', currentVersion: 4 }),
     });
     expect(await syncBotProfileFromFolder('bot-a', after.deps)).toBe('unchanged');
+  });
+});
+
+describe('镜像指纹:旧镜像按数据库重写,真编辑才派生', () => {
+  const OLD = '你是旧的纸老虎。';
+  const NEW = snapshot().identitySource;
+  const NEW_USER = 'Chris 住在上海。';
+
+  function mirrorHarness(
+    over: { folder?: BotProfileFolderContent; marker?: BotProfileMirrorMarker | null } = {},
+  ) {
+    const base = harness({ folder: over.folder });
+    const deriveVersion = vi.fn(async () => 4);
+    const rewriteFolder = vi.fn(async () => true);
+    const recordMirror = vi.fn(async () => {});
+    const readFolderWithMarker = vi.fn(async () => ({
+      folder: over.folder ?? folder(),
+      marker: over.marker ?? null,
+    }));
+    const deps: BotProfileFolderSyncDeps = {
+      ...base.deps,
+      deriveVersion,
+      readFolderWithMarker,
+      rewriteFolder,
+      recordMirror,
+    };
+    return { deps, deriveVersion, rewriteFolder, recordMirror, readFolderWithMarker };
+  }
+
+  const marker = (soul: string, user = NEW_USER): BotProfileMirrorMarker => ({
+    schemaVersion: 1,
+    soul: fingerprintBotProfileText(soul),
+    userContext: fingerprintBotProfileText(user),
+  });
+
+  it('文件是宿主上次写的旧内容:mirror-stale,按数据库重写,不派生', async () => {
+    const h = mirrorHarness({ folder: folder({ identitySource: OLD }), marker: marker(OLD) });
+    expect(await syncBotProfileFromFolder('bot-a', h.deps)).toBe('mirror-stale');
+    expect(h.deriveVersion).not.toHaveBeenCalled();
+    expect(h.rewriteFolder).toHaveBeenCalledWith('bot-a', ['soul'], 3);
+  });
+
+  it('手改的 SOUL.md(指纹不符):派生,并为派生的文本补记指纹', async () => {
+    const h = mirrorHarness({ folder: folder({ identitySource: '手改' }), marker: marker(OLD) });
+    expect(await syncBotProfileFromFolder('bot-a', h.deps)).toBe('derived');
+    expect(h.deriveVersion).toHaveBeenCalledWith(
+      expect.objectContaining({ identitySource: '手改', expectedCurrentVersion: 3 }),
+    );
+    expect(h.recordMirror).toHaveBeenCalledWith('bot-a', { identitySource: '手改' });
+    expect(h.rewriteFolder).not.toHaveBeenCalled();
+  });
+
+  it('旧 harness(无指纹依赖)行为不变:按文件派生', async () => {
+    const h = harness({ folder: folder({ identitySource: OLD }) });
+    expect(await syncBotProfileFromFolder('bot-a', h.deps)).toBe('derived');
+    expect(h.deriveVersion).toHaveBeenCalledWith(expect.objectContaining({ identitySource: OLD }));
+  });
+
+  it('读指纹失败时退回旧行为(无指纹),不因指纹抛错', async () => {
+    const h = mirrorHarness({ folder: folder({ identitySource: OLD }) });
+    h.readFolderWithMarker.mockRejectedValueOnce(new Error('EACCES'));
+    h.deps.readFolder = async () => folder({ identitySource: OLD });
+    expect(await syncBotProfileFromFolder('bot-a', h.deps)).toBe('derived');
+    expect(h.deriveVersion).toHaveBeenCalledWith(expect.objectContaining({ identitySource: OLD }));
+  });
+
+  it('SOUL 手改 + USER 旧镜像:USER 取快照派生,派生后按新版本重写 USER', async () => {
+    const h = mirrorHarness({
+      folder: folder({ identitySource: '手改', userContextSource: '旧用户画像' }),
+      marker: marker(OLD, '旧用户画像'),
+    });
+    expect(await syncBotProfileFromFolder('bot-a', h.deps)).toBe('derived');
+    expect(h.deriveVersion).toHaveBeenCalledWith(
+      expect.objectContaining({
+        identitySource: '手改',
+        config: expect.objectContaining({ userContextSource: NEW_USER }),
+      }),
+    );
+    expect(h.rewriteFolder).toHaveBeenCalledWith('bot-a', ['userContext'], 4);
+    expect(h.deriveVersion.mock.invocationCallOrder[0]!).toBeLessThan(
+      h.rewriteFolder.mock.invocationCallOrder[0]!,
+    );
+    expect(h.recordMirror).toHaveBeenCalledWith('bot-a', { identitySource: '手改' });
+  });
+
+  it('一致时 unchanged 并补记指纹;补记失败仍是 unchanged', async () => {
+    const h = mirrorHarness();
+    expect(await syncBotProfileFromFolder('bot-a', h.deps)).toBe('unchanged');
+    expect(h.recordMirror).toHaveBeenCalledOnce();
+    expect(h.recordMirror).toHaveBeenCalledWith('bot-a', {
+      identitySource: NEW,
+      userContextSource: NEW_USER,
+    });
+    h.recordMirror.mockRejectedValueOnce(new Error('EROFS'));
+    expect(await syncBotProfileFromFolder('bot-a', h.deps)).toBe('unchanged');
+  });
+
+  it('mirror-stale 重写失败:向调用方抛出,且不派生', async () => {
+    const h = mirrorHarness({ folder: folder({ identitySource: OLD }), marker: marker(OLD) });
+    h.rewriteFolder.mockRejectedValueOnce(new Error('ENOSPC'));
+    await expect(syncBotProfileFromFolder('bot-a', h.deps)).rejects.toThrow('ENOSPC');
+    expect(h.deriveVersion).not.toHaveBeenCalled();
+  });
+
+  it('对账期间版本已前进:跳过重写,mirror-skipped,不派生', async () => {
+    const h = mirrorHarness({ folder: folder({ identitySource: OLD }), marker: marker(OLD) });
+    h.rewriteFolder.mockResolvedValueOnce(false);
+    expect(await syncBotProfileFromFolder('bot-a', h.deps)).toBe('mirror-skipped');
+    expect(h.deriveVersion).not.toHaveBeenCalled();
+  });
+
+  it('重写之后再对账是 unchanged,不会无限派生', async () => {
+    const h = mirrorHarness({ folder: folder({ identitySource: OLD }), marker: marker(OLD) });
+    expect(await syncBotProfileFromFolder('bot-a', h.deps)).toBe('mirror-stale');
+    h.readFolderWithMarker.mockResolvedValue({ folder: folder(), marker: marker(NEW) });
+    expect(await syncBotProfileFromFolder('bot-a', h.deps)).toBe('unchanged');
+    expect(h.deriveVersion).not.toHaveBeenCalled();
   });
 });

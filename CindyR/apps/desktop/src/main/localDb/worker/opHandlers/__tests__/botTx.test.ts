@@ -50,6 +50,22 @@ describe('Bot named worker transactions', () => {
         session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL, event_type TEXT NOT NULL,
         payload_json TEXT NOT NULL, created_at INTEGER NOT NULL
       );
+      CREATE TABLE bot_delegations (
+        id TEXT PRIMARY KEY NOT NULL,
+        requesting_bot_id TEXT NOT NULL REFERENCES bot_profiles(id) ON DELETE CASCADE,
+        target_bot_id TEXT REFERENCES bot_profiles(id) ON DELETE CASCADE,
+        parent_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        child_session_id TEXT REFERENCES sessions(id) ON DELETE SET NULL,
+        objective TEXT NOT NULL, context_refs_json TEXT DEFAULT '[]' NOT NULL,
+        artifact_refs_json TEXT DEFAULT '[]' NOT NULL, permission_snapshot_json TEXT DEFAULT '{}' NOT NULL,
+        lineage_json TEXT DEFAULT '[]' NOT NULL, target_profile_version INTEGER,
+        depth INTEGER DEFAULT 1 NOT NULL, budget_tokens INTEGER, tokens_used INTEGER DEFAULT 0 NOT NULL,
+        status TEXT DEFAULT 'queued' NOT NULL, result_summary TEXT,
+        output_artifacts_json TEXT DEFAULT '[]' NOT NULL, pending_interaction_json TEXT, last_error TEXT,
+        run_sequence INTEGER DEFAULT 1 NOT NULL, created_at INTEGER NOT NULL, accepted_at INTEGER,
+        completed_at INTEGER, completion_delivered_at INTEGER, updated_at INTEGER NOT NULL,
+        group_task_posts_json TEXT DEFAULT '{}' NOT NULL
+      );
     `);
   });
 
@@ -664,5 +680,95 @@ describe('Bot named worker transactions', () => {
       .toEqual({ status: 'conflict', canonicalSessionId: null });
     expect(db.prepare("SELECT role FROM bot_session_links WHERE bot_id = 'bot-1'").pluck().get())
       .toBe('route');
+  });
+
+  // I4: the worker transaction is the authoritative delegation admission gate.
+  describe('delegation lineage admission', () => {
+    const counts = () => ({
+      sessions: db.prepare('SELECT COUNT(*) FROM sessions').pluck().get(),
+      links: db.prepare('SELECT COUNT(*) FROM bot_session_links').pluck().get(),
+      delegations: db.prepare('SELECT COUNT(*) FROM bot_delegations').pluck().get(),
+    });
+    const seedSession = (id: string) => db.prepare(`INSERT INTO sessions
+      (id, title, workspace_kind, model, effort, permission_mode, status, total_token_usage,
+       total_cost_usd, context_tokens, context_window, fast_mode, plan_mode_enabled, agent_kind,
+       extra_dirs, source, created_at, updated_at)
+      VALUES (?, 'Seed', 'dialogue', 'claude-sonnet-4-6', 'high', 'ask', 'active',
+       0, 0, 0, 0, 0, 0, 'cc', '[]', 'bot', 1, 1)`).run(id);
+    const seedParentDelegation = (lineageJson: string) => db.prepare(`INSERT INTO bot_delegations
+      (id, requesting_bot_id, parent_session_id, child_session_id, objective, lineage_json, depth,
+       status, created_at, updated_at)
+      VALUES ('D1', 'A', 'S0', 'S1', 'seed', ?, 1, 'running', 1, 1)`).run(lineageJson);
+    const createDelegation = (overrides: {
+      requester?: string; parent?: string; targetBotId?: string | null;
+      targetProfileVersion?: number | null; maxDepth?: number; lineageJson?: string; depth?: number;
+    } = {}) => tx(db, { name: 'bots.createDelegation', args: {
+      maxActiveChildren: 10,
+      ...(overrides.maxDepth === undefined ? {} : { maxDepth: overrides.maxDepth }),
+      session: { id: 'child', title: 'Child', workingDir: null, workspaceKind: 'dialogue',
+        model: 'claude-sonnet-4-6', effort: 'high', permissionMode: 'ask', agentKind: 'cc',
+        remoteHostId: null, providerId: null, parentSessionId: overrides.parent ?? 'S0',
+        extraDirs: '[]', source: 'bot', createdAt: 5, updatedAt: 5 },
+      delegation: { id: 'D2', requestingBotId: overrides.requester ?? 'A',
+        targetBotId: overrides.targetBotId ?? null, parentSessionId: overrides.parent ?? 'S0',
+        childSessionId: 'child', objective: 'work', contextRefsJson: '[]', permissionSnapshotJson: '{}',
+        lineageJson: overrides.lineageJson ?? '["A"]',
+        targetProfileVersion: overrides.targetProfileVersion ?? null,
+        depth: overrides.depth ?? 1, createdAt: 5 },
+    } });
+
+    beforeEach(() => {
+      for (const id of ['A', 'B']) {
+        tx(db, { name: 'bots.createProfile', args: {
+          id, displayName: id, description: '', avatar: '', avatarColor: 'blue',
+          identitySource: 'identity', capabilitiesJson: '{}', now: 1,
+        } });
+      }
+      seedSession('S0');
+      seedSession('S1');
+    });
+
+    it('recomputes lineage and depth for a top-level plain task, ignoring producer values', () => {
+      createDelegation({ lineageJson: '["X","Y"]', depth: 9 });
+      expect(db.prepare("SELECT lineage_json AS lineage, depth FROM bot_delegations WHERE id = 'D2'").get())
+        .toEqual({ lineage: '["A"]', depth: 1 });
+    });
+
+    it('rejects a target bot without a frozen profile version and rolls back', () => {
+      const before = counts();
+      expect(() => createDelegation({ targetBotId: 'B', targetProfileVersion: null }))
+        .toThrow('DELEGATION_TARGET_VERSION_MISSING');
+      expect(counts()).toEqual(before);
+    });
+
+    it('rejects nested delegation by depth, then by cycle when depth allows it', () => {
+      seedParentDelegation('["A"]');
+      const before = counts();
+      expect(() => createDelegation({ requester: 'B', parent: 'S1' })).toThrow('DELEGATION_DEPTH_EXCEEDED');
+      expect(counts()).toEqual(before);
+      expect(() => createDelegation({ requester: 'B', parent: 'S1', maxDepth: 3, targetBotId: 'A', targetProfileVersion: 1 }))
+        .toThrow('DELEGATION_CYCLE');
+      expect(counts()).toEqual(before);
+    });
+
+    it('fails closed on a corrupted parent lineage', () => {
+      seedParentDelegation('{bad');
+      expect(() => createDelegation({ requester: 'B', parent: 'S1', maxDepth: 3 }))
+        .toThrow('DELEGATION_LINEAGE_INVALID');
+    });
+
+    it('rejects reopen with a target bot but no frozen version before any update', () => {
+      db.prepare(`INSERT INTO bot_delegations
+        (id, requesting_bot_id, target_bot_id, parent_session_id, child_session_id, objective,
+         lineage_json, target_profile_version, depth, status, created_at, updated_at)
+        VALUES ('D3', 'A', 'B', 'S0', 'S1', 'seed', '["A"]', NULL, 1, 'completed', 1, 1)`).run();
+      expect(() => tx(db, { name: 'bots.reopenDelegation', args: {
+        delegationId: 'D3', requestingBotId: 'A', expectedStatus: 'completed', targetBotId: 'B',
+        targetProfileVersion: null, reopenedAt: 9, maxActiveChildren: 10, childSessionId: 'S1',
+        parentSessionId: 'S0', objective: 'again', permissionSnapshotJson: '{}',
+      } })).toThrow('DELEGATION_TARGET_VERSION_MISSING');
+      expect(db.prepare("SELECT status, run_sequence AS run FROM bot_delegations WHERE id = 'D3'").get())
+        .toEqual({ status: 'completed', run: 1 });
+    });
   });
 });

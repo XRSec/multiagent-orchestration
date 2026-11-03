@@ -34,6 +34,7 @@ import { chatLocalHistory } from './chatLocalHistory.js';
 import { chatSendJournal } from './chatSendJournal.js';
 import { prepareBotGroupTaskPost, type BotGroupTaskPostSnapshot } from './botGroupTaskPostSnapshot.js';
 import { registerGroupToolAuthority, GroupToolAuthorizationError } from './botGroupToolAuthorization.js';
+import { admitOrdinaryExecutionSource } from './botGroupExecutionAdmission.js';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { notificationPreview } from '../notificationPreview.js';
@@ -2341,7 +2342,9 @@ function createChatServer(local: BotGroupChatService, deps: BotGroupChatServiceD
           }
         }
         const source = await sourceRead;
-        if (source?.origin === 'system') throw new Error('INVALID_EXECUTION_TRIGGER');
+        // Superseded by admitOrdinaryExecutionSource (bot-group-chat.md §4.0 host-side admission):
+        // if (source?.origin === 'system') throw new Error('INVALID_EXECUTION_TRIGGER');
+        if (run.context?.kind === 'message' && !admitOrdinaryExecutionSource({ singleSpeaker, planId: execution.plan_id, maskOwnerId: execution.mask_owner_id, digest, source }).ok) throw new Error('INVALID_EXECUTION_TRIGGER');
         // Plan steps belong to the main group; a Thread request gets the Thread's own lane.
         const threadRootId = run.plan || digest ? undefined : source?.threadRootId ?? undefined;
         const lane = await deps.ensureLane({ botId: bot.id, groupId: s.room.id, title: s.room.name,

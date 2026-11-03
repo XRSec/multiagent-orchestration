@@ -3499,6 +3499,8 @@ plan action 的服务端权限，IPC `bot-group:stop` 追加可选 `scope`；
 受影响的旧服务端仍忽略 `mentioned`，旧 Desktop 也可能把闲聊作为队列补充发送；能力位本身不能证明修复已部署，
 仅客户端或仅服务端合并均不代表完整生产修复上线，发布后须复验普通消息、定向回复与运行中队列补充。
 
+宿主侧准入（纵深防御，不取代服务端派发规则）：在声明该能力的服务器上，非分工/队列（无 `plan_id`）、非 AI 代答（无 `mask_owner_id`、非 digest）的普通执行，若 `source_message_id` 指向伙伴发出的消息（`author.kind` 或 `origin` 为 `bot`）或系统消息，本机在建群专线前拒绝执行（`INVALID_EXECUTION_TRIGGER`，上报为通用运行错误）；**无 wire 变更**，规则见 bot-group-chat.md §4.0，实现见 `botGroupExecutionAdmission.ts`。未经服务端代码验证的前提：该能力下非分工的后续执行均引用发起请求的人类消息作为来源；若服务端改为引用伙伴回复，此准入会拒绝该执行，须同步调整。旧服务器的有限续圈不受影响。
+
 ### 伙伴群聊引用回复（`cindy.quote` v1）
 
 主时间线的引用回复不使用服务器 `replyToId`：现行服务端要求它与 `threadRootId` 指向同一 Thread，

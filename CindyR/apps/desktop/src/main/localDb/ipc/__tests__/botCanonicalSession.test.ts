@@ -3676,6 +3676,131 @@ describe('Bot canonical Session lifecycle', () => {
     expect(snapshots).toEqual([]);
   });
 
+  /*
+    委派子任务在创建时冻结名称、简介与覆盖层的指纹;续接时漂移只降级、不阻断,
+    且基线始终沿用创建时那一份,不会被漂移后的快照「洗白」。
+  */
+  describe('delegation frozen role fingerprint', () => {
+    const startDelegation = async (expectedProfileVersion = 1) => {
+      const created = await invoke('local-db:bots:create-canonical-session', {
+        botId: 'bot-1', expectedCanonicalSessionId: null, expectedProfileVersion,
+      });
+      h.sqlite!.prepare('UPDATE bot_session_links SET role = ? WHERE session_id = ?').run('delegation', created.session.id);
+      const makeOpts = (): MakerSessionCreateOpts => ({
+        id: created.session.id,
+        agentKind: 'claude-code',
+        workingDir: created.session.workingDir,
+        workspaceKind: 'dialogue',
+        model: 'test-model',
+        permissionMode: 'bypassPermissions',
+      });
+      return { sessionId: created.session.id, makeOpts };
+    };
+    const rename = (name: string) => h.sqlite!.prepare('UPDATE bot_profiles SET display_name = ? WHERE id = ?').run(name, 'bot-1');
+    const resolvedOf = (snapshotId: string) => JSON.parse(h.sqlite!
+      .prepare('SELECT resolved_json FROM bot_runtime_snapshots WHERE id = ?').pluck().get(snapshotId) as string);
+    const skillDeps = { listSkills: async () => [] };
+
+    it('degrades a renamed delegation instead of throwing and keeps the creation baseline', async () => {
+      const { makeOpts } = await startDelegation();
+      const first = await hydrateBotProfileRuntime(makeOpts(), skillDeps);
+      expect(first?.resolutionStatus).toBe('applied');
+      expect(first).not.toHaveProperty('frozenRoleDrift');
+      await markBotProfileRuntimeApplied(first!);
+      rename('Renamed');
+
+      const drifted = await hydrateBotProfileRuntime(makeOpts(), skillDeps);
+      expect(drifted).toMatchObject({ resolutionStatus: 'degraded', frozenRoleDrift: ['displayName'] });
+      const before = resolvedOf(first!.snapshotId);
+      const after = resolvedOf(drifted!.snapshotId);
+      expect(after.frozenRole.displayNameSha256).toBe(before.frozenRole.displayNameSha256);
+      expect(after.frozenRoleDrift).toEqual(['displayName']);
+      expect(JSON.stringify(after)).not.toContain('Renamed');
+    });
+
+    it('fingerprints the overlay and ignores an unreadable profile folder', async () => {
+      const { makeOpts } = await startDelegation();
+      const folder = (systemPromptOverride: string) => async () => ({ homeDir: '/bots/bot-1', systemPromptOverride });
+      const first = await hydrateBotProfileRuntime(makeOpts(), { ...skillDeps, readProfileFolder: folder('A') });
+      await markBotProfileRuntimeApplied(first!);
+
+      await expect(hydrateBotProfileRuntime(makeOpts(), { ...skillDeps, readProfileFolder: folder('B') }))
+        .resolves.toMatchObject({ resolutionStatus: 'degraded', frozenRoleDrift: ['systemPromptOverride'] });
+      const unreadable = await hydrateBotProfileRuntime(makeOpts(), {
+        ...skillDeps,
+        readProfileFolder: async () => { throw new Error('disk unavailable'); },
+      });
+      expect(unreadable?.resolutionStatus).toBe(first?.resolutionStatus);
+      expect(unreadable).not.toHaveProperty('frozenRoleDrift');
+    });
+
+    it('keeps reporting drift across resumes and clears it when the name is reverted', async () => {
+      const { makeOpts } = await startDelegation();
+      const first = await hydrateBotProfileRuntime(makeOpts(), skillDeps);
+      await markBotProfileRuntimeApplied(first!);
+      rename('Renamed');
+      const second = await hydrateBotProfileRuntime(makeOpts(), skillDeps);
+      expect(second?.frozenRoleDrift).toEqual(['displayName']);
+      await markBotProfileRuntimeApplied(second!);
+
+      await expect(hydrateBotProfileRuntime(makeOpts(), skillDeps))
+        .resolves.toMatchObject({ resolutionStatus: 'degraded', frozenRoleDrift: ['displayName'] });
+      rename('Release Bot');
+      const reverted = await hydrateBotProfileRuntime(makeOpts(), skillDeps);
+      expect(reverted?.resolutionStatus).toBe('applied');
+      expect(reverted).not.toHaveProperty('frozenRoleDrift');
+    });
+
+    it('lets a canonical Chat follow a rename without degrading', async () => {
+      const created = await invoke('local-db:bots:create-canonical-session', {
+        botId: 'bot-1', expectedCanonicalSessionId: null, expectedProfileVersion: 1,
+      });
+      const makeOpts = (): MakerSessionCreateOpts => ({
+        id: created.session.id, agentKind: 'claude-code', workingDir: created.session.workingDir,
+        workspaceKind: 'dialogue', model: 'test-model', permissionMode: 'bypassPermissions',
+      });
+      const first = await hydrateBotProfileRuntime(makeOpts(), skillDeps);
+      await markBotProfileRuntimeApplied(first!);
+      rename('Renamed');
+      const renamed = await hydrateBotProfileRuntime(makeOpts(), skillDeps);
+      expect(renamed?.resolutionStatus).toBe('applied');
+      expect(renamed).not.toHaveProperty('frozenRoleDrift');
+    });
+
+    it('still rejects resource drift before considering role drift', async () => {
+      await invoke('local-db:bots:update', { id: 'bot-1', capabilities: { skills: ['release'], skillMode: 'allowlist' } });
+      const { makeOpts } = await startDelegation(2);
+      const listSkills = async () => [{
+        name: 'release', path: '/skills/release/SKILL.md', enabled: true, runtimeCommandName: 'skill:release',
+      }];
+      const first = await hydrateBotProfileRuntime(makeOpts(), { listSkills, readSkillSource: async () => 'v1' });
+      await markBotProfileRuntimeApplied(first!);
+      rename('Renamed');
+
+      await expect(hydrateBotProfileRuntime(makeOpts(), { listSkills, readSkillSource: async () => 'v2' }))
+        .rejects.toMatchObject({ code: 'BOT_RUNTIME_RESOURCE_DRIFT' });
+    });
+
+    it('re-baselines a legacy delegation snapshot that has no frozen role', async () => {
+      const { sessionId, makeOpts } = await startDelegation();
+      const first = await hydrateBotProfileRuntime(makeOpts(), skillDeps);
+      await markBotProfileRuntimeApplied(first!);
+      h.sqlite!.prepare(
+        "UPDATE bot_runtime_snapshots SET resolved_json = json_remove(resolved_json, '$.frozenRole', '$.frozenRoleDrift') WHERE session_id = ?",
+      ).run(sessionId);
+      expect(resolvedOf(first!.snapshotId)).not.toHaveProperty('frozenRole');
+      rename('Renamed');
+
+      const resumed = await hydrateBotProfileRuntime(makeOpts(), skillDeps);
+      expect(resumed?.resolutionStatus).toBe('applied');
+      expect(resumed).not.toHaveProperty('frozenRoleDrift');
+      expect(resolvedOf(resumed!.snapshotId).frozenRole).toMatchObject({
+        schemaVersion: 1,
+        displayNameSha256: createHash('sha256').update('Renamed', 'utf8').digest('hex'),
+      });
+    });
+  });
+
   it('marks startup failure without persisting the raw error message', async () => {
     const created = await invoke('local-db:bots:create-canonical-session', {
       botId: 'bot-1',
@@ -5105,6 +5230,47 @@ describe('Bot Session task end-to-end runtime', () => {
       expect(await runtime.delegation.getSessionTask('other-topic', result.delegationId)).toMatchObject({ ok: false, errorCode: 'NOT_FOUND' });
       // The owner still manages everything from the main private chat.
       expect(await runtime.delegation.getSessionTask('session-1', result.delegationId)).toMatchObject({ ok: true });
+    } finally { runtime.dispose(); }
+  });
+
+  /** A worker session left behind by an older bot-to-bot delegation (role 'delegation'). */
+  const seedLegacyWorker = () => {
+    h.sqlite!.prepare(`INSERT INTO sessions (id, source, status, working_dir, model, agent_kind, provider_id, permission_mode, created_at, updated_at)
+      SELECT 'legacy-worker', source, status, working_dir, model, agent_kind, provider_id, permission_mode, created_at, updated_at FROM sessions WHERE id='session-1'`).run();
+    h.sqlite!.prepare(`INSERT INTO bot_session_links (id, bot_id, session_id, profile_version, role, route_key, created_at)
+      VALUES ('legacy-worker-link', 'bot-a', 'legacy-worker', 1, 'delegation', 'delegation:legacy', 1)`).run();
+  };
+
+  it('rejects a legacy bot-to-bot worker session (role delegation) before any session, worktree or task is created (I4)', async () => {
+    await seedPair();
+    seedLegacyWorker();
+    const count = (table: string) => h.sqlite!.prepare(`SELECT COUNT(*) FROM ${table}`).pluck().get() as number;
+    const before = { sessions: count('sessions'), delegations: count('bot_delegations') };
+    const prepareWorktree = vi.fn();
+    const runtime = createDelegationRuntime({ prepareWorktree, readCallerPermission: vi.fn(() => ({ mode: 'auto' as const, generation: 2 })) });
+    try {
+      const result = await runtime.delegation.startSessionTask({ callerSessionId: 'legacy-worker', objective: 'Nested task', workingDir: h.userDataDir, useWorktree: true });
+      expect(result).toMatchObject({ ok: false, errorCode: 'DELEGATION_DEPTH_EXCEEDED' });
+      expect({ sessions: count('sessions'), delegations: count('bot_delegations') }).toEqual(before);
+      expect(prepareWorktree).not.toHaveBeenCalled();
+    } finally { runtime.dispose(); }
+  });
+
+  it('refuses to reopen a finished task from a legacy worker session without re-parenting it (I4)', async () => {
+    await seedPair();
+    const runtime = createDelegationRuntime();
+    try {
+      const task = await runtime.delegation.startSessionTask({ callerSessionId: 'session-1', objective: 'Finished work' });
+      if (!task.ok) throw new Error(task.message);
+      await runtime.runPendingTurns();
+      const readRow = () => h.sqlite!.prepare(`SELECT parent_session_id AS parent, status, run_sequence AS run
+        FROM bot_delegations WHERE id = ?`).get(task.delegationId) as { parent: string; status: string; run: number };
+      const before = readRow();
+      expect(before).toMatchObject({ parent: 'session-1', status: 'completed', run: 1 });
+      seedLegacyWorker();
+      expect(await runtime.delegation.messageSessionTask('legacy-worker', task.delegationId, { kind: 'message', text: 'Nested follow-up.' }))
+        .toMatchObject({ ok: false, errorCode: 'DELEGATION_DEPTH_EXCEEDED' });
+      expect(readRow()).toEqual(before);
     } finally { runtime.dispose(); }
   });
 

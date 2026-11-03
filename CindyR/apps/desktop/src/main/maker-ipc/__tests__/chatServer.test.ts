@@ -48,6 +48,13 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 });
 vi.mock('node:fs', () => ({ existsSync: fixture.exists, readFileSync: () => fixture.config || '{"baseUrl":"https://example.com","token":"test"}' }));
 vi.mock('../botGroupChatService.js', () => ({ readPersistedReplyText: vi.fn() }));
+// Pass-through spy: the real admission runs, and tests can tie a failure to its verdict.
+const admission = vi.hoisted(() => ({ spy: vi.fn() }));
+vi.mock('../botGroupExecutionAdmission.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../botGroupExecutionAdmission.js')>();
+  admission.spy.mockImplementation(actual.admitOrdinaryExecutionSource);
+  return { admitOrdinaryExecutionSource: admission.spy };
+});
 vi.mock('../../localDb/client/current.js', () => ({ getDbClient: () => ({ drizzle: {
   select: () => ({ from: () => ({ where: () => Object.assign(Promise.resolve(fixture.profiles), { limit: async () => [{ id: 'existing-local-group' }] }) }) }),
   insert: () => ({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
@@ -2417,6 +2424,47 @@ describe('Chat Server result delivery and refresh', () => {
         { from: 'Peer', text: 'b'.repeat(600) },
         { from: 'Peer', text: `${'c'.repeat(2000)}…`, shortened: true },
       ]);
+    });
+
+    // bot-group-chat.md §4.0 host-side admission (defense in depth): a teammate's reply never
+    // starts an ordinary turn here; the legacy server's bounded continuation is unaffected.
+    const teammateReply = () => message(execution.source_message_id, 'My view.', { authorId: otherBot, author: { kind: 'bot', name: 'Peer' }, origin: 'bot' });
+
+    it('rejects an ordinary execution sourced at a teammate reply before creating a lane or invoking the Agent', async () => {
+      singleSpeaker(route => route.endsWith(`/messages/${execution.source_message_id}`) ? { body: teammateReply() } : undefined);
+      admission.spy.mockClear();
+      fixture.profiles = [{ id: 'local-bot', displayName: 'Bot', status: 'active' }];
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(deps.dispatch).not.toHaveBeenCalled();
+      expect(deps.ensureLane).not.toHaveBeenCalled();
+      // The laneSetup throw (INVALID_EXECUTION_TRIGGER) comes from this verdict; the wire detail is the
+      // fixed runtime category because INVALID_EXECUTION_TRIGGER is not a group failure code.
+      expect(admission.spy).toHaveBeenCalledOnce();
+      expect(admission.spy).toHaveLastReturnedWith({ ok: false, reason: 'BOT_SOURCE' });
+      const failures = fixture.handle.mock.calls.filter(([, , body]) => body?.action === 'fail');
+      expect(failures).toHaveLength(1);
+      expect(failures[0][0]).toContain(`/executions/${execution.id}`);
+      expect(failures[0][2]).toMatchObject({ action: 'fail', detail: 'cindy-runtime-error:RUNTIME_ERROR', epoch: execution.epoch });
+    });
+
+    it('still runs an ordinary execution sourced at a teammate reply on a server without groupSingleSpeaker', async () => {
+      fixture.handle.mockImplementation(route => route.endsWith(`/messages/${execution.source_message_id}`) ? { body: teammateReply() } : response(route));
+      await start();
+      expect(deps.ensureLane).toHaveBeenCalledOnce();
+    });
+
+    it.each(['human', 'teammate'] as const)('still runs a talk step whose source is a %s message', async kind => {
+      const planId = '80000000-0000-4000-8000-000000000004';
+      const plan = { id: planId, revision: 1, source_message_id: execution.source_message_id, request_text: 'Q', organizer_id: botId, creator_id: selfId,
+        status: 'running', current_step: 0, kind: 'talk', steps: [{ position: 0, botId, botName: 'Bot', task: '', status: 'running' }] };
+      singleSpeaker(route => {
+        if (route === '/executions/claim' && !claimed) { claimed = true; return { body: { execution: { ...execution, access_mode: 'owner', plan_id: planId, plan_step: 0 } } }; }
+        if (route.includes('/plans?ids=')) return { body: [plan] };
+        if (route.endsWith(`/messages/${execution.source_message_id}`)) return { body: kind === 'human' ? message(execution.source_message_id, 'Q') : teammateReply() };
+        return undefined;
+      });
+      await start();
+      expect(deps.ensureLane).toHaveBeenCalledWith(expect.objectContaining({ talkPlanId: planId }));
     });
 
     // bot-group-chat.md §7.0 (2026-10-23): 「安排分工」 is back on these servers. A request that writes

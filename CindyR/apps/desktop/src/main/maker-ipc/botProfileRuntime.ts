@@ -25,6 +25,7 @@ import {
   sessions,
 } from '../localDb/schema.js';
 import { clearBotAttention, noteBotAttention } from './botAttentionService.js';
+import { computeFrozenRoleFingerprint, resolveFrozenRoleCheck, type FrozenRoleDriftField } from './botFrozenRoleFingerprint.js';
 import { createLogger } from '../logger.js';
 import { PROVIDER_NAME_TO_PLUGIN_ID } from '../maker-host/plugins/builtin-plugins.js';
 import { normalizeBotToolCapabilities } from '../../shared/botCapabilitySelection.js';
@@ -83,6 +84,8 @@ export interface BotProfileRuntimeSnapshot {
   memoryRefs: BotMemoryRuntimeRef[];
   /** True when the permanent canonical Chat must rebuild its live runtime. */
   runtimeEpochChanged: boolean;
+  /** Delegation only: frozen role fields that changed since creation (names only). */
+  frozenRoleDrift?: FrozenRoleDriftField[];
 }
 
 export interface BotMemoryRuntimeRef {
@@ -204,6 +207,7 @@ export async function markBotProfileRuntimeApplied(
         unavailableSkills: snapshot.unavailableSkills,
         unavailableMcpServers: snapshot.unavailableMcpServers,
         unavailableToolsets: snapshot.unavailableToolsets,
+        ...(snapshot.frozenRoleDrift?.length ? { frozenRoleDrift: snapshot.frozenRoleDrift } : {}),
       }),
   });
   if (transitioned) {
@@ -1014,7 +1018,7 @@ export async function hydrateBotProfileRuntime(
     },
   };
   const preparedAt = Date.now();
-  const resolutionStatus =
+  const resourceResolutionStatus =
     !skillCatalogAvailable ||
     unavailableSkills.length > 0 ||
     unavailableMcpServers.length > 0 ||
@@ -1077,6 +1081,42 @@ export async function hydrateBotProfileRuntime(
       return { id, version: entry?.version ?? null };
     }),
   }), 'utf8').digest('hex');
+  const [previousSnapshot] = await db
+    .select({
+      profileVersion: botRuntimeSnapshots.profileVersion,
+      resolvedJson: botRuntimeSnapshots.resolvedJson,
+    })
+    .from(botRuntimeSnapshots)
+    .where(
+      and(
+        eq(botRuntimeSnapshots.sessionId, opts.id),
+        inArray(botRuntimeSnapshots.status, ['applied', 'degraded']),
+      ),
+    )
+    .orderBy(desc(botRuntimeSnapshots.preparedAt))
+    .limit(1);
+  const previousResolved = previousSnapshot
+    ? parseObject(previousSnapshot.resolvedJson)
+    : null;
+  const previousRuntimeEpoch = previousResolved
+    ? parseObject(
+        typeof previousResolved.runtimeEpoch === 'string'
+          ? previousResolved.runtimeEpoch
+          : JSON.stringify(previousResolved.runtimeEpoch ?? {}),
+      )
+    : null;
+  // Canonical Chats, private-chat topics, group lanes and IM channel lanes follow
+  // Profile updates; delegation children stay frozen.
+  const followsProfile = row.role === 'canonical' || row.role === 'thread' || row.role === 'routine' || row.role === 'group' || row.role === 'channel';
+  const currentRole = computeFrozenRoleFingerprint({
+    displayName: profile.displayName,
+    description: profile.description,
+    systemPromptOverride: folderPrompt ? folderPrompt.systemPromptOverride : null,
+  });
+  const roleCheck = followsProfile
+    ? { baseline: currentRole, drift: [] as FrozenRoleDriftField[] }
+    : resolveFrozenRoleCheck(previousResolved, currentRole);
+  const resolutionStatus = roleCheck.drift.length > 0 ? 'degraded' : resourceResolutionStatus;
   const resolvedJson = JSON.stringify({
     schemaVersion: 1,
     profile: profileProvenance,
@@ -1108,34 +1148,10 @@ export async function hydrateBotProfileRuntime(
       return { id, version: entry?.version ?? null };
     }),
     runtimeEpoch: { sha256: runtimeEpochSha256 },
+    frozenRole: roleCheck.baseline,
+    frozenRoleDrift: roleCheck.drift,
   });
-  const [previousSnapshot] = await db
-    .select({
-      profileVersion: botRuntimeSnapshots.profileVersion,
-      resolvedJson: botRuntimeSnapshots.resolvedJson,
-    })
-    .from(botRuntimeSnapshots)
-    .where(
-      and(
-        eq(botRuntimeSnapshots.sessionId, opts.id),
-        inArray(botRuntimeSnapshots.status, ['applied', 'degraded']),
-      ),
-    )
-    .orderBy(desc(botRuntimeSnapshots.preparedAt))
-    .limit(1);
-  const previousResolved = previousSnapshot
-    ? parseObject(previousSnapshot.resolvedJson)
-    : null;
-  const previousRuntimeEpoch = previousResolved
-    ? parseObject(
-        typeof previousResolved.runtimeEpoch === 'string'
-          ? previousResolved.runtimeEpoch
-          : JSON.stringify(previousResolved.runtimeEpoch ?? {}),
-      )
-    : null;
-  // Canonical Chats, private-chat topics, group lanes and IM channel lanes follow
-  // Profile updates; delegation children stay frozen.
-  const followsProfile = row.role === 'canonical' || row.role === 'thread' || row.role === 'routine' || row.role === 'group' || row.role === 'channel';
+  // previousSnapshot lookup moved above resolvedJson (frozen role fingerprint needs it)
   const runtimeEpochChanged = followsProfile && previousSnapshot !== undefined
     ? previousSnapshot.profileVersion !== row.profileVersion
       || previousRuntimeEpoch?.sha256 !== runtimeEpochSha256
@@ -1160,6 +1176,9 @@ export async function hydrateBotProfileRuntime(
       }
     }
   }
+  if (roleCheck.drift.length > 0) {
+    log.warn('Bot delegation role drifted after freeze', { botId: row.botId, sessionId: opts.id, fields: roleCheck.drift });
+  }
   if (options.persistSnapshot !== false) {
     await getDbClient().tx('bots.prepareRuntime', {
       snapshot: {
@@ -1180,6 +1199,7 @@ export async function hydrateBotProfileRuntime(
           profileVersion: row.profileVersion,
           agentKind: opts.agentKind,
           resolutionStatus,
+          frozenRoleDrift: roleCheck.drift,
           unavailableSkills,
           unavailableMcpServers,
           unavailableToolsets,
@@ -1212,5 +1232,6 @@ export async function hydrateBotProfileRuntime(
     toolsetMode,
     memoryRefs,
     runtimeEpochChanged,
+    ...(roleCheck.drift.length > 0 ? { frozenRoleDrift: roleCheck.drift } : {}),
   };
 }

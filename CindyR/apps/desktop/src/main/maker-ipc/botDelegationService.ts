@@ -60,6 +60,7 @@ import type { SessionQueuedMessageControlResult, SessionSteerResult, SessionStop
 import { ownerScopedUserDataPath } from '../appSessionState.js';
 import type { SessionRuntimeProfile } from './sessionRuntimeControl.js';
 import { readBotTaskModelOverride, type BotModelRoute } from '../../shared/botModelChain.js';
+import { DELEGATION_DEPTH_EXCEEDED, isDelegationAdmissionCode } from '../../shared/botDelegationLineage.js';
 import { validateTaskModel, resolveTaskModelSelection, type TaskModelSelection } from './appDefaultModelControl.js';
 
 type TaskMutationAuthority = Pick<Awaited<ReturnType<typeof authorizeGroupTool>>, 'refresh' | 'assertCurrent'> & {
@@ -2397,6 +2398,10 @@ export function createBotDelegationService(deps: BotDelegationServiceDeps) {
     if (!caller) {
       return { ok: false, errorCode: 'NOT_A_BOT_SESSION', message: '当前任务不属于任何伙伴' };
     }
+    // A delegation-role caller is already at depth >= 1 (I4); the worker tx stays authoritative.
+    if (caller.role === 'delegation' && DEFAULT_MAX_DEPTH <= 1) {
+      return { ok: false, errorCode: DELEGATION_DEPTH_EXCEEDED, message: '委派层级已达上限，后台任务不能再派出新的后台任务' };
+    }
     const requestedTimeoutMs = Math.min(
       MAX_TIMEOUT_MS,
       Math.max(1_000, Math.floor(input.timeoutMs ?? DEFAULT_TIMEOUT_MS)),
@@ -2534,6 +2539,7 @@ export function createBotDelegationService(deps: BotDelegationServiceDeps) {
         if (!isCreationPermissionCurrent()) throw new Error('CALLER_PERMISSION_UNAVAILABLE');
         await getDbClient().tx('bots.createDelegation', {
           maxActiveChildren,
+          maxDepth: DEFAULT_MAX_DEPTH,
           session: {
             id: childRow.id,
             title: childRow.title,
@@ -2603,6 +2609,9 @@ export function createBotDelegationService(deps: BotDelegationServiceDeps) {
           errorCode: 'CONCURRENCY_LIMIT',
           message: `当前伙伴的进行中后台任务已达到 ${maxActiveChildren} 个`,
         };
+      }
+      if (error instanceof Error && isDelegationAdmissionCode(error.message)) {
+        return { ok: false, errorCode: error.message, message: '委派不满足准入条件（层级/循环/伙伴版本）' };
       }
       throw error;
     }
@@ -3507,6 +3516,9 @@ export function createBotDelegationService(deps: BotDelegationServiceDeps) {
           message: `当前伙伴已有 ${maxActiveChildren} 个进行中的后台任务`,
         };
       }
+      if (error instanceof Error && isDelegationAdmissionCode(error.message)) {
+        return { ok: false, errorCode: error.message, message: '委派不满足准入条件（层级/循环/伙伴版本）' };
+      }
       throw error;
     }
   };
@@ -3605,6 +3617,10 @@ export function createBotDelegationService(deps: BotDelegationServiceDeps) {
       };
     }
     if (!isActiveDelegation(row.status as DelegationStatus)) {
+      // Reopening re-parents the task under the caller: a worker session would nest it (I4).
+      if (caller.role === 'delegation') {
+        return { ok: false, errorCode: DELEGATION_DEPTH_EXCEEDED, message: '委派层级已达上限，后台任务不能续接已结束的后台任务' };
+      }
       // Reopened group work keeps its group home; the lane that reopens it becomes the parent.
       await caller.groupAuthority?.refresh();
       return reopenTerminalDelegation(callerSessionId, caller.botId, row, input.text, caller.groupAuthority);

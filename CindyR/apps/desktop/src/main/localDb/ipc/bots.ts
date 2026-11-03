@@ -69,9 +69,19 @@ import {
   ensureBotWorkspaceDir,
   migrateBotProfileFolder,
   readBotProfileFolder,
-  writeBotProfileFolder,
+  // [Disabled: host mirror writes go through writeBotProfileFolderMirrored]
+  // writeBotProfileFolder,
 } from '../../maker-ipc/botProfileFolder.js';
-import { syncBotProfileFromFolder } from '../../maker-ipc/botProfileFolderSync.js';
+import {
+  syncBotProfileFromFolder,
+  type BotProfileFolderSyncDeps,
+} from '../../maker-ipc/botProfileFolderSync.js';
+import {
+  readBotProfileFolderWithMarker,
+  recordBotProfileMirrorIfUnchanged,
+  rewriteBotProfileMirrorIfCurrent,
+  writeBotProfileFolderMirrored,
+} from '../../maker-ipc/botProfileMirrorMarkerStore.js';
 import { requestBotRuntimeEpochRefresh } from '../../maker-ipc/botRuntimeEpochRefreshSignal.js';
 import { createLogger } from '../../logger.js';
 import { collectTaskResponsibilityScopes } from '../../maker-ipc/botTaskResponsibility.js';
@@ -191,7 +201,8 @@ export function getBotMemoryService(): ReturnType<typeof createBotMemoryService>
  * (`memories/USER.md`,与 Hermes 同路径),所以这里拆出来单独写。
  *
  * 写文件失败**不让保存整个失败**:数据库那份才是运行时读的东西,文件只影响
- * 「能不能用编辑器改」。吞掉异常但记一笔,不静默。
+ * 「能不能用编辑器改」。吞掉异常但记一笔,不静默。镜像指纹只在写成功后记录,
+ * 所以失败的镜像会在下次对账被判为「镜像过期」并按数据库重写,不会回滚设置。
  */
 function botUserContextSource(config: Record<string, unknown>): string {
   return typeof config.userContextSource === 'string' ? config.userContextSource : '';
@@ -225,7 +236,7 @@ async function syncBotProfileFolder(
   userDataDir = ownerScopedUserDataPath(),
 ): Promise<void> {
   try {
-    await writeBotProfileFolder(userDataDir, botId, patch);
+    await writeBotProfileFolderMirrored(userDataDir, botId, patch);
   } catch (cause) {
     log.warn('write bot profile folder failed', { botId, error: String(cause) });
   }
@@ -892,7 +903,7 @@ export async function reconcileBotProfileFolder(
   const client = getDbClient();
   const db = client.drizzle;
   try {
-    await syncBotProfileFromFolder(botId, {
+    const syncDeps: BotProfileFolderSyncDeps = {
       readSnapshot: async (id) => {
         const [profile] = await db
           .select({ currentVersion: botProfiles.currentVersion })
@@ -932,8 +943,21 @@ export async function reconcileBotProfileFolder(
           now: Date.now(),
         });
         derived = { from: input.expectedCurrentVersion, to: result.currentVersion };
+        return result.currentVersion;
       },
-    });
+      readFolderWithMarker: (id) => readBotProfileFolderWithMarker(userDataDir, id),
+      // Stale-slot rewrite re-reads the DB inside the per-Home lock; skipped if the version moved.
+      rewriteFolder: (id, slots, expected) =>
+        rewriteBotProfileMirrorIfCurrent(userDataDir, id, slots, expected, async () => {
+          const current = await syncDeps.readSnapshot(id);
+          return current && { ...current, userContextSource: botUserContextSource(current.config) };
+        }),
+      recordMirror: (id, observed) => recordBotProfileMirrorIfUnchanged(userDataDir, id, observed),
+    };
+    const outcome = await syncBotProfileFromFolder(botId, syncDeps);
+    if (outcome === 'mirror-stale' || outcome === 'mirror-skipped') {
+      log.info('bot profile mirror reconciled', { botId, outcome });
+    }
   } catch (cause) {
     log.warn('reconcile bot profile folder failed', { botId, error: String(cause) });
   }

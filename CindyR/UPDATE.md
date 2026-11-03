@@ -246,9 +246,68 @@
     * 在 `chatServer.ts` 的 `readMessage` 与 `executionLane` 拦截 HTTP 400 `INVALID_INPUT` / `ChatResponseError`，安全回退到 `${room}:main`，杜绝未捕获的 Promise Rejection。
     * 在 `claimBesideRuns` 中隔离单条候选消息预读失败，防止单点异常拖垮并发扫描，保证邻近 Thread 任务能够正常并发认领与执行。
 
+### 13. 伙伴群：本机拒绝由伙伴消息触发的普通执行（I1，2026-11）
+* **涉及文件**：
+  * `apps/desktop/src/main/maker-ipc/botGroupExecutionAdmission.ts`（新增，纯函数）
+  * `apps/desktop/src/main/maker-ipc/chatServer.ts`（一行 import + `laneSetup` 内一条判断替换，原系统来源判断以 `//` 注释保留）
+  * `apps/desktop/src/main/maker-ipc/__tests__/botGroupExecutionAdmission.test.ts`（新增）
+  * `apps/desktop/src/main/maker-ipc/__tests__/chatServer.test.ts`
+  * `docs/product-rules/bot-group-chat.md`（§4.0）
+  * `docs/dev-rules/protocol-compatibility.md`（`groupSingleSpeaker` 小节）
+* **改动细节**：
+  * **宿主侧纵深防御**：在声明 `groupSingleSpeaker` 的服务器上，非分工/队列（无 `plan_id`）、非 AI 代答（无 `mask_owner_id`、非 digest）的普通执行，若来源消息由伙伴发出（`author.kind` 或 `origin` 为 `bot`），本机在建群专线前拒绝（`INVALID_EXECUTION_TRIGGER`，上报为通用运行错误）；系统来源在任何服务器上照旧拒绝。不取代服务端派发规则。
+  * **不受影响**：旧服务器的有限续圈、分工/队列步骤、AI 代答与 digest、来源不可读、集成通知、人发的消息（含已删除与导入）、单聊。无 wire 变更、无新错误码、无渲染层或 i18n 改动。
+  * **未验证前提**：该能力下非分工的后续执行都以发起请求的人类消息为来源（服务端代码不在本仓）。
+
+### 14. Bot Home 镜像过期不再回滚设置（I2，2026-11）
+* **涉及文件**：
+  * `apps/desktop/src/main/maker-ipc/botProfileMirrorMarker.ts`（新增，纯函数：指纹、解析、合并、按槽判定）
+  * `apps/desktop/src/main/maker-ipc/botProfileMirrorMarkerStore.ts`（新增，`.host-mirror.json` 读写、每个 Home 的进程内锁、原子写入）
+  * `apps/desktop/src/main/maker-ipc/botProfileFolderSync.ts`
+  * `apps/desktop/src/main/localDb/ipc/bots.ts`（镜像写改走 `writeBotProfileFolderMirrored`，原 `writeBotProfileFolder` import 以注释保留）
+  * `apps/desktop/src/main/maker-ipc/__tests__/botProfileMirrorMarker.test.ts`、`botProfileMirrorMarkerStore.test.ts`（新增）
+  * `apps/desktop/src/main/maker-ipc/__tests__/botProfileFolderSync.test.ts`、`apps/desktop/src/main/bot-import/__tests__/host.test.ts`
+  * `docs/product-rules/cindy-bots-runtime.md`、`docs/product-rules/cindy-bots-completion-matrix.md`
+* **改动细节**：
+  * **问题**：设置先写数据库再镜像到 Home 文件；镜像失败时旧文件留在 Home，下一次对账把旧文件当作用户编辑派生新版本，已保存的设置被回滚。
+  * **修复**：Home 根目录 `.host-mirror.json` 按槽（SOUL.md / memories/USER.md）记录宿主上次成功写入字节的 sha256。文件与快照一致为 in-sync；不一致但等于指纹为「镜像过期」，按数据库重写、不派生（结果 `mirror-stale`）；其余视为编辑，行为不变。
+  * **竞态防护**：写文件与记指纹在每个 Home 的进程内锁中成对完成；重写前在锁内复核数据库版本未变且文件仍是宿主上次写入的字节，否则本轮跳过（结果 `mirror-skipped`），留给下次对账。
+  * **安全边界**：伪造指纹只会让宿主用数据库覆盖文件，不能派生版本或提权；删除或损坏指纹退回旧行为。导入与邀请写入不记指纹，行为不变。`.host-mirror.json` 随 Home 备份复制，但不上传云端。
+
+### 15. 委派子任务角色冻结指纹（I3，2026-11）
+* **涉及文件**：
+  * `apps/desktop/src/main/maker-ipc/botFrozenRoleFingerprint.ts`（新增，纯函数）
+  * `apps/desktop/src/main/maker-ipc/botProfileRuntime.ts`
+  * `apps/desktop/src/main/maker-ipc/__tests__/botFrozenRoleFingerprint.test.ts`（新增）
+  * `apps/desktop/src/main/localDb/ipc/__tests__/botCanonicalSession.test.ts`
+  * `docs/product-rules/cindy-bots-runtime.md`、`docs/product-rules/cindy-bots-completion-matrix.md`
+* **改动细节**：
+  * 委派子任务（`role = 'delegation'`）创建时冻结名称、简介与 Home `system_prompt.md` 覆盖层的指纹（只存哈希，不存正文），后续快照原样携带这份基线。
+  * 续接时三项若漂移：运行快照标为 `degraded` 并在 `frozenRoleDrift` 记录字段名，**降级而非报错**，任务不阻断；技能／MCP／工具集资源漂移仍先于角色检查并照旧拒绝续接。
+  * 覆盖层读取失败与远端会话不计为漂移；旧快照无指纹时以当次为基线，不追溯降级；跟随 Profile 的会话只记录指纹、不降级。
+
+### 16. 委派准入：谱系与层级校验（I4，2026-11）
+* **涉及文件**：
+  * `apps/desktop/src/shared/botDelegationLineage.ts`（新增，纯函数，worker 与主进程共用）
+  * `apps/desktop/src/main/localDb/worker/opHandlers/tx.ts`
+  * `apps/desktop/src/main/localDb/client/tx/types.ts`
+  * `apps/desktop/src/main/maker-ipc/botDelegationService.ts`
+  * `apps/desktop/src/shared/__tests__/botDelegationLineage.test.ts`（新增）
+  * `apps/desktop/src/main/localDb/worker/opHandlers/__tests__/botTx.test.ts`、`apps/desktop/src/main/localDb/ipc/__tests__/botCanonicalSession.test.ts`
+  * `docs/product-rules/cindy-bots-runtime.md`（§6.1）
+* **改动细节**：
+  * **两道闸**：服务预检在建会话与工作区前快速拒绝；worker 事务内依据父委派的 lineage 重新计算 lineage 与 depth，作为不可绕过的权威校验（`bots.createDelegation` 新增可选 `maxDepth`，缺省 1）。
+  * **五个错误码**：`DELEGATION_LINEAGE_INVALID`（父谱系损坏或超上限，失败即关闭）、`DELEGATION_DEPTH_EXCEEDED`、`DELEGATION_CYCLE`、`DELEGATION_SELF_TARGET`、`DELEGATION_TARGET_VERSION_MISSING`（指定目标伙伴却未冻结版本，不再向 `bot_session_links` 写入 NULL 版本）。
+  * **有意收紧**：旧版伙伴间委派产生的 worker 会话（`role = 'delegation'`）不能再派出后台任务，返回 `DELEGATION_DEPTH_EXCEEDED`；委派 worker 也**永远不能**续接（reopen）已结束的后台任务（该拒绝不再取决于层级上限配置），同样返回 `DELEGATION_DEPTH_EXCEEDED`；它们仍可列出、停止自己的任务并接收完成回传。
+  * **谱系长度上限**：lineage 最多 16 项，写入（事务内计算新谱系）与读取（解析父委派谱系）两端都校验，超限以 `DELEGATION_LINEAGE_INVALID` 拒绝。
+  * **不变**：普通伙伴会话（主对话、话题、例行任务、群专线）发起的普通 Cindy 后台任务行为与写入值（lineage `[botId]`、depth 1）保持一致。
+
+### 17. 同步范围说明（I1–I4）
+* 以上 13–16 项只改动 `CindyR/` 下的文件；仓库根目录的 `extensions/cindy` 副本**未同步**这些改动，如需对齐须另行移植。
+
 ---
 
-## 五、 修改文件总览 (84 Files Summary)
+## 五、 修改文件总览 (109 Files Summary)
 
 | 模块类别 | 关键修改文件 | 主要改动内容 |
 | :--- | :--- | :--- |
@@ -266,3 +325,9 @@
 | **设置与关于页面** | `apps/desktop/src/renderer/components/settings/SettingsView.tsx`<br>`AboutSection.tsx`<br>`ProvidersSection.tsx`<br>`SubagentModelSection.tsx`<br>`AddProviderWizard.tsx`<br>`ProviderConnectionDialog.tsx`<br>`SettingsSidebarNav.tsx` | About 页面彻底清除非 Claude 行；精简向导为 Anthropic 与自定义两项；表单单运行时收敛与判空；移除本机 CLI 建议行；修复导航图标崩溃 |
 | **技能市场与端点控制** | `config/endpoint.json`<br>`config/endpoint.global.json`<br>`apps/desktop/src/main/skillhub/registerIpc.ts`<br>`apps/desktop/src/main/skillhub/autoSyncService.ts`<br>`apps/desktop/src/renderer/features/skillhub/hooks/useMarketList.ts`<br>`apps/desktop/src/renderer/features/skillhub/SkillhubHomeView.tsx` | 清单级关闭云端 SkillHub；IPC 错误降级为 `log.debug` 并返回安全空结构；前端分类查询增加 `enabled` 守卫 |
 | **自动化测试保护** | `apps/desktop/src/renderer/__tests__/providersSectionUnavailableModels.test.tsx`<br>`apps/desktop/src/main/maker-ipc/__tests__/binaryVersionIpc.test.ts`<br>`apps/desktop/src/main/maker-ipc/__tests__/chatServerThreadContext.test.ts`<br>`apps/desktop/src/renderer/components/settings/__tests__/AboutSection.binaryVersions.test.tsx` | 对齐禁用建议行渲染、纯 Claude 二进制版本 IPC、多线程并发容错与 About 单运行时测试用例 |
+| **伙伴群执行准入（I1）** | `apps/desktop/src/main/maker-ipc/botGroupExecutionAdmission.ts`<br>`apps/desktop/src/main/maker-ipc/chatServer.ts`<br>`apps/desktop/src/main/maker-ipc/__tests__/botGroupExecutionAdmission.test.ts`<br>`apps/desktop/src/main/maker-ipc/__tests__/chatServer.test.ts`<br>`docs/product-rules/bot-group-chat.md`<br>`docs/dev-rules/protocol-compatibility.md` | 一次一位伙伴的服务器上，本机拒绝由伙伴消息触发的普通执行（纵深防御，无 wire 变更） |
+| **Bot Home 镜像指纹（I2）** | `apps/desktop/src/main/maker-ipc/botProfileMirrorMarker.ts`<br>`apps/desktop/src/main/maker-ipc/botProfileMirrorMarkerStore.ts`<br>`apps/desktop/src/main/maker-ipc/botProfileFolderSync.ts`<br>`apps/desktop/src/main/localDb/ipc/bots.ts`<br>`apps/desktop/src/main/maker-ipc/__tests__/botProfileMirrorMarker.test.ts`<br>`apps/desktop/src/main/maker-ipc/__tests__/botProfileMirrorMarkerStore.test.ts`<br>`apps/desktop/src/main/maker-ipc/__tests__/botProfileFolderSync.test.ts`<br>`apps/desktop/src/main/bot-import/__tests__/host.test.ts`<br>`docs/product-rules/cindy-bots-completion-matrix.md` | `.host-mirror.json` 指纹区分镜像过期与真实编辑；过期按数据库重写（`mirror-stale`），版本已变则跳过（`mirror-skipped`），不再回滚设置 |
+| **委派角色冻结（I3）** | `apps/desktop/src/main/maker-ipc/botFrozenRoleFingerprint.ts`<br>`apps/desktop/src/main/maker-ipc/botProfileRuntime.ts`<br>`apps/desktop/src/main/maker-ipc/__tests__/botFrozenRoleFingerprint.test.ts` | 名称/简介/`system_prompt.md` 漂移时快照降级为 `degraded` 并记录字段名，不报错 |
+| **委派准入（I4）** | `apps/desktop/src/shared/botDelegationLineage.ts`<br>`apps/desktop/src/main/localDb/worker/opHandlers/tx.ts`<br>`apps/desktop/src/main/localDb/client/tx/types.ts`<br>`apps/desktop/src/main/maker-ipc/botDelegationService.ts`<br>`apps/desktop/src/shared/__tests__/botDelegationLineage.test.ts`<br>`apps/desktop/src/main/localDb/worker/opHandlers/__tests__/botTx.test.ts`<br>`apps/desktop/src/main/localDb/ipc/__tests__/botCanonicalSession.test.ts`<br>`docs/product-rules/cindy-bots-runtime.md` | 服务预检 + worker 事务内谱系/深度校验；五个 `DELEGATION_*` 错误码；旧版 bot→bot worker 会话收紧，reopen 同样拒绝 |
+
+> 文件计数说明：原 84 项沿用前文统计；I1–I4 相对基线 `57cde3b` 共改动或新增 26 个文件（`git status --porcelain --untracked-files=all`，不含本 `UPDATE.md`），其中 `chatServer.ts` 已在上表计入，故新增 25 项，合计 109。`botCanonicalSession.test.ts`、`cindy-bots-runtime.md` 与 `cindy-bots-completion-matrix.md` 由多个迭代共用，各只计一次。
