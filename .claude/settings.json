@@ -4,7 +4,6 @@
       "Bash(rtk ls *)"
     ]
   },
-  "disableBundledSkills": true,
   "enabledPlugins": {
     "nowledge-mem@nowledge-community": false
   },
@@ -17,19 +16,6 @@
     "ego-browser": "off",
     "oil-ui": "off",
     "prism": "off",
-    "script-standards": "off",
-    "dataviz": "off",
-    "update-config": "off",
-    "keybindings-help": "off",
-    "code-review": "off",
-    "simplify": "off",
-    "fewer-permission-prompts": "off",
-    "loop": "off",
-    "claude-api": "off",
-    "workflow-authoring": "off",
-    "run": "off",
-    "plugin-authoring": "off",
-    "init": "off",
-    "security-review": "off"
+    "script-standards": "off"
   }
 }
