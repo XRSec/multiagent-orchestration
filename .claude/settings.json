@@ -4,19 +4,32 @@
       "Bash(rtk ls *)"
     ]
   },
-  "disabledMcpServers": [
-    "cua-driver",
-    "pi-web-access",
-    "scheduled-tasks"
-  ],
+  "disableBundledSkills": true,
   "enabledPlugins": {
     "nowledge-mem@nowledge-community": false
   },
   "skillOverrides": {
-    "impeccable": "user-invocable-only",
-    "gemini-research-exporter": "user-invocable-only",
-    "vps-headless-gemini": "user-invocable-only",
-    "pi-process-testing": "user-invocable-only",
-    "vps-browser-deployment": "user-invocable-only"
+    "impeccable": "off",
+    "gemini-research-exporter": "off",
+    "vps-headless-gemini": "off",
+    "pi-process-testing": "off",
+    "vps-browser-deployment": "off",
+    "ego-browser": "off",
+    "oil-ui": "off",
+    "prism": "off",
+    "script-standards": "off",
+    "dataviz": "off",
+    "update-config": "off",
+    "keybindings-help": "off",
+    "code-review": "off",
+    "simplify": "off",
+    "fewer-permission-prompts": "off",
+    "loop": "off",
+    "claude-api": "off",
+    "workflow-authoring": "off",
+    "run": "off",
+    "plugin-authoring": "off",
+    "init": "off",
+    "security-review": "off"
   }
 }
