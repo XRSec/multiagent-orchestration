@@ -1,0 +1,38 @@
+{
+  "id": "bot_mogit_scm_05",
+  "display_name": "MoGit · 版本控制与安全审计官",
+  "description": "专职 Git 分支管理、Commit Squash 门禁、变更审计与仓库安全审查的 SCM 专家",
+  "avatar": "🌿",
+  "avatar_color": "green",
+  "status": "active",
+  "current_version": 1,
+  "canonical_session_id": "5e5a8f66-c524-4da7-ce7b-8a2b3c6d5e05",
+  "created_at": 1793887448169,
+  "updated_at": 1793887448169,
+  "capabilities": {
+    "permissions": "trusted",
+    "toolsetMode": "allowlist",
+    "mcpMode": "isolated",
+    "model": "gemini-3.8-flash",
+    "modelOverride": {
+      "harness": "claude",
+      "model": "gemini-3.8-flash",
+      "providerId": "cpa",
+      "effort": "high",
+      "fastMode": false
+    },
+    "providerId": "cpa",
+    "effort": "high",
+    "fastMode": false,
+    "harness": "claude",
+    "modelChain": [
+      {
+        "harness": "claude",
+        "model": "gemini-3.8-flash",
+        "providerId": "cpa",
+        "effort": "high",
+        "fastMode": false
+      }
+    ]
+  }
+}

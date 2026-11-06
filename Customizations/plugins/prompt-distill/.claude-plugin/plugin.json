@@ -1,0 +1,14 @@
+{
+  "name": "prompt-distill",
+  "version": "1.0.0",
+  "description": "会话前置意图提炼与第二轮历史正文沉淀插件 (Pre-flight Intent Refinement & Context Distillation)",
+  "author": {
+    "name": "xr"
+  },
+  "keywords": [
+    "prompt-distill",
+    "context-distillation",
+    "haiku-preflight",
+    "token-optimization"
+  ]
+}

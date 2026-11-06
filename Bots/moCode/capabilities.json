@@ -1,0 +1,33 @@
+{
+  "permissions": "trusted",
+  "toolsetMode": "allowlist",
+  "mcpMode": "isolated",
+  "model": "gemini-3.8-flash",
+  "modelOverride": {
+    "harness": "claude",
+    "model": "gemini-3.8-flash",
+    "providerId": "cpa",
+    "effort": "high",
+    "fastMode": false
+  },
+  "providerId": "cpa",
+  "effort": "high",
+  "fastMode": false,
+  "harness": "claude",
+  "modelChain": [
+    {
+      "harness": "claude",
+      "model": "gemini-3.8-flash",
+      "providerId": "cpa",
+      "effort": "high",
+      "fastMode": false
+    }
+  ],
+  "tools": [
+    "read_file",
+    "write_file",
+    "edit_file",
+    "run_command",
+    "ast_grep"
+  ]
+}

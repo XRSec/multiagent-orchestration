@@ -1,0 +1,51 @@
+{
+  "description": "Prompt Distill (v2.0.0-ENTERPRISE): High-SNR Background Enhancement & Lifecycle Distillation",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/handler.mjs\"",
+            "timeout": 25,
+            "statusMessage": "Refining intent & distilling high-SNR context..."
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/handler.mjs\"",
+            "timeout": 5,
+            "statusMessage": "Archiving prompt-distill state snapshot..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/handler.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/handler.mjs\"",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

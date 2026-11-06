@@ -1,0 +1,38 @@
+{
+  "id": "bot_mo_meta_06",
+  "display_name": "Mo · 元工具与伙伴锻造师",
+  "description": "专属于 multiagent-orchestration 的元工具伙伴，负责脚手架生成、定制风格伙伴创建与系统元治理",
+  "avatar": "⚙️",
+  "avatar_color": "orange",
+  "status": "active",
+  "current_version": 1,
+  "canonical_session_id": "4f6b9a77-d635-4eb8-df8c-9b3c4d7e6f06",
+  "created_at": 1793887448185,
+  "updated_at": 1793887448185,
+  "capabilities": {
+    "permissions": "trusted",
+    "toolsetMode": "allowlist",
+    "mcpMode": "isolated",
+    "model": "gemini-3.8-flash",
+    "modelOverride": {
+      "harness": "claude",
+      "model": "gemini-3.8-flash",
+      "providerId": "cpa",
+      "effort": "high",
+      "fastMode": false
+    },
+    "providerId": "cpa",
+    "effort": "high",
+    "fastMode": false,
+    "harness": "claude",
+    "modelChain": [
+      {
+        "harness": "claude",
+        "model": "gemini-3.8-flash",
+        "providerId": "cpa",
+        "effort": "high",
+        "fastMode": false
+      }
+    ]
+  }
+}

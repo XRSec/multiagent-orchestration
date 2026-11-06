@@ -1,0 +1,47 @@
+{
+  "id": "multiagent-orchestration",
+  "name": "multiagent-orchestration",
+  "members": {
+    "lead-orchestrator": {
+      "role": "organizer",
+      "lastSeenSequence": 0
+    },
+    "doc-skill-keeper": {
+      "role": "member",
+      "lastSeenSequence": 0
+    },
+    "cindy-r": {
+      "role": "member",
+      "lastSeenSequence": 0
+    },
+    "rea-partner": {
+      "role": "member",
+      "lastSeenSequence": 0
+    },
+    "claude-sdk-architect": {
+      "role": "member",
+      "lastSeenSequence": 0
+    },
+    "agent-architect": {
+      "role": "member",
+      "lastSeenSequence": 0
+    },
+    "troubleshooting-engineer": {
+      "role": "member",
+      "lastSeenSequence": 0
+    }
+  },
+  "currentSequence": 0,
+  "createdAt": "2026-11-05T13:01:55.710Z",
+  "updatedAt": "2026-11-05T13:45:38.457Z",
+  "description": "多 Agent 协同群聊与任务攻坚群",
+  "memberIds": [
+    "lead-orchestrator",
+    "doc-skill-keeper",
+    "cindy-r",
+    "rea-partner",
+    "claude-sdk-architect",
+    "agent-architect",
+    "troubleshooting-engineer"
+  ]
+}

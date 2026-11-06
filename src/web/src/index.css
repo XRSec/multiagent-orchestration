@@ -1,0 +1,16 @@
+/**
+ * CSS 隐形滚动条工具类
+ * 隐藏原生滚动条，但保持触控板与滚轮顺滑滚动
+ * 严格覆盖 Firefox, IE/Edge 及 WebKit (Chrome, Safari, Opera)
+ */
+.no-scrollbar {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE / Edge */
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important; /* Chrome, Safari, WebKit */
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+

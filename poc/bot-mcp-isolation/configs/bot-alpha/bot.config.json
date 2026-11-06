@@ -1,0 +1,20 @@
+{
+  "botId": "bot-alpha",
+  "botName": "Bot Alpha (Meteorology & Records)",
+  "description": "Specialized agent for regional weather analysis and local database management",
+  "mcpPolicy": {
+    "mode": "strict",
+    "allowedServers": [
+      "alpha_weather_server"
+    ]
+  },
+  "pluginPolicy": {
+    "allowedPlugins": [
+      "alpha-weather-suite"
+    ],
+    "pluginRoots": [
+      "configs/bot-alpha/plugins"
+    ]
+  },
+  "systemPrompt": "You are Bot Alpha, an analytical agent equipped with weather forecast tools and private database capabilities."
+}

@@ -1,0 +1,40 @@
+{
+  "id": "bot_mocode_engine_01",
+  "display_name": "moCode · 代码工程与架构师",
+  "description": "专注代码工程实现、重构演进、单元测试与架构质量保障的资深代码专家",
+  "avatar": "💻",
+  "avatar_color": "blue",
+  "status": "active",
+  "current_version": 1,
+  "canonical_session_id": "9a1c4b22-81e0-4963-8a3d-4c8d9e2f1a01",
+  "created_at": 1793868096926,
+  "updated_at": 1793868096926,
+  "capabilities": {
+    "permissions": "trusted",
+    "toolsetMode": "allowlist",
+    "mcpMode": "isolated",
+    "model": "gemini-3.8-flash",
+    "modelOverride": {
+      "harness": "claude",
+      "providerId": "anthropic",
+      "model": "gemini-3.8-flash",
+      "effort": "high",
+      "fastMode": false,
+      "thinkingLevel": "high"
+    },
+    "providerId": "anthropic",
+    "effort": "high",
+    "fastMode": false,
+    "harness": "claude",
+    "modelChain": [
+      {
+        "harness": "claude",
+        "providerId": "anthropic",
+        "model": "gemini-3.8-flash",
+        "effort": "none",
+        "fastMode": false
+      }
+    ],
+    "thinkingLevel": "high"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "id": "bot_moci_sentinel_07",
+  "display_name": "MoCI · 持续集成与验证哨兵",
+  "description": "专职自动化构建、单元与集成测试执行、隔离沙箱部署验证与 CI 流水线护航",
+  "avatar": "🛡️",
+  "avatar_color": "red",
+  "status": "active",
+  "current_version": 1,
+  "canonical_session_id": "3a7c0b88-e746-4fc9-ef9d-0c4d5e8f7a07",
+  "created_at": 1793887448201,
+  "updated_at": 1793887448201,
+  "capabilities": {
+    "permissions": "trusted",
+    "toolsetMode": "allowlist",
+    "mcpMode": "isolated",
+    "model": "gemini-3.8-flash",
+    "modelOverride": {
+      "harness": "claude",
+      "model": "gemini-3.8-flash",
+      "providerId": "cpa",
+      "effort": "high",
+      "fastMode": false
+    },
+    "providerId": "cpa",
+    "effort": "high",
+    "fastMode": false,
+    "harness": "claude",
+    "modelChain": [
+      {
+        "harness": "claude",
+        "model": "gemini-3.8-flash",
+        "providerId": "cpa",
+        "effort": "high",
+        "fastMode": false
+      }
+    ]
+  }
+}

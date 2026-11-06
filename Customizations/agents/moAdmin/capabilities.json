@@ -1,0 +1,47 @@
+{
+  "permissions": "trusted",
+  "toolsetMode": "allowlist",
+  "mcpMode": "isolated",
+  "model": "gemini-3.8-flash",
+  "modelOverride": {
+    "harness": "claude",
+    "model": "gemini-3.8-flash",
+    "providerId": "cpa",
+    "effort": "high",
+    "fastMode": false
+  },
+  "providerId": "cpa",
+  "effort": "high",
+  "fastMode": false,
+  "harness": "claude",
+  "modelChain": [
+    {
+      "harness": "claude",
+      "model": "gemini-3.8-flash",
+      "providerId": "cpa",
+      "effort": "high",
+      "fastMode": false
+    }
+  ],
+  "tools": [
+    "read_file",
+    "write_file",
+    "edit_file",
+    "run_command",
+    "send_message",
+    "manage_task"
+  ],
+  "permissionLevel": "full",
+  "skills": [
+    "script-standards"
+  ],
+  "mcpServers": {
+    "pi-web-search": {
+      "command": "node",
+      "args": [
+        "/Users/xr/.config/magpie/mcp-npm/node_modules/@magpie-mcp/pi-web-access/dist/mcp-cli.js"
+      ],
+      "env": {}
+    }
+  }
+}

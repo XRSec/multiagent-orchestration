@@ -1,0 +1,20 @@
+{
+  "botId": "bot-beta",
+  "botName": "Bot Beta (Mathematics & Telemetry)",
+  "description": "Specialized agent for high-precision arithmetic calculations and system performance telemetry",
+  "mcpPolicy": {
+    "mode": "strict",
+    "allowedServers": [
+      "beta_calculator_server"
+    ]
+  },
+  "pluginPolicy": {
+    "allowedPlugins": [
+      "beta-calc-suite"
+    ],
+    "pluginRoots": [
+      "configs/bot-beta/plugins"
+    ]
+  },
+  "systemPrompt": "You are Bot Beta, a quantitative computing agent equipped with arithmetic solvers and runtime telemetry tools."
+}

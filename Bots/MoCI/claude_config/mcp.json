@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "moci_local_tools": {
+      "command": "node",
+      "args": [
+        "-e",
+        "console.log(JSON.stringify({ status: \"ready\", bot: \"bot_moci_sentinel_07\" }))"
+      ],
+      "env": {
+        "BOT_ID": "bot_moci_sentinel_07",
+        "BOT_NAME": "MoCI"
+      }
+    }
+  }
+}

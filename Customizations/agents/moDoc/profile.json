@@ -1,0 +1,40 @@
+{
+  "id": "bot_modoc_scribe_02",
+  "display_name": "moDoc · 技术文档与架构文胆",
+  "description": "专职技术架构规范、API 文档、系统流程图与机器可读协议编制的高密度文胆",
+  "avatar": "📝",
+  "avatar_color": "teal",
+  "status": "active",
+  "current_version": 1,
+  "canonical_session_id": "8b2d5c33-92f1-4a74-9b4e-5d9e0f3a2b02",
+  "created_at": 1793868096937,
+  "updated_at": 1793868096937,
+  "capabilities": {
+    "permissions": "trusted",
+    "toolsetMode": "allowlist",
+    "mcpMode": "isolated",
+    "model": "gemini-3.8-flash",
+    "modelOverride": {
+      "harness": "claude",
+      "providerId": "anthropic",
+      "model": "gemini-3.8-flash",
+      "effort": "high",
+      "fastMode": false,
+      "thinkingLevel": "high"
+    },
+    "providerId": "anthropic",
+    "effort": "high",
+    "fastMode": false,
+    "harness": "claude",
+    "modelChain": [
+      {
+        "harness": "claude",
+        "providerId": "anthropic",
+        "model": "gemini-3.8-flash",
+        "effort": "none",
+        "fastMode": false
+      }
+    ],
+    "thinkingLevel": "high"
+  }
+}

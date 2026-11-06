@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "mogit_local_tools": {
+      "command": "node",
+      "args": [
+        "-e",
+        "console.log(JSON.stringify({ status: \"ready\", bot: \"bot_mogit_scm_05\" }))"
+      ],
+      "env": {
+        "BOT_ID": "bot_mogit_scm_05",
+        "BOT_NAME": "MoGit"
+      }
+    }
+  }
+}

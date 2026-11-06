@@ -1,0 +1,13 @@
+{
+  "id": "alpha-weather-suite",
+  "name": "Alpha Weather and Data Intelligence Plugin",
+  "version": "1.0.0",
+  "description": "Exclusive plugin for Bot Alpha providing meteorological data processing and local DB schema management",
+  "skills": [
+    {
+      "name": "weather-forecast-analyzer",
+      "description": "Analyzes real-time weather forecasts and trends",
+      "entryFile": "SKILL.md"
+    }
+  ]
+}

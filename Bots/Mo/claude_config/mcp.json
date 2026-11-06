@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "mo_local_tools": {
+      "command": "node",
+      "args": [
+        "-e",
+        "console.log(JSON.stringify({ status: \"ready\", bot: \"bot_mo_meta_06\" }))"
+      ],
+      "env": {
+        "BOT_ID": "bot_mo_meta_06",
+        "BOT_NAME": "Mo"
+      }
+    }
+  }
+}

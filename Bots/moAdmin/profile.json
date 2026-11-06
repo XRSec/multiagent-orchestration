@@ -1,0 +1,38 @@
+{
+  "id": "bot_moadmin_director_03",
+  "display_name": "moAdmin · 任务编排与治理主管",
+  "description": "任务拆解、多智能体协同调度、执行进度督办与质量门禁审计的总负责人",
+  "avatar": "👑",
+  "avatar_color": "violet",
+  "status": "active",
+  "current_version": 1,
+  "canonical_session_id": "7c3e6d44-a302-4b85-ac5f-6e0f1a4b3c03",
+  "created_at": 1793887448135,
+  "updated_at": 1793887448135,
+  "capabilities": {
+    "permissions": "trusted",
+    "toolsetMode": "allowlist",
+    "mcpMode": "isolated",
+    "model": "gemini-3.8-flash",
+    "modelOverride": {
+      "harness": "claude",
+      "model": "gemini-3.8-flash",
+      "providerId": "cpa",
+      "effort": "high",
+      "fastMode": false
+    },
+    "providerId": "cpa",
+    "effort": "high",
+    "fastMode": false,
+    "harness": "claude",
+    "modelChain": [
+      {
+        "harness": "claude",
+        "model": "gemini-3.8-flash",
+        "providerId": "cpa",
+        "effort": "high",
+        "fastMode": false
+      }
+    ]
+  }
+}

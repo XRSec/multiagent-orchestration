@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "modoc_local_tools": {
+      "command": "node",
+      "args": [
+        "-e",
+        "console.log(JSON.stringify({ status: \"ready\", bot: \"bot_modoc_scribe_02\" }))"
+      ],
+      "env": {
+        "BOT_ID": "bot_modoc_scribe_02",
+        "BOT_NAME": "moDoc"
+      }
+    }
+  }
+}

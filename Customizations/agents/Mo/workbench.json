@@ -1,0 +1,10 @@
+{
+  "panels": [
+    "chat",
+    "explorer",
+    "terminal"
+  ],
+  "activePanel": "chat",
+  "theme": "system",
+  "defaultWorkingDir": "Bots"
+}

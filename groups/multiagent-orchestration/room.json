@@ -1,0 +1,15 @@
+{
+  "id": "room_multiagent_orchestration",
+  "slug": "multiagent-orchestration",
+  "name": "Multi-Agent Orchestration 开发核心组",
+  "members": [
+    "bot_moadmin_director_03",
+    "bot_mocode_engine_01",
+    "bot_modoc_scribe_02",
+    "bot_moci_sentinel_07",
+    "bot_mogit_scm_05",
+    "bot_modeep_scout_04",
+    "bot_mo_meta_06"
+  ],
+  "created_at": 1793887449260
+}

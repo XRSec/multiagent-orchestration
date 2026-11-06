@@ -1,0 +1,13 @@
+{
+  "id": "beta-calc-suite",
+  "name": "Beta Math and System Telemetry Plugin",
+  "version": "1.0.0",
+  "description": "Exclusive plugin for Bot Beta providing complex formula calculation and memory/runtime telemetry inspection",
+  "skills": [
+    {
+      "name": "advanced-math-solver",
+      "description": "Performs multi-step arithmetic, power, and algebraic computations",
+      "entryFile": "SKILL.md"
+    }
+  ]
+}

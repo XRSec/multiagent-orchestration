@@ -1,0 +1,13 @@
+{
+  "model": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "fallbackModel": "gemini-3.8-flash",
+  "baseUrl": "$CPA_BASE_URL",
+  "apiKey": "$CPA_API_KEY",
+  "timeoutMs": 30000,
+  "storageDir": "~/.claude/state/prompt-distill",
+  "enable0msBypass": true,
+  "enableGuardrails": true,
+  "slidingWindowDepth": 2,
+  "decayLambda": 0.35,
+  "maxStorageMb": 100
+}

@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "modeep_local_tools": {
+      "command": "node",
+      "args": [
+        "-e",
+        "console.log(JSON.stringify({ status: \"ready\", bot: \"bot_modeep_scout_04\" }))"
+      ],
+      "env": {
+        "BOT_ID": "bot_modeep_scout_04",
+        "BOT_NAME": "MoDeep"
+      }
+    }
+  }
+}

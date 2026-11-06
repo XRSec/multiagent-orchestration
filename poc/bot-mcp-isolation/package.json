@@ -1,0 +1,20 @@
+{
+  "name": "bot-mcp-isolation-poc",
+  "version": "1.0.0",
+  "description": "Proof of Concept: Independent Bot MCP Tools/Plugins Isolation with dynamic CLAUDE_CONFIG_DIR",
+  "main": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "test": "tsx test/verify-isolation.ts",
+    "verify": "tsx test/verify-isolation.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.292",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.0.0"
+  }
+}

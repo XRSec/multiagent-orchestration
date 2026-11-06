@@ -1,0 +1,40 @@
+{
+  "id": "bot_modeep_scout_04",
+  "display_name": "MoDeep · 深度调研与情报分析师",
+  "description": "专职外部技术前沿调研、开源架构剖析、规范提取与深度研报交付的情报专家",
+  "avatar": "🔍",
+  "avatar_color": "purple",
+  "status": "active",
+  "current_version": 1,
+  "canonical_session_id": "6d4f7e55-b413-4c96-bd6a-7f1a2b5c4d04",
+  "created_at": 1793868096955,
+  "updated_at": 1793868096955,
+  "capabilities": {
+    "permissions": "trusted",
+    "toolsetMode": "allowlist",
+    "mcpMode": "isolated",
+    "model": "gemini-3.8-flash",
+    "modelOverride": {
+      "harness": "claude",
+      "providerId": "anthropic",
+      "model": "gemini-3.8-flash",
+      "effort": "high",
+      "fastMode": false,
+      "thinkingLevel": "high"
+    },
+    "providerId": "anthropic",
+    "effort": "high",
+    "fastMode": false,
+    "harness": "claude",
+    "modelChain": [
+      {
+        "harness": "claude",
+        "providerId": "anthropic",
+        "model": "gemini-3.8-flash",
+        "effort": "none",
+        "fastMode": false
+      }
+    ],
+    "thinkingLevel": "high"
+  }
+}

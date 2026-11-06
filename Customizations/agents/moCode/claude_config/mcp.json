@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "pi-web-search": {
+      "type": "stdio",
+      "command": "node",
+      "args": [
+        "/Users/xr/.config/magpie/mcp-npm/3381b90f4a853b5e/node_modules/pi-web-access/dist/mcp-cli.js"
+      ]
+    }
+  }
+}
