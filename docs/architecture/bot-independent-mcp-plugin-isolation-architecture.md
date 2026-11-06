@@ -23,7 +23,7 @@
 
 ## 1. 架构背景与核心痛点
 
-在当前的 Claude Code 与 Cindy 实现中，桌面宿主为了复用开发者本机现有的订阅登录（OAuth Bearer），在拉起 Claude Code 子进程时**刻意未设置独立的 `CLAUDE_CONFIG_DIR`**（见 `CindyR/apps/desktop/src/main/maker-host/auth-adapters.ts:738-740`）。这种设计在单用户个人编码场景下提供了开箱即用的便利，但在多 Agent（Multi-Bot）并发协同的架构下，暴露了四大致命隐患：
+在当前的 Claude Code 与 Cindy 实现中，桌面宿主为了复用开发者本机现有的订阅登录（OAuth Bearer），在拉起 Claude Code 子进程时**刻意未设置独立的 `CLAUDE_CONFIG_DIR`**（见 `CindyR/apps/desktop/src/main/maker-host/auth-adapters.ts-740`）。这种设计在单用户个人编码场景下提供了开箱即用的便利，但在多 Agent（Multi-Bot）并发协同的架构下，暴露了四大致命隐患：
 
 ```
 当前共享宿主 ~/.claude 的架构缺陷:

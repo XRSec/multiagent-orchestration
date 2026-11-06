@@ -6,5 +6,20 @@
   ],
   "activePanel": "chat",
   "theme": "system",
-  "defaultWorkingDir": "."
+  "defaultWorkingDir": ".",
+  "allowedWritePaths": [
+    "groups/",
+    "Customizations/group/",
+    "docs/",
+    "logs/"
+  ],
+  "disallowedWritePaths": [
+    "src/",
+    "test/",
+    "~/.claude",
+    ".env"
+  ],
+  "env": {
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
+  }
 }

@@ -6,6 +6,9 @@
  */
 
 import * as path from 'node:path';
+import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import { EventEmitter } from 'node:events';
 import { BlackboardStore } from '../blackboard/BlackboardStore';
 import { createBlackboardMcpServer } from '../blackboard/blackboardMcp';
@@ -34,20 +37,21 @@ export interface TurnRunnerConfig {
   maxBudgetUsd: number;
 }
 
-function getSdkQuery(): any {
-  const candidates = [
-    '@anthropic-ai/claude-agent-sdk',
-    path.resolve(__dirname, '../../../../extensions/CindyR/node_modules/@anthropic-ai/claude-agent-sdk'),
-    path.resolve(__dirname, '../../../../extensions/multiagent-orchestration-old/node_modules/@anthropic-ai/claude-agent-sdk'),
-  ];
-  for (const c of candidates) {
+async function getSdkQuery(): Promise<any> {
+  const cwd = process.cwd();
+  const wsRoot = fs.existsSync(path.join(cwd, 'Customizations')) ? cwd : path.resolve(cwd, '../..');
+  const sdkMjs = path.join(wsRoot, 'node_modules', '@anthropic-ai', 'claude-agent-sdk', 'sdk.mjs');
+  if (fs.existsSync(sdkMjs)) {
     try {
-      const sdk = require(c);
-      if (typeof sdk.query === 'function') {
-        return sdk.query;
-      }
+      const mod = await import(pathToFileURL(sdkMjs).href);
+      if (typeof mod?.query === 'function') return mod.query;
     } catch {}
   }
+  try {
+    const req = createRequire(path.join(wsRoot, 'package.json'));
+    const sdk = req('@anthropic-ai/claude-agent-sdk');
+    if (typeof sdk?.query === 'function') return sdk.query;
+  } catch {}
   throw new Error('Failed to resolve @anthropic-ai/claude-agent-sdk query API');
 }
 
@@ -66,8 +70,8 @@ export class BlackboardOrchestrator extends EventEmitter {
     this.projectRoot = path.resolve(options.projectRoot);
     this.baseUrl = options.baseUrl || process.env.ANTHROPIC_BASE_URL || process.env.CPA_BASE_URL || '';
     this.apiKey = options.apiKey || process.env.ANTHROPIC_API_KEY || process.env.CPA_API_KEY || '';
-    this.haikuModel = options.defaultHaikuModel || 'gemini-3.8-flash';
-    this.sonnetModel = options.defaultSonnetModel || 'gemini-3.8-flash';
+    this.haikuModel = options.defaultHaikuModel || 'claude-sonnet-4-6';
+    this.sonnetModel = options.defaultSonnetModel || 'claude-opus-4-6';
 
     this.store = new BlackboardStore(this.projectRoot);
     this.blackboardMcp = createBlackboardMcpServer(this.store);
@@ -79,7 +83,7 @@ export class BlackboardOrchestrator extends EventEmitter {
   }
 
   private buildRunnerOptions(config: TurnRunnerConfig): any {
-    const sandboxDir = path.join(this.projectRoot, '.claude', 'sandboxes', config.botId);
+    const sandboxDir = path.join(this.projectRoot, 'Customizations', 'agents', config.botId === 'moCI' ? 'MoCI' : config.botId, 'claude_config');
     return {
       cwd: this.projectRoot,
       model: config.model,
@@ -113,7 +117,7 @@ export class BlackboardOrchestrator extends EventEmitter {
   }
 
   private async dispatchTurn(prompt: string, config: TurnRunnerConfig): Promise<string> {
-    const sdkQuery = getSdkQuery();
+    const sdkQuery = await getSdkQuery();
     const options = this.buildRunnerOptions(config);
     this.emit('bot.start', { botId: config.botId, prompt });
 

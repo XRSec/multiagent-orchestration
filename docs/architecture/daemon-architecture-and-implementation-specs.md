@@ -44,7 +44,7 @@ Multi-Agent Orchestration Daemon 是常驻后台的系统核心中枢。它吸�
 │   ┌───────────────────────────────▼────────────────────────────────┐   │
 │   │             BackpressureGuard & Lease Watchdog                 │   │
 │   │      - 64 MiB High-Water Mark Outbound Buffer Ceiling          │   │
-│   │      - 30s Heartbeat Lease Watchdog & Dead Socket Eviction     │   │
+│   │      - 15s Ping / 45s Lease Watchdog & Dead Socket Eviction     │   │
 │   └──────┬──────────────────────┬──────────────────────────┬───────┘   │
 │          │                      │                          │           │
 │   ┌──────▼──────────────┐┌──────▼──────────────────┐┌──────▼────────┐  │
@@ -113,9 +113,9 @@ Daemon 同时提供两套传输通道，分别针对本地高性能与跨宿主�
 - 无论是 Unix Socket 还是 WebSocket，在发送每一帧前均检查 `socket.writableLength`；
 - 一旦积压达到阈值，立即抛出 `BACKPRESSURE_EXCEEDED` 异常并丢弃非关键瞬态帧，确保守护进程主干不崩溃。
 
-### 3.2 30 秒租约看门狗 (Lease Watchdog)
-- 客户端每 10 秒发送 `ping`，Daemon 响应 `pong` 并更新连接活跃时间；
-- 看门狗定时器每 5 秒扫描一次，若连接超时超过 30 秒未有任何活动，判定物理链路假死，主动断开并回收底层文件描述符。
+### 3.2 45 秒租约看门狗 (Lease Watchdog, v4.1)
+- 客户端每 15 秒 (`pingIntervalMs = 15000`) 发送 `ping`，Daemon 响应 `pong` 并更新连接活跃时间；
+- 看门狗定时器每 5 秒扫描一次，若连接超时超过 45 秒 (`zombieTimeoutMs = 45000`) 未有任何活动，判定物理链路假死，主动断开并回收底层文件描述符。
 
 ---
 
@@ -124,9 +124,9 @@ Daemon 同时提供两套传输通道，分别针对本地高性能与跨宿主�
 针对宿主环境与伙伴工具的管理，彻底贯彻 **Host as Universal Loader** 哲学：
 
 1. **聚合读取**:
-   - 宿主全局：只读读取 `~/.claude.json` 与 `~/.claude/mcp.json`；
+   - 自持全局：只读读取 `~/.multiagent-orchestration/mcp.json`（严禁读取或触碰宿主 `~/.claude`）；
    - 项目本地：读取当前项目根目录的 `.mcp.json`；
-   - 技能库：统一扫描 `~/.agents/skills/` 与项目本地 `.agents/skills/`；
+   - 技能库：统一扫描 `~/.multiagent-orchestration/skills/` 与项目本地 `Customizations/skills/`；
    - 冲突覆盖规则：本地服务同名优先覆盖全局服务。
 2. **20 个敏感系统环境变量剥离**:
    - 强制剥离 `ANTHROPIC_API_KEY`, `CLAUDE_CONFIG_DIR`, `AWS_SECRET_ACCESS_KEY`, `GITHUB_TOKEN` 等 20 个关键安全变量。

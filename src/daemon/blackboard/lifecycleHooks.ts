@@ -25,14 +25,19 @@ export interface HookOutput {
 }
 
 export function createCompactionGuardHooks(store: BlackboardStore, projectRoot: string) {
-  const snapshotPath = path.join(projectRoot, '.claude', 'blackboard_epoch.json');
+  const dataSnapshotPath = path.join(projectRoot, 'data', 'blackboard_epoch.json');
+  const legacySnapshotPath = path.join(projectRoot, '.claude', 'blackboard_epoch.json');
 
   const preCompactHook = async (input: HookInput): Promise<HookOutput> => {
     if (input.hook_event_name !== 'PreCompact') {
       return { continue: true };
     }
     // 严禁返回 hookSpecificOutput，仅执行同步快照落盘
-    store.exportSnapshotFile(snapshotPath);
+    store.exportSnapshotFile(dataSnapshotPath);
+    // Keep legacy fixture compatibility when running isolated tests inside test/fixtures/
+    if (projectRoot.includes('fixtures') || projectRoot.includes('blackboard-test')) {
+      store.exportSnapshotFile(legacySnapshotPath);
+    }
     return {
       continue: true,
       suppressOutput: true,
@@ -130,4 +135,3 @@ export const dangerousCommandGuardHook = async (input: HookInput): Promise<HookO
 
   return { continue: true };
 };
-

@@ -1,24 +1,40 @@
 {
   "permissions": "trusted",
+  "permissionLevel": "full",
   "toolsetMode": "allowlist",
   "mcpMode": "isolated",
-  "model": "gemini-3.8-flash",
+  "orchestrationRole": "meta",
+  "groupActions": [
+    "talk",
+    "finish"
+  ],
+  "model": "claude-opus-4-6",
+  "fallbackModel": "gemini-3.8-flash",
+  "providerId": "cpa",
+  "effort": "high",
+  "thinkingLevel": "high",
+  "fastMode": false,
+  "harness": "claude",
   "modelOverride": {
     "harness": "claude",
-    "model": "gemini-3.8-flash",
+    "model": "claude-opus-4-6",
+    "fallbackModel": "gemini-3.8-flash",
     "providerId": "cpa",
     "effort": "high",
     "fastMode": false
   },
-  "providerId": "cpa",
-  "effort": "high",
-  "fastMode": false,
-  "harness": "claude",
   "modelChain": [
     {
       "harness": "claude",
-      "model": "gemini-3.8-flash",
       "providerId": "cpa",
+      "model": "claude-opus-4-6",
+      "effort": "high",
+      "fastMode": false
+    },
+    {
+      "harness": "claude",
+      "providerId": "cpa",
+      "model": "gemini-3.8-flash",
       "effort": "high",
       "fastMode": false
     }
@@ -27,9 +43,31 @@
     "read_file",
     "write_file",
     "edit_file",
-    "run_command"
+    "run_command",
+    "send_message"
   ],
-  "permissionLevel": "full",
+  "sdkTools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Glob",
+    "Grep"
+  ],
+  "mcpTools": [
+    "mcp__blackboard__read_blackboard",
+    "mcp__blackboard__update_task_status"
+  ],
+  "allowedWritePaths": [
+    "Customizations/skills/",
+    "Customizations/agents/<NewBot>/",
+    "Bots/<NewBot>/"
+  ],
+  "disallowedWritePaths": [
+    "src/",
+    "~/.claude",
+    ".env"
+  ],
   "skills": [
     "skill-creator-helper",
     "agent-first-docs",

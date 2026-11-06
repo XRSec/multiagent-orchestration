@@ -21,7 +21,7 @@ export const AssistantExecutionCards: React.FC<AssistantExecutionCardsProps> = (
     <>
       {/* 1. Official ThinkingCard */}
       {msg.thinking && (
-        <div className="w-full select-none">
+        <div className="w-full select-text">
           <button
             onClick={() => setThinkingExpanded(!thinkingExpanded)}
             className="flex items-center gap-1.5 py-1 text-xs text-text-tertiary hover:text-text-secondary transition-colors group/think cursor-pointer"

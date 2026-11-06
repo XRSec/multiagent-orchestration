@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "botId": "bot_rea_partner_08",
+  "shards": [
+    "user_agent-first-multi-agent-system.md",
+    "user_language-discipline.md",
+    "user_skills-are-for-machines.md",
+    "reference_reverse-engineering-protocols.md"
+  ]
+}

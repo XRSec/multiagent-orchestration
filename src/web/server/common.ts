@@ -11,6 +11,7 @@ import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { DatabaseSync } from 'node:sqlite';
+import { ORCHESTRATOR_DB_SCHEMA } from '../../storage/DatabaseSchema.ts';
 
 // Resolve project root (src/web/server -> src/web -> src -> projectRoot)
 const currentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -66,7 +67,7 @@ export const MO_BOTS_META: Record<string, {
     color: '#8b5cf6',
     isLead: true,
     aliases: ['moadmin', 'moAdmin', 'admin', '主管', '编排主管'],
-    model: 'gemini-3.8-flash',
+    model: 'claude-opus-4-6',
     description: '全权负责调度推进、单发言人协调推进与整体交付验收。'
   },
   'bot_mocode_engine_01': {
@@ -80,7 +81,7 @@ export const MO_BOTS_META: Record<string, {
     badgeTheme: 'blue',
     color: '#3b82f6',
     aliases: ['mocode', 'moCode', 'code', '研发', '全栈研发'],
-    model: 'gemini-3.8-flash',
+    model: 'claude-opus-4-6',
     description: '精通 TypeScript/Node.js、Rust 与系统架构，全权负责系统核心代码编写与重构演进。'
   },
   'bot_modoc_scribe_02': {
@@ -94,7 +95,7 @@ export const MO_BOTS_META: Record<string, {
     badgeTheme: 'teal',
     color: '#14b8a6',
     aliases: ['modoc', 'moDoc', 'doc', '文胆', '架构文胆'],
-    model: 'gemini-3.8-flash',
+    model: 'claude-sonnet-4-6',
     description: '严谨沉淀系统架构、设计决策与共识事实，负责高密度技术文档维护。'
   },
   'bot_moci_sentinel_07': {
@@ -108,7 +109,7 @@ export const MO_BOTS_META: Record<string, {
     badgeTheme: 'rose',
     color: '#f43f5e',
     aliases: ['moci', 'MoCI', 'ci', '测试', '测试哨兵'],
-    model: 'gemini-3.8-flash',
+    model: 'claude-sonnet-4-6',
     description: '自动化构建守卫、单元测试验证与回归质量门禁。'
   },
   'bot_mogit_scm_05': {
@@ -122,7 +123,7 @@ export const MO_BOTS_META: Record<string, {
     badgeTheme: 'emerald',
     color: '#10b981',
     aliases: ['mogit', 'MoGit', 'git', '审计', '代码审计'],
-    model: 'gemini-3.8-flash',
+    model: 'claude-sonnet-4-6',
     description: '严格执行 Squash 规范、工作区干净度校验与提交审查。'
   },
   'bot_modeep_scout_04': {
@@ -136,7 +137,7 @@ export const MO_BOTS_META: Record<string, {
     badgeTheme: 'indigo',
     color: '#6366f1',
     aliases: ['modeep', 'MoDeep', 'deep', '情报', '深度情报'],
-    model: 'gemini-3.8-flash',
+    model: 'claude-opus-4-6',
     description: '追踪业界领先的多 Agent 协同规范与架构落地细节。'
   },
   'bot_mo_meta_06': {
@@ -150,7 +151,7 @@ export const MO_BOTS_META: Record<string, {
     badgeTheme: 'orange',
     color: '#f97316',
     aliases: ['mo', 'Mo', 'meta', '锻造师', '元工具师'],
-    model: 'gemini-3.8-flash',
+    model: 'claude-opus-4-6',
     description: '元工具研发、伙伴脚手架生产及运行时环境隔离保障。'
   }
 };
@@ -263,16 +264,85 @@ export function normalizeRoomSlug(slug: string): {
 }
 
 
-// SQLite helper
+function migrateWebSqliteSchema(db: DatabaseSync): void {
+  try {
+    db.exec(ORCHESTRATOR_DB_SCHEMA);
+  } catch {}
+  const ensureCols = (table: string, cols: Array<[string, string]>) => {
+    try {
+      const info = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+      const existing = new Set(info.map((c) => c.name));
+      for (const [colName, colDef] of cols) {
+        if (!existing.has(colName)) {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${colName} ${colDef}`);
+        }
+      }
+    } catch {}
+  };
+  ensureCols('bots', [['capabilities_json', 'TEXT']]);
+  ensureCols('sessions', [
+    ['workspace_kind', "TEXT NOT NULL DEFAULT 'project'"],
+    ['project_dir', 'TEXT'],
+    ['model', "TEXT NOT NULL DEFAULT 'claude-opus-4-6'"],
+    ['provider_id', "TEXT DEFAULT 'cpa'"],
+    ['effort', "TEXT NOT NULL DEFAULT 'high'"],
+    ['permission_mode', "TEXT NOT NULL DEFAULT 'auto'"],
+    ['plan_mode_enabled', 'INTEGER NOT NULL DEFAULT 0'],
+    ['sdk_session_id', 'TEXT'],
+    ['parent_session_id', 'TEXT'],
+    ['forked_at_message_id', 'TEXT'],
+    ['total_cost_usd', 'REAL NOT NULL DEFAULT 0'],
+    ['context_tokens', 'INTEGER NOT NULL DEFAULT 0'],
+    ['context_window', 'INTEGER NOT NULL DEFAULT 200000'],
+    ['extra_dirs_json', "TEXT NOT NULL DEFAULT '[]'"],
+    ['writable_dirs_json', "TEXT NOT NULL DEFAULT '[]'"],
+    ['active_turn_started_at', 'INTEGER'],
+    ['last_turn_ended_at', 'INTEGER'],
+    ['cleared_at', 'INTEGER'],
+    ['pinned_at', 'INTEGER'],
+    ['list_preview', 'TEXT'],
+    ['list_message_count', 'INTEGER'],
+  ]);
+  ensureCols('messages', [
+    ['client_id', 'TEXT'],
+    ['tool_use_id', 'TEXT'],
+    ['agent_kind', "TEXT DEFAULT 'cc'"],
+    ['agent_meta_json', 'TEXT'],
+    ['rewind_at', 'INTEGER'],
+  ]);
+}
+
+// SQLite helper with automatic schema & column migration
 let sqliteDb: DatabaseSync | null = null;
 export function getDb(): DatabaseSync | null {
   if (sqliteDb) return sqliteDb;
-  if (fs.existsSync(DAEMON_DB_PATH)) {
-    try {
-      sqliteDb = new DatabaseSync(DAEMON_DB_PATH);
-    } catch (e) {
-      console.warn('[viteRoomApi] Failed to open sqlite db:', e);
+  const candidatePaths = [
+    process.env.ORCHESTRATOR_DB_PATH,
+    DAEMON_DB_PATH,
+    path.join(PROJECT_ROOT, 'data', 'orchestrator.db'),
+    path.join(os.homedir(), '.multiagent-orchestration', 'storage', 'orchestrator.db')
+  ].filter(Boolean) as string[];
+
+  for (const cand of candidatePaths) {
+    if (fs.existsSync(cand)) {
+      try {
+        sqliteDb = new DatabaseSync(cand);
+        migrateWebSqliteSchema(sqliteDb);
+        return sqliteDb;
+      } catch (e) {
+        console.warn('[viteRoomApi] Failed to open sqlite db at', cand, e);
+      }
     }
+  }
+
+  // If no DB exists yet, initialize at DAEMON_DB_PATH
+  try {
+    fs.mkdirSync(path.dirname(DAEMON_DB_PATH), { recursive: true });
+    sqliteDb = new DatabaseSync(DAEMON_DB_PATH);
+    migrateWebSqliteSchema(sqliteDb);
+    return sqliteDb;
+  } catch (e) {
+    console.warn('[viteRoomApi] Failed to initialize sqlite db:', e);
   }
   return sqliteDb;
 }

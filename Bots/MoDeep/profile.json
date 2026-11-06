@@ -13,11 +13,12 @@
     "permissions": "trusted",
     "toolsetMode": "allowlist",
     "mcpMode": "isolated",
-    "model": "gemini-3.8-flash",
+    "model": "claude-opus-4-6",
     "modelOverride": {
       "harness": "claude",
       "providerId": "cpa",
-      "model": "gemini-3.8-flash",
+      "model": "claude-opus-4-6",
+      "fallbackModel": "gemini-3.8-flash",
       "effort": "high",
       "fastMode": false,
       "thinkingLevel": "high"
@@ -30,11 +31,19 @@
       {
         "harness": "claude",
         "providerId": "cpa",
+        "model": "claude-opus-4-6",
+        "effort": "high",
+        "fastMode": false
+      },
+      {
+        "harness": "claude",
+        "providerId": "cpa",
         "model": "gemini-3.8-flash",
         "effort": "high",
         "fastMode": false
       }
     ],
-    "thinkingLevel": "high"
+    "thinkingLevel": "high",
+    "fallbackModel": "gemini-3.8-flash"
   }
 }

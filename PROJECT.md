@@ -53,7 +53,7 @@
    - Dynamic scanning and capability persistence APIs; unbinding `MOCK_BOTS` on all frontend pages (`src/web`).
    - Real Claude SDK (`@anthropic-ai/claude-agent-sdk`) execution with model routing via `Customizations/models.json` (`claude-opus-4-6` / `claude-sonnet-4-6`, fallback `gemini-3.8-flash`).
 3. **Blackboard Coordination, Dual-SQLite WAL & Single-Speaker Arbitration**:
-   - Dual-SQLite WAL storage (`better-sqlite3`): `data/orchestrator.db` and `data/blackboard_ssot.db`.
+   - Dual-SQLite WAL storage (`node:sqlite` `DatabaseSync`): `data/orchestrator.db` and `data/blackboard_ssot.db`, unified under `GatewayServer -> DaemonServer -> AgentOrchestrator -> ClaudeSdkRunner` with `mcp__blackboard__*` and `mcp__orchestrator__*` tool injection.
    - Shared triple-file group blackboard in `groups/<slug>/` and `Customizations/group/<slug>/`: `room.json`, `GROUP_CHARTER.md`, `GROUP_MEMORY.md`.
    - Single-speaker protocol (`single_speaker_mode: true`) with explicit `@mention` priority or `moAdmin` fallback arbitration.
    - Two-tier turn quota (`max_consecutive_steps: 5`, `max_turns_per_round: 10`, `max_circles_per_round: 3`) and `<group-Action>` XML tags (`talk`, `collaborate`, `finish`) to eliminate infinite loops; `NO_REPLY` silent skip.
@@ -185,6 +185,7 @@
   }
   ```
 - **Transcript Format**: `storage/transcripts/{sessionId}.jsonl` (one JSON per line).
+- **Session lifecycle, rewind, compaction**: see `docs/architecture/session-lifecycle-compaction-and-rewind-specs.md`.
 
 ---
 

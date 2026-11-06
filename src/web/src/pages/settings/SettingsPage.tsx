@@ -24,12 +24,14 @@ import {
   HelpCircle,
   CheckCircle2,
 } from 'lucide-react';
-import { MOCK_PROVIDERS, MOCK_SHORTCUTS, MOCK_USER_PROFILE } from '@/mock/settings';
+import { MOCK_SHORTCUTS, MOCK_USER_PROFILE } from '@/mock/settings';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useLocale } from '@/contexts/LocaleContext';
 import { AboutTab } from './components/AboutTab';
-import { ModelsTab, type ModelMapping } from './components/ModelsTab';
-import { ProvidersTab } from './components/ProvidersTab';
+import { ModelsTab } from './components/ModelsTab';
+import { ProvidersTab, type ProviderItem } from './components/ProvidersTab';
+import { ProviderEditorModal } from './components/ProviderEditorModal';
+import { type ProviderDraft, draftFromProvider, emptyDraft, fromModelDraft } from './components/providerDraft';
 import { useToast } from '@/contexts/ToastContext';
 
 export function SettingsPage() {
@@ -63,15 +65,13 @@ export function SettingsPage() {
   const [selectedReasoning, setSelectedReasoning] = useState('high');
   const [cliSourceInfo, setCliSourceInfo] = useState('~/.multiagent-orchestration/models.json');
   const [fallbackModel, setFallbackModel] = useState('gemini-3.5-flash-lite');
-  const [modelMappings, setModelMappings] = useState<ModelMapping[]>([]);
+  const [auxiliaryModel, setAuxiliaryModel] = useState('gemini-3.8-flash');
+  const [auxiliaryFallbackModel, setAuxiliaryFallbackModel] = useState('gemini-3.5-flash-lite');
   const [isSavingModels, setIsSavingModels] = useState(false);
 
   // Providers states
   const [providers, setProviders] = useState<any[]>([]);
-  const [editingProvider, setEditingProvider] = useState<any | null>(null);
-  const [editBaseUrl, setEditBaseUrl] = useState('');
-  const [editApiKey, setEditApiKey] = useState('');
-  const [editName, setEditName] = useState('');
+  const [editorDraft, setEditorDraft] = useState<ProviderDraft | null>(null);
   const [savingProvider, setSavingProvider] = useState(false);
 
   const loadProviders = React.useCallback(async () => {
@@ -84,7 +84,7 @@ export function SettingsPage() {
           name: v.name || k,
           baseUrl: v.baseUrl || '',
           apiKey: v.apiKey || '',
-          models: Array.isArray(v.models) ? v.models.map((m: any) => m.name || m.id || m) : [],
+          models: Array.isArray(v.models) ? v.models : [],
           icon: k === 'anthropic' ? '⚡' : '🧠'
         }));
         setProviders(list);
@@ -99,29 +99,146 @@ export function SettingsPage() {
   }, [loadProviders]);
 
   const handleSaveProvider = async () => {
-    if (!editingProvider) return;
+    if (!editorDraft) return;
+    const payload = {
+      providerId: editorDraft.id,
+      name: editorDraft.name,
+      baseUrl: editorDraft.baseUrl,
+      apiKey: editorDraft.apiKey,
+      models: editorDraft.models.map(fromModelDraft),
+    };
     try {
       setSavingProvider(true);
       const res = await fetch('/api/config/providers', {
-        method: 'PUT',
+        method: editorDraft.isNew ? 'POST' : 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          providerId: editingProvider.id,
-          name: editName,
-          baseUrl: editBaseUrl,
-          apiKey: editApiKey,
-        }),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
-      if (data.ok) {
-        showToast(`成功更新网关「${editName}」API 配置！`, 'success');
-        setEditingProvider(null);
-        loadProviders();
-      }
+      if (!data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      showToast(`已写入 models.json：${editorDraft.name}`, 'success');
+      setEditorDraft(null);
+      loadProviders();
+      loadModelConfig(true);
     } catch (err: any) {
       showToast(`保存失败: ${err.message}`, 'error');
     } finally {
       setSavingProvider(false);
+    }
+  };
+
+  const handleDeleteProvider = async (p: ProviderItem) => {
+    if (!confirm(`确定从 models.json 中删除供应商「${p.name}」及其 ${p.models.length} 个模型吗？`)) return;
+    try {
+      const res = await fetch(`/api/config/providers/${encodeURIComponent(p.id)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      showToast(`已删除供应商「${p.name}」`, 'success');
+      loadProviders();
+      loadModelConfig(true);
+    } catch (err: any) {
+      showToast(`删除失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handleToggleProviderModel = async (p: ProviderItem, modelId: string, enabled: boolean) => {
+    const nextModels = (p.models || []).map((m: any) => {
+      const obj = typeof m === 'string' ? { id: m, name: m } : { ...m };
+      if (obj.id === modelId) {
+        return { ...obj, enabled };
+      }
+      return obj;
+    });
+    try {
+      const res = await fetch('/api/config/providers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          providerId: p.id,
+          models: nextModels,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      loadProviders();
+      loadModelConfig(true);
+    } catch (err: any) {
+      showToast(`更新模型状态失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handleRefreshProviderModels = async (p: ProviderItem) => {
+    try {
+      const res = await fetch('/api/config/providers/fetch-models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ providerId: p.id, baseUrl: p.baseUrl, apiKey: p.apiKey }),
+      });
+      const data = await res.json();
+      if (!data.ok || !Array.isArray(data.models)) {
+        showToast(data.detail || '该网关未返回新模型，可在「管理」中手动添加', 'info');
+        return;
+      }
+      const existingIds = new Set((p.models || []).map((m: any) => (typeof m === 'string' ? m : m.id)));
+      const merged = [...(p.models || [])];
+      let added = 0;
+      for (const fm of data.models) {
+        if (!existingIds.has(fm.id)) {
+          merged.push({
+            id: fm.id,
+            name: fm.name || fm.id,
+            contextWindow: fm.contextWindow || 200000,
+            maxTokens: 64000,
+            reasoning: true,
+            enabled: true,
+          });
+          added++;
+        }
+      }
+      if (added > 0) {
+        await fetch('/api/config/providers', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ providerId: p.id, models: merged }),
+        });
+        loadProviders();
+        loadModelConfig(true);
+        showToast(`已从网关同步新增 ${added} 个模型`, 'success');
+      } else {
+        showToast(`模型列表已是最新（共 ${merged.length} 个模型）`, 'success');
+      }
+    } catch (err: any) {
+      showToast(`刷新模型失败: ${err.message}`, 'error');
+    }
+  };
+
+  const handleImportProvidersFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const importedProviders = parsed.providers || (parsed.id && parsed.baseUrl ? { [parsed.id]: parsed } : null);
+      if (!importedProviders || typeof importedProviders !== 'object') {
+        throw new Error('JSON 文件中未找到有效的 providers 结构');
+      }
+      for (const [pId, pVal] of Object.entries(importedProviders) as [string, any][]) {
+        const exists = providers.some((x) => x.id === pId);
+        await fetch('/api/config/providers', {
+          method: exists ? 'PUT' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            providerId: pId,
+            name: pVal.name || pId,
+            baseUrl: pVal.baseUrl,
+            apiKey: pVal.apiKey || '',
+            models: Array.isArray(pVal.models) ? pVal.models : [],
+          }),
+        });
+      }
+      loadProviders();
+      loadModelConfig(true);
+      showToast(`已成功从 ${file.name} 导入供应商配置！`, 'success');
+    } catch (err: any) {
+      showToast(`导入失败: ${err.message}`, 'error');
     }
   };
 
@@ -133,9 +250,12 @@ export function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           activeDefaultModel: selectedModel,
+          primaryModel: selectedModel,
           fallbackModel,
+          primaryFallbackModel: fallbackModel,
+          auxiliaryModel,
+          auxiliaryFallbackModel,
           defaultReasoning: selectedReasoning,
-          modelMappings,
         }),
       });
       const data = await res.json();
@@ -149,27 +269,28 @@ export function SettingsPage() {
     }
   };
 
-  useEffect(() => {
-    async function loadCliConfig() {
-      try {
-        const res = await fetch('/api/config/models');
-        const data = await res.json();
-        if (data.ok) {
-          if (Array.isArray(data.models) && data.models.length > 0) {
-            setCliModels(data.models);
-          }
-          if (Array.isArray(data.reasoningEfforts) && data.reasoningEfforts.length > 0) setCliReasoning(data.reasoningEfforts);
-          if (data.activeDefaultModel) setSelectedModel(data.activeDefaultModel);
-          if (data.sourceFile) setCliSourceInfo(data.sourceFile);
-          if (data.fallbackModel) setFallbackModel(data.fallbackModel);
-          if (Array.isArray(data.modelMappings) && data.modelMappings.length > 0) setModelMappings(data.modelMappings);
-        }
-      } catch (err) {
-        console.warn('Load models error:', err);
-      }
+  const loadModelConfig = React.useCallback(async (modelsOnly = false) => {
+    try {
+      const res = await fetch('/api/config/models');
+      const data = await res.json();
+      if (!data.ok) return;
+      if (Array.isArray(data.models) && data.models.length > 0) setCliModels(data.models);
+      if (data.sourceFile) setCliSourceInfo(data.sourceFile);
+      if (modelsOnly) return;
+      if (Array.isArray(data.reasoningEfforts) && data.reasoningEfforts.length > 0) setCliReasoning(data.reasoningEfforts);
+      if (data.activeDefaultModel) setSelectedModel(data.activeDefaultModel);
+      if (data.fallbackModel) setFallbackModel(data.fallbackModel);
+      if (data.auxiliaryModel) setAuxiliaryModel(data.auxiliaryModel);
+      if (data.auxiliaryFallbackModel) setAuxiliaryFallbackModel(data.auxiliaryFallbackModel);
+      if (data.defaultReasoning) setSelectedReasoning(data.defaultReasoning);
+    } catch (err) {
+      console.warn('Load models error:', err);
     }
-    loadCliConfig();
   }, []);
+
+  useEffect(() => {
+    loadModelConfig();
+  }, [loadModelConfig]);
 
   const tabs = [
     { id: 'general', label: '通用', icon: Settings },
@@ -382,23 +503,24 @@ export function SettingsPage() {
         {activeTab === 'providers' && (
           <ProvidersTab
             providers={providers}
-            fallbackProviders={MOCK_PROVIDERS}
-            editingProvider={editingProvider}
-            editName={editName}
-            editBaseUrl={editBaseUrl}
-            editApiKey={editApiKey}
-            savingProvider={savingProvider}
-            onStartEdit={(p) => {
-              setEditingProvider(p);
-              setEditName(p.name);
-              setEditBaseUrl(p.baseUrl);
-              setEditApiKey(p.apiKey || '');
-            }}
-            onCancelEdit={() => setEditingProvider(null)}
-            onSaveEdit={handleSaveProvider}
-            onChangeName={setEditName}
-            onChangeBaseUrl={setEditBaseUrl}
-            onChangeApiKey={setEditApiKey}
+            sourceFile={cliSourceInfo}
+            onAdd={() => setEditorDraft(emptyDraft())}
+            onEdit={(p) => setEditorDraft(draftFromProvider(p))}
+            onDelete={handleDeleteProvider}
+            onToggleModel={handleToggleProviderModel}
+            onRefreshModels={handleRefreshProviderModels}
+            onImportJsonFile={handleImportProvidersFile}
+          />
+        )}
+
+        {editorDraft && (
+          <ProviderEditorModal
+            draft={editorDraft}
+            existingIds={providers.map((p) => p.id)}
+            saving={savingProvider}
+            onChange={setEditorDraft}
+            onCancel={() => setEditorDraft(null)}
+            onSave={handleSaveProvider}
           />
         )}
 
@@ -416,16 +538,12 @@ export function SettingsPage() {
             onSelectReasoning={setSelectedReasoning}
             fallbackModel={fallbackModel}
             onChangeFallbackModel={setFallbackModel}
-            modelMappings={modelMappings}
+            auxiliaryModel={auxiliaryModel}
+            onChangeAuxiliaryModel={setAuxiliaryModel}
+            auxiliaryFallbackModel={auxiliaryFallbackModel}
+            onChangeAuxiliaryFallbackModel={setAuxiliaryFallbackModel}
             onSave={handleSaveModelPreferences}
             isSaving={isSavingModels}
-            onChangeModelMapping={(idx, field, val) => {
-              setModelMappings((prev) => {
-                const next = [...prev];
-                next[idx] = { ...next[idx], [field]: val };
-                return next;
-              });
-            }}
           />
         )}
 

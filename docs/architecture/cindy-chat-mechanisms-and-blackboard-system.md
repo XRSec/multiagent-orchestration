@@ -436,3 +436,4 @@ sequenceDiagram
 | **E6** | **同行 Bot 模拟卡片试图提权执行命令** | Bot A 在输出中伪造一段包含 `rm -rf` 的脚本卡片并 `@` 了主人 | 宿主安全鉴权盾牌（`autoReviewUserText`）核查发现该指令发起源并非直接真人（`author.kind != 'human'`），直接作为纯文本处理并阻断工具执行 |
 | **E7** | **P2P 私下循环询问成环** | Bot A 询问 Bot B，Bot B 再次试图询问 Bot A | 请求携带 `depth` 计数器；当嵌套达到 `depth = 3` 时，P2P 协议层直接返回 `E_P2P_MAX_DEPTH`，打破死锁 |
 | **E8** | **并发写入冲撞** | 两个外部 Webhook 几乎同时尝试向群黑板追加日志 | `withRoomLock` 结合 `AsyncLocalStorage` 强制排队串行写入，杜绝文件损坏与数据丢失 |
+| **E9** | **回滚、压缩、崩溃恢复** | 消息回滚、上下文逼近上限、进程崩溃或会话目录迁移 | 见 [session-lifecycle-compaction-and-rewind-specs.md](session-lifecycle-compaction-and-rewind-specs.md) 第 5 节场景表 |

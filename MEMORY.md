@@ -40,17 +40,19 @@ locale: en-US
   - `MoGit` (`bot_mogit_scm_05`): SCM & Release Guardian (`claude-sonnet-4-6`). Primary CWD: `.`. Allowed Write Scope: `.git/`, release scripts, tags, changelogs.
   - `MoDeep` (`bot_modeep_scout_04`): Deep Research & Architecture Scout (`claude-opus-4-6`). Primary CWD: `./workspace/tmp/`. Allowed Write Scope: `docs/research/`, `poc/`, `./workspace/tmp/`, `./workspace/documents/`.
   - `Mo` (`bot_mo_meta_06`): Meta-Agent & Skill Creator (`claude-opus-4-6`). Primary CWD: `Customizations/`. Allowed Write Scope: `Customizations/skills/`, `Customizations/agents/<NewBot>/`, `Bots/<NewBot>/`.
-- [3.2] **Two-Tier Autonomous Turn Quota**:
+- [3.2] **Unified Orchestration Spine & Two-Tier Autonomous Turn Quota**:
+  - Unified Execution Path: `GatewayServer -> DaemonServer -> AgentOrchestrator -> ClaudeSdkRunner`, integrating `<group-Action>` (`talk`, `collaborate`, `finish`) dispatch with `BlackboardStore` (`data/blackboard_ssot.db`, `mcp__blackboard__*`) and `FastPath` / `PromptDistill` pre-flight distillation.
   - Tier 1 (`max_consecutive_steps: 5`): In single-speaker `talk` relay mode (`single_speaker_mode: true`), pauses after 5 consecutive bot-to-bot relay steps (`step >= 6` awaits human confirmation). Silent exit token: `NO_REPLY`.
   - Tier 2 (`max_turns_per_round: 10`, `max_circles_per_round: 3`): Hard anti-loop circuit breaker across all dispatch/collaborate rounds (`<group-Action>` tags: `talk`, `collaborate`, `finish`).
 - [3.3] **Prompt Distill Pipeline**: Non-blocking pre-flight distillation via `ANTHROPIC_DEFAULT_HAIKU_MODEL` / `gemini-3.8-flash` (`timeoutMs: 30000`, `slidingWindowDepth: 2`, `decayLambda: 0.35`, `enable0msBypass: true`, prompt templates including `prompts/round2.md`), persisting state in `~/.multiagent-orchestration/state/prompt-distill`.
 
 ## [4] HYBRID STORAGE & DUAL-SQLITE TOPOLOGY
-- [4.1] **Dual-SQLite WAL Engine (`better-sqlite3`)**:
+- [4.1] **Dual-SQLite WAL Engine (`node:sqlite` `DatabaseSync`)**:
   - `data/orchestrator.db`: Message timelines (`messages`), room metadata (`rooms`), `room_members`, `tasks`, `session_leases`, `idempotency_keys`, `audit_logs`, `bot_configs`, `blackboard_snapshots`.
   - `data/blackboard_ssot.db`: High-frequency KV state (`kv_store`), `bot_sessions`, `event_journal`.
   - Mandatory pragmas: `journal_mode = WAL`, `synchronous = NORMAL`, `busy_timeout = 5000`, `foreign_keys = ON`.
 - [4.2] **Triple-Layer Group Persistence**: Each group room (`groups/<slug>/` & `Customizations/group/<slug>/`) maintains `room.json` (static topology & turn parameters), `GROUP_CHARTER.md` (routing laws & role boundaries), and `GROUP_MEMORY.md` (distilled consensus facts injected into system prompts).
+- [4.3] **Session lifecycle, rewind, compaction**: see `docs/architecture/session-lifecycle-compaction-and-rewind-specs.md`. Schema owner is `src/storage/DatabaseSchema.ts`.
 
 ## [5] WEB STUDIO MENTAL MODEL INVARIANTS (`src/web`)
 - [5.1] **Execution Visual Order (`Process First, Conclusion Last`)**: `ExecutionStatusCard` MUST be mounted strictly **ABOVE** the message text bubble in `GroupChatTimeline`.

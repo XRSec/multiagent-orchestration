@@ -33,6 +33,10 @@ locale: en-US
 - [3.2] **Skill Symlink Restoration**: Materialized canonical `SKILL.md` definitions for `agent-first-docs`, `script-standards`, `skill-creator-helper`, `ego-browser`, and `nested-child` inside `Customizations/skills/`, replacing broken `/Users/xr/.agents/skills/*` links.
 - [3.3] **Bot 4-Pack Standardization**: Synchronized `Bots/<Bot>/` and `Customizations/agents/<Bot>/` across all 7 Mo-Bots (`providerId: "cpa"`, `effort: "high"`, `thinkingLevel: "high"`, relative `defaultWorkingDir`, portable `mcpServers`, and aligned `SOUL.md` & `README.md` CWDs and write scopes).
 - [3.4] **Documentation SSOT Alignment**: Corrected legacy references to SSE (`EventSource`), below-bubble `ExecutionStatusCard` placement, `apps/web` workspace path, `<= 600` line budgets, and host `~/.claude` credential inheritance across all repository documentation.
+- [3.5] **7 Mo-Bots Capability Matrix & Unified Spine Harmonization**: Synchronized `Customizations/models.example.json`, `Customizations/agents/<Bot>/`, and `Bots/<Bot>/` with `MEMORY.md` model routing (`claude-opus-4-6` / `claude-sonnet-4-6`, fallback `gemini-3.8-flash`), explicit SDK native tool allowlists (`sdkTools`), orchestration/blackboard MCP tool contracts (`mcpTools`), and unified `node:sqlite` (`DatabaseSync`) + `data/blackboard_ssot.db` specifications.
+- [3.6] Added the session lifecycle, rewind and compaction spec (TARGET). See `docs/architecture/session-lifecycle-compaction-and-rewind-specs.md`.
+- [3.7] Added the optimization catalog (PROPOSED), documentation standards and docs index. Corrected earlier misstatements. Verified by symbol lookup and `npx tsx test/storage-runtime.test.ts`.
+- [3.8] Added the linkage reference study (PROPOSED). `/boost` is unverified.
 
 ## [4] DOCUMENTATION MILESTONES
 - [4.1] **Docs Routing Tree & Operating Model**: Added `docs/INDEX.md` (routing root), `docs/_conventions.md` (doc format, size limits, write-back) and `docs/operating-model.md` (binding delivery rules, task lifecycle, Mo-Bot role mapping, proof contract), routed from `AGENTS.md` §6 (2026-11-07).

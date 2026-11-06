@@ -1,34 +1,75 @@
 {
   "permissions": "trusted",
+  "permissionLevel": "full",
   "toolsetMode": "allowlist",
   "mcpMode": "isolated",
-  "model": "gemini-3.8-flash",
+  "orchestrationRole": "reviewer",
+  "groupActions": [
+    "talk",
+    "finish"
+  ],
+  "model": "claude-sonnet-4-6",
+  "fallbackModel": "gemini-3.8-flash",
+  "providerId": "cpa",
+  "effort": "high",
+  "thinkingLevel": "high",
+  "fastMode": false,
+  "harness": "claude",
   "modelOverride": {
     "harness": "claude",
-    "model": "gemini-3.8-flash",
+    "model": "claude-sonnet-4-6",
+    "fallbackModel": "gemini-3.8-flash",
     "providerId": "cpa",
     "effort": "high",
     "fastMode": false
   },
-  "providerId": "cpa",
-  "effort": "high",
-  "fastMode": false,
-  "harness": "claude",
   "modelChain": [
     {
       "harness": "claude",
-      "model": "gemini-3.8-flash",
       "providerId": "cpa",
+      "model": "claude-sonnet-4-6",
+      "effort": "high",
+      "fastMode": false
+    },
+    {
+      "harness": "claude",
+      "providerId": "cpa",
+      "model": "gemini-3.8-flash",
       "effort": "high",
       "fastMode": false
     }
   ],
   "tools": [
     "read_file",
+    "write_file",
+    "edit_file",
     "run_command",
-    "write_file"
+    "send_message"
   ],
-  "permissionLevel": "full",
+  "sdkTools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Glob",
+    "Grep"
+  ],
+  "mcpTools": [
+    "mcp__blackboard__read_blackboard",
+    "mcp__blackboard__update_task_status"
+  ],
+  "allowedWritePaths": [
+    "test/",
+    "logs/",
+    "reports/",
+    "coverage/",
+    ".github/"
+  ],
+  "disallowedWritePaths": [
+    "src/",
+    "~/.claude",
+    ".env"
+  ],
   "skills": [
     "script-standards",
     "agent-first-docs"

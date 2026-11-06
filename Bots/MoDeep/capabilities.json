@@ -1,24 +1,40 @@
 {
   "permissions": "trusted",
+  "permissionLevel": "full",
   "toolsetMode": "allowlist",
   "mcpMode": "isolated",
-  "model": "gemini-3.8-flash",
+  "orchestrationRole": "scout",
+  "groupActions": [
+    "talk",
+    "finish"
+  ],
+  "model": "claude-opus-4-6",
+  "fallbackModel": "gemini-3.8-flash",
+  "providerId": "cpa",
+  "effort": "high",
+  "thinkingLevel": "high",
+  "fastMode": false,
+  "harness": "claude",
   "modelOverride": {
     "harness": "claude",
-    "model": "gemini-3.8-flash",
+    "model": "claude-opus-4-6",
+    "fallbackModel": "gemini-3.8-flash",
     "providerId": "cpa",
     "effort": "high",
     "fastMode": false
   },
-  "providerId": "cpa",
-  "effort": "high",
-  "fastMode": false,
-  "harness": "claude",
   "modelChain": [
     {
       "harness": "claude",
-      "model": "gemini-3.8-flash",
       "providerId": "cpa",
+      "model": "claude-opus-4-6",
+      "effort": "high",
+      "fastMode": false
+    },
+    {
+      "harness": "claude",
+      "providerId": "cpa",
+      "model": "gemini-3.8-flash",
       "effort": "high",
       "fastMode": false
     }
@@ -28,13 +44,41 @@
     "write_file",
     "edit_file",
     "run_command",
+    "send_message",
     "search_web",
     "fetch_content"
   ],
-  "permissionLevel": "full",
+  "sdkTools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "WebFetch"
+  ],
+  "mcpTools": [
+    "mcp__blackboard__read_blackboard",
+    "mcp__blackboard__update_task_status",
+    "mcp__pi-web-search__web_search",
+    "mcp__pi-web-search__fetch_content"
+  ],
+  "allowedWritePaths": [
+    "docs/research/",
+    "poc/",
+    "./workspace/tmp/",
+    "./workspace/documents/"
+  ],
+  "disallowedWritePaths": [
+    "src/",
+    "test/",
+    "~/.claude",
+    ".env"
+  ],
   "skills": [
-    "script-standards",
-    "agent-first-docs"
+    "agent-first-docs",
+    "script-standards"
   ],
   "mcpServers": {}
 }

@@ -47,7 +47,7 @@ function assertIncludes(text: string, substring: string, message: string) {
 }
 
 const projectRoot = path.resolve(__dirname, '../..');
-const webAppRoot = path.join(projectRoot, 'extensions/multiagent-orchestration-old/apps/web');
+const webAppRoot = fs.existsSync(path.join(projectRoot, 'src/web')) ? path.join(projectRoot, 'src/web') : path.join(projectRoot, 'extensions/multiagent-orchestration-old/apps/web');
 
 // ============================================================================
 // Shared Domain Types & Reference Specs

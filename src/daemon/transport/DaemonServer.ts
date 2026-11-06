@@ -49,8 +49,8 @@ export class DaemonServer extends EventEmitter {
       httpHost,
       authToken: customConfig?.authToken,
       maxSocketBufferedBytes: customConfig?.maxSocketBufferedBytes ?? 64 * 1024 * 1024,
-      heartbeatIntervalMs: customConfig?.heartbeatIntervalMs ?? 10000,
-      leaseTimeoutMs: customConfig?.leaseTimeoutMs ?? 30000,
+      heartbeatIntervalMs: customConfig?.heartbeatIntervalMs ?? 15000,
+      leaseTimeoutMs: customConfig?.leaseTimeoutMs ?? 45000,
     };
 
     fs.mkdirSync(this.config.dataDir, { recursive: true });
@@ -58,6 +58,9 @@ export class DaemonServer extends EventEmitter {
 
     // Subsystems
     this.storage = new StorageManager(this.config.dataDir);
+    try {
+      this.storage.scanAndRegisterAgents(this.config.projectRoot);
+    } catch {}
     this.runtime = new RuntimeEnvironment(this.config.projectRoot, this.storage);
     this.configLoader = new UniversalConfigLoader(this.config.projectRoot);
     this.orchestrator = new AgentOrchestrator({
@@ -89,7 +92,10 @@ export class DaemonServer extends EventEmitter {
   private registerGatewayChannels(): void {
     // 1. system:*
     this.gatewayServer.registerHandler('system:status', async () => this.getStatus());
-    this.gatewayServer.registerHandler('system:ping', async () => ({ pong: true, timestamp: Date.now() }));
+    this.gatewayServer.registerHandler('system:ping', async () => ({
+      pong: true,
+      timestamp: Date.now(),
+    }));
 
     // 2. agent:*
     this.gatewayServer.registerHandler('agent:list', async () => {
@@ -97,9 +103,13 @@ export class DaemonServer extends EventEmitter {
     });
 
     this.gatewayServer.registerHandler('agent:get', async (params: { botId: string }) => {
-      if (!params?.botId) throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'botId is required');
+      if (!params?.botId) {
+        throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'botId is required');
+      }
       const bot = this.storage.getBot(params.botId);
-      if (!bot) throw new DaemonRpcError(DaemonErrorCode.BOT_NOT_FOUND, `Bot '${params.botId}' not found`);
+      if (!bot) {
+        throw new DaemonRpcError(DaemonErrorCode.BOT_NOT_FOUND, `Bot '${params.botId}' not found`);
+      }
       return bot;
     });
 
@@ -122,52 +132,111 @@ export class DaemonServer extends EventEmitter {
         role: params?.role || 'user',
         threadId: params?.threadId,
         directSessionId: params?.directSessionId,
+        metadata: params?.metadata || (params?.clientId ? { clientId: params.clientId } : undefined),
       });
     });
 
-    this.gatewayServer.registerHandler('agent:abort', async (params: { roomId?: string; turnId?: string; directSessionId?: string }) => {
-      const targetId = params?.roomId || params?.directSessionId || 'multiagent-orchestration';
-      let stopped = false;
-      if (typeof (this.orchestrator as any).abortExecution === 'function') {
-        stopped = (this.orchestrator as any).abortExecution(targetId);
+    this.gatewayServer.registerHandler(
+      'agent:abort',
+      async (params: { roomId?: string; turnId?: string; directSessionId?: string }) => {
+        const targetId = params?.roomId || params?.directSessionId || 'multiagent-orchestration';
+        const stopped = this.orchestrator.abortExecution(targetId);
+        const topic = params?.directSessionId
+          ? `direct:${params.directSessionId}`
+          : `session:${targetId}`;
+        this.gatewayServer.push(topic, 'agent:turn_interrupted', {
+          turnId: params?.turnId || `turn_${Date.now()}`,
+          abortedAt: Date.now(),
+          reason: 'user_aborted',
+          stopped,
+        });
+        return { status: 'aborted', targetId, stopped };
       }
-      const topic = params?.directSessionId ? `direct:${params.directSessionId}` : `session:${targetId}`;
-      this.gatewayServer.push(topic, 'agent:turn_interrupted', {
-        turnId: params?.turnId || `turn_${Date.now()}`,
-        abortedAt: Date.now(),
-        reason: 'user_aborted',
-        stopped
-      });
-      return { status: 'aborted', targetId, stopped };
-    });
+    );
 
-    this.gatewayServer.registerHandler('session:history', async (params: { roomId?: string; sessionId?: string; afterSequence?: number; limit?: number }) => {
-      const targetRoomId = params?.roomId || (params?.sessionId ? params.sessionId.replace('session_', '') : 'multiagent-orchestration');
-      const afterSeq = params?.afterSequence ?? 0;
-      const limit = params?.limit ?? 100;
-      const messages = this.storage.getMessagesSince(targetRoomId, afterSeq);
-      const sliced = limit > 0 ? messages.slice(0, limit) : messages;
-      return {
-        roomId: targetRoomId,
-        messages: sliced.map((m) => ({
-          id: m.id,
-          groupId: targetRoomId,
-          sequence: m.sequence,
-          authorKind: m.sender_role === 'assistant' ? 'bot' : 'user',
-          authorBotId: m.sender_role === 'assistant' ? m.sender_id : undefined,
-          authorName: m.sender_id,
-          content: m.content,
-          createdAt: new Date(m.created_at).toISOString(),
-        })),
-      };
-    });
+    // 3. rewind:* (Two-Phase Message & File Rewind)
+    this.gatewayServer.registerHandler(
+      'rewind:preview',
+      async (params: { sessionId: string; clientId?: string; messageId?: string }) => {
+        const sid = params?.sessionId;
+        const mid = params?.clientId || params?.messageId;
+        if (!sid || !mid) {
+          throw new DaemonRpcError(
+            DaemonErrorCode.INVALID_PARAMS,
+            'sessionId and clientId/messageId are required for rewind:preview'
+          );
+        }
+        return await this.orchestrator.previewRewind(sid, mid);
+      }
+    );
+
+    this.gatewayServer.registerHandler(
+      'rewind:commit',
+      async (params: {
+        sessionId: string;
+        clientId?: string;
+        messageId?: string;
+        stopIfRunning?: boolean;
+        allowFileRestore?: boolean;
+        requireLatestUser?: boolean;
+      }) => {
+        const sid = params?.sessionId;
+        const mid = params?.clientId || params?.messageId;
+        if (!sid || !mid) {
+          throw new DaemonRpcError(
+            DaemonErrorCode.INVALID_PARAMS,
+            'sessionId and clientId/messageId are required for rewind:commit'
+          );
+        }
+        return await this.orchestrator.commitRewind(sid, mid, {
+          stopIfRunning: params?.stopIfRunning,
+          allowFileRestore: params?.allowFileRestore,
+          requireLatestUser: params?.requireLatestUser,
+        });
+      }
+    );
+
+    // 4. session:* (History, List, Compaction, Fork, Tombstone, Relocate, Interrupted, Queue)
+    this.gatewayServer.registerHandler(
+      'session:history',
+      async (params: {
+        roomId?: string;
+        sessionId?: string;
+        afterSequence?: number;
+        limit?: number;
+      }) => {
+        const targetRoomId =
+          params?.roomId ||
+          (params?.sessionId ? params.sessionId.replace('session_', '') : 'multiagent-orchestration');
+        const afterSeq = params?.afterSequence ?? 0;
+        const limit = params?.limit ?? 100;
+        const messages = this.storage.getMessagesSince(targetRoomId, afterSeq);
+        const sliced = limit > 0 ? messages.slice(0, limit) : messages;
+        return {
+          roomId: targetRoomId,
+          messages: sliced.map((m) => ({
+            id: m.id,
+            clientId: m.client_id,
+            groupId: targetRoomId,
+            sequence: m.sequence,
+            authorKind: m.sender_role === 'assistant' ? 'bot' : 'user',
+            authorBotId: m.sender_role === 'assistant' ? m.sender_id : undefined,
+            authorName: m.sender_id,
+            content: m.content,
+            createdAt: new Date(m.created_at).toISOString(),
+          })),
+        };
+      }
+    );
 
     this.gatewayServer.registerHandler('session:list', async () => {
       let rooms: any[] = [];
       try {
         const db = (this.storage as any).db;
         if (db && typeof db.prepare === 'function') {
-          rooms = db.prepare('SELECT id, slug, name, updated_at FROM rooms ORDER BY updated_at DESC').all();
+          rooms = db
+            .prepare('SELECT id, slug, name, updated_at FROM rooms ORDER BY updated_at DESC')
+            .all();
         }
       } catch {}
       return {
@@ -180,28 +249,147 @@ export class DaemonServer extends EventEmitter {
       };
     });
 
-    this.gatewayServer.registerHandler('agent:speaker-status', async (params: { roomId: string }) => {
-      if (!params?.roomId) throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'roomId is required');
-      return this.orchestrator.getSingleSpeakerStatus(params.roomId);
+    this.gatewayServer.registerHandler(
+      'session:compact',
+      async (params: { sessionId: string; botId?: string; instructions?: string }) => {
+        if (!params?.sessionId) {
+          throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'sessionId is required');
+        }
+        return this.orchestrator.scheduleSessionCompaction(
+          params.sessionId,
+          params.botId,
+          params.instructions
+        );
+      }
+    );
+
+    this.gatewayServer.registerHandler(
+      'session:fork',
+      async (params: {
+        sourceSessionId: string;
+        newSessionId?: string;
+        upToMessageId?: string;
+        title?: string;
+      }) => {
+        if (!params?.sourceSessionId) {
+          throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'sourceSessionId is required');
+        }
+        const newId = params.newSessionId || `session_fork_${Date.now()}`;
+        return this.storage.forkSessionAtMessage(
+          params.sourceSessionId,
+          newId,
+          params.upToMessageId,
+          params.title
+        );
+      }
+    );
+
+    this.gatewayServer.registerHandler(
+      'session:tombstone',
+      async (params: { sessionId: string; messageId: string }) => {
+        if (!params?.sessionId || !params?.messageId) {
+          throw new DaemonRpcError(
+            DaemonErrorCode.INVALID_PARAMS,
+            'sessionId and messageId are required'
+          );
+        }
+        return this.storage.tombstoneMessage(params.sessionId, params.messageId);
+      }
+    );
+
+    this.gatewayServer.registerHandler(
+      'session:relocate',
+      async (params: { sessionId: string; newWorkingDir: string }) => {
+        if (!params?.sessionId || !params?.newWorkingDir) {
+          throw new DaemonRpcError(
+            DaemonErrorCode.INVALID_PARAMS,
+            'sessionId and newWorkingDir are required'
+          );
+        }
+        return this.orchestrator.relocateSessionWorkingDir(
+          params.sessionId,
+          params.newWorkingDir
+        );
+      }
+    );
+
+    this.gatewayServer.registerHandler('session:interrupted', async () => {
+      return {
+        interruptedSessions: this.storage.listInterruptedSessions(),
+      };
     });
 
-    // 3. room:*
+    this.gatewayServer.registerHandler(
+      'session:queue:save',
+      async (params: { sessionId: string; items: any[] }) => {
+        if (!params?.sessionId || !Array.isArray(params?.items)) {
+          throw new DaemonRpcError(
+            DaemonErrorCode.INVALID_PARAMS,
+            'sessionId and items[] are required'
+          );
+        }
+        return this.orchestrator.saveSessionInputQueue(params.sessionId, params.items);
+      }
+    );
+
+    this.gatewayServer.registerHandler(
+      'session:queue:load',
+      async (params: { sessionId: string }) => {
+        if (!params?.sessionId) {
+          throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'sessionId is required');
+        }
+        return {
+          sessionId: params.sessionId,
+          items: this.orchestrator.loadSessionInputQueue(params.sessionId),
+        };
+      }
+    );
+
+    this.gatewayServer.registerHandler(
+      'session:queue:clear',
+      async (params: { sessionId: string }) => {
+        if (!params?.sessionId) {
+          throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'sessionId is required');
+        }
+        this.orchestrator.clearSessionInputQueue(params.sessionId);
+        return { sessionId: params.sessionId, cleared: true };
+      }
+    );
+
+    this.gatewayServer.registerHandler(
+      'agent:speaker-status',
+      async (params: { roomId: string }) => {
+        if (!params?.roomId) {
+          throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'roomId is required');
+        }
+        return this.orchestrator.getSingleSpeakerStatus(params.roomId);
+      }
+    );
+
+    // 5. room:*
     this.gatewayServer.registerHandler('room:create', async (params) => {
       if (!params?.name) {
-        throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'name is required for room:create');
+        throw new DaemonRpcError(
+          DaemonErrorCode.INVALID_PARAMS,
+          'name is required for room:create'
+        );
       }
       return this.storage.createRoom(params);
     });
 
     this.gatewayServer.registerHandler('room:get', async (params: { roomId: string }) => {
-      if (!params?.roomId) throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'roomId is required');
+      if (!params?.roomId) {
+        throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'roomId is required');
+      }
       const room = this.storage.getRoom(params.roomId);
-      if (!room) throw new DaemonRpcError(DaemonErrorCode.ROOM_NOT_FOUND, `Room '${params.roomId}' not found`);
+      if (!room) {
+        throw new DaemonRpcError(DaemonErrorCode.ROOM_NOT_FOUND, `Room '${params.roomId}' not found`);
+      }
       const blackboard = this.storage.readBlackboard(params.roomId);
       return { room, blackboard };
     });
 
-    // 4. worker:*
+    // 6. worker:*
     this.gatewayServer.registerHandler('worker:task:execute', async (params) => {
       if (!params?.taskId || !params?.command) {
         throw new DaemonRpcError(
@@ -213,7 +401,9 @@ export class DaemonServer extends EventEmitter {
     });
 
     this.gatewayServer.registerHandler('worker:task:kill', async (params: { taskId: string }) => {
-      if (!params?.taskId) throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'taskId is required');
+      if (!params?.taskId) {
+        throw new DaemonRpcError(DaemonErrorCode.INVALID_PARAMS, 'taskId is required');
+      }
       const killed = this.workerManager.killTask(params.taskId);
       return { taskId: params.taskId, killed };
     });
@@ -266,6 +456,22 @@ export class DaemonServer extends EventEmitter {
       this.gatewayServer.push(topic, 'agent:turn_interrupted', data);
     });
 
+    // 7. Rewind & Compaction lifecycle push events
+    this.orchestrator.on('session.rewound', (data) => {
+      this.gatewayServer.push(`session:${data.sessionId}`, 'session:rewound', data);
+      this.gatewayServer.push('*', 'session:rewound', data);
+    });
+
+    this.orchestrator.on('session.compacted', (data) => {
+      this.gatewayServer.push(`session:${data.sessionId}`, 'session:compacted', data);
+      this.gatewayServer.push('*', 'session:compacted', data);
+    });
+
+    this.orchestrator.on('memory.flush.threshold', (data) => {
+      this.gatewayServer.push(`session:${data.sessionId}`, 'memory:flush_threshold', data);
+      this.gatewayServer.push('*', 'memory:flush_threshold', data);
+    });
+
     // Legacy stream.chunk & blackboard / worker
     this.orchestrator.on('stream.chunk', (data) => {
       this.gatewayServer.push(`session:${data.roomId}`, 'agent:stream_chunk', data);
@@ -292,9 +498,7 @@ export class DaemonServer extends EventEmitter {
     this.checkAndAcquirePidLock();
 
     this.startTime = Date.now();
-    this.backpressure.startWatchdog((deadConnId) => {
-      // Clean dead connections
-    });
+    this.backpressure.startWatchdog(() => {});
 
     const actualPort = await this.gatewayServer.start();
     this.config.httpPort = actualPort;
@@ -339,9 +543,7 @@ export class DaemonServer extends EventEmitter {
     if (fs.existsSync(this.pidFilePath)) {
       try {
         fs.unlinkSync(this.pidFilePath);
-      } catch {
-        // safe
-      }
+      } catch {}
     }
 
     this.isRunning = false;

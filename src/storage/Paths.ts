@@ -59,14 +59,28 @@ export function getUserChatsDir(): string {
  */
 export function getUserModelsConfigPath(projectRoot: string = process.cwd()): string {
   const userPath = path.join(getUserDataDir(), 'models.json');
-  if (fs.existsSync(userPath)) {
+  if (process.env.MULTIAGENT_HOME) {
     return userPath;
   }
   const customPath = path.join(projectRoot, 'Customizations', 'models.json');
-  if (fs.existsSync(customPath)) {
+  const userExists = fs.existsSync(userPath);
+  const customExists = fs.existsSync(customPath);
+  if (userExists && customExists) {
+    try {
+      const userMtime = fs.statSync(userPath).mtimeMs;
+      const customMtime = fs.statSync(customPath).mtimeMs;
+      return customMtime >= userMtime ? customPath : userPath;
+    } catch {
+      return customPath;
+    }
+  }
+  if (customExists) {
     return customPath;
   }
-  return userPath;
+  if (userExists) {
+    return userPath;
+  }
+  return customPath;
 }
 
 /**

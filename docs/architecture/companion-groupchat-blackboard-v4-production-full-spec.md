@@ -404,8 +404,10 @@ multiagent-orchestration/
 ├── docs/
 │   └── architecture/
 │       └── companion-groupchat-blackboard-v4-production-full-spec.md # 本企业级深度架构全集文档
-└── .claude/
-    └── blackboard_ssot.db            # 运行时 SQLite WAL 共享黑板数据库
+└── data/
+    ├── orchestrator.db               # 会话时间线与房间元数据 SQLite WAL 数据库
+    ├── blackboard_ssot.db            # 运行时 SQLite WAL 共享黑板数据库 (Zero .claude Pollution)
+    └── blackboard_epoch.json         # PreCompact 压缩前同步落盘快照
 ```
 
 每个文件首部均严格包含 Universal Header Contract：

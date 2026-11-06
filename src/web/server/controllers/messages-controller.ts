@@ -38,7 +38,7 @@ export async function handleGetMessages(
         const placeholders = dbRoomIds.map(() => '?').join(',');
         const query = db.prepare(`
           SELECT * FROM messages
-          WHERE room_id IN (${placeholders}) AND sequence > ? AND silent_token = 0
+          WHERE room_id IN (${placeholders}) AND sequence > ? AND silent_token = 0 AND rewind_at IS NULL AND sender_role != 'message_tombstone'
           ORDER BY sequence ASC
         `);
         const rows = query.all(...dbRoomIds, afterSeq) as any[];

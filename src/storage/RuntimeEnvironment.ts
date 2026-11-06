@@ -23,7 +23,7 @@ export const SENSITIVE_ENV_VARS_TO_STRIP = [
   'HOST_CLAUDE_DIR',
   'CLAUDE_HOST_SETTINGS',
   'CLAUDE_DEV_OVERRIDE',
-  'CLAUDE_INTERCEPT_PROXY'
+  'CLAUDE_INTERCEPT_PROXY',
 ];
 
 export interface AssembledTurnContext {
@@ -32,6 +32,17 @@ export interface AssembledTurnContext {
   env: Record<string, string>;
   deltaMessages: Array<{ role: string; sender: string; content: string }>;
   blackboardSnapshot: { charter: string; memory: string } | null;
+}
+
+/**
+ * Safe code-point truncation (Scenario E5: never split 4-byte UTF-16 surrogate pairs)
+ */
+export function safeTruncateContent(text: string, maxCodePoints: number = 600): string {
+  const chars = Array.from(text || '');
+  if (chars.length <= maxCodePoints) {
+    return text;
+  }
+  return chars.slice(0, maxCodePoints).join('') + '…';
 }
 
 export class RuntimeEnvironment {
@@ -82,7 +93,7 @@ export class RuntimeEnvironment {
   public resolveBotWorkbenchCwd(botNameOrId: string): string {
     const candidates = [
       path.join(this.projectRoot, 'Customizations', 'agents', botNameOrId, 'workbench.json'),
-      path.join(getUserAgentsDir(), botNameOrId, 'workbench.json')
+      path.join(getUserAgentsDir(), botNameOrId, 'workbench.json'),
     ];
 
     const bot = this.storageManager.getBot(botNameOrId);
@@ -105,7 +116,7 @@ export class RuntimeEnvironment {
       }
     }
 
-    return this.resolveBotCwd(botNameOrId);
+    return this.resolveBotCwd(bot ? bot.name : botNameOrId);
   }
 
   /**
@@ -114,14 +125,12 @@ export class RuntimeEnvironment {
   public buildSanitizedEnvironment(bot: BotRecord): Record<string, string> {
     const cleanEnv: Record<string, string> = {};
 
-    // Copy safe environment variables from process.env
     for (const [key, val] of Object.entries(process.env)) {
       if (val !== undefined && !SENSITIVE_ENV_VARS_TO_STRIP.includes(key)) {
         cleanEnv[key] = val;
       }
     }
 
-    // Dynamic Injection of isolated CLAUDE_CONFIG_DIR
     cleanEnv['CLAUDE_CONFIG_DIR'] = bot.claude_config_dir;
     cleanEnv['BOT_ID'] = bot.id;
     cleanEnv['BOT_NAME'] = bot.name;
@@ -135,7 +144,10 @@ export class RuntimeEnvironment {
    */
   public validateBotIsolation(bot: BotRecord): { isIsolated: boolean; reason?: string } {
     if (!fs.existsSync(bot.claude_config_dir)) {
-      return { isIsolated: false, reason: `Config directory does not exist: ${bot.claude_config_dir}` };
+      return {
+        isIsolated: false,
+        reason: `Config directory does not exist: ${bot.claude_config_dir}`,
+      };
     }
 
     const settingsPath = path.join(bot.claude_config_dir, 'settings.json');
@@ -146,7 +158,10 @@ export class RuntimeEnvironment {
     try {
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
       if (!Array.isArray(settings.settingSources) || settings.settingSources.length !== 0) {
-        return { isIsolated: false, reason: 'settingSources is not empty array [] (host leakage risk)' };
+        return {
+          isIsolated: false,
+          reason: 'settingSources is not empty array [] (host leakage risk)',
+        };
       }
     } catch {
       return { isIsolated: false, reason: 'Failed to parse settings.json' };
@@ -161,14 +176,14 @@ export class RuntimeEnvironment {
   public assembleTurnContext(
     botName: string,
     sessionId: string,
-    roomId?: string
+    roomId?: string,
+    preFetchedDeltas?: Array<{ id?: string; role?: string; sender: string; content: string; timestamp?: number }>
   ): AssembledTurnContext {
     const bot = this.storageManager.getBot(botName);
     if (!bot) {
       throw new Error(`Bot not registered: ${botName}`);
     }
 
-    // 0. Read Global Directives from Customizations/AGENTS.md (or Customizations/CLAUDE.md)
     const globalAgentsPath = path.join(this.projectRoot, 'Customizations', 'AGENTS.md');
     const globalClaudePath = path.join(this.projectRoot, 'Customizations', 'CLAUDE.md');
     let globalDirectives = '';
@@ -178,15 +193,12 @@ export class RuntimeEnvironment {
       globalDirectives = fs.readFileSync(globalClaudePath, 'utf-8');
     }
 
-    // 1. Read Base SOUL.md
     const soulPath = path.join(bot.bot_dir, 'SOUL.md');
     const soulContent = fs.existsSync(soulPath) ? fs.readFileSync(soulPath, 'utf-8') : '';
 
-    // 2. Resolve CWD and sanitized env
     const cwd = this.resolveBotCwd(bot.name);
     const env = this.buildSanitizedEnvironment(bot);
 
-    // 3. Handle Group Room Context (Charter + Blackboard + Delta Messages)
     let blackboardSnapshot: { charter: string; memory: string } | null = null;
     let deltaMessages: Array<{ role: string; sender: string; content: string }> = [];
 
@@ -201,12 +213,39 @@ export class RuntimeEnvironment {
       combinedSystemPrompt += `\n\n## Group Room Charter\n${blackboardSnapshot.charter}`;
       combinedSystemPrompt += `\n\n## Current Blackboard State (GROUP_MEMORY.md)\n${blackboardSnapshot.memory}`;
 
-      const rawDeltas = this.storageManager.getDeltaMessages(roomId, bot.id);
-      deltaMessages = rawDeltas.map(d => ({
-        role: d.sender_role,
-        sender: d.sender_id,
-        content: d.content
-      }));
+      if (preFetchedDeltas && preFetchedDeltas.length > 0) {
+        deltaMessages = preFetchedDeltas.map((d) => ({
+          role: d.role || 'assistant',
+          sender: d.sender,
+          content: d.content,
+        }));
+      } else {
+        const rawDeltas = this.storageManager.getDeltaMessages(roomId, bot.id);
+        deltaMessages = rawDeltas.map((d) => ({
+          role: d.sender_role,
+          sender: d.sender_id,
+          content: d.content,
+        }));
+      }
+
+      if (deltaMessages.length > 0) {
+        // Cap delta slice to latest 30 messages, 600 code points per message (Scenarios E4 & E5)
+        const MAX_DELTA_MESSAGES = 30;
+        const omittedCount = Math.max(0, deltaMessages.length - MAX_DELTA_MESSAGES);
+        const recentDeltas = deltaMessages.slice(-MAX_DELTA_MESSAGES).map((m) => ({
+          sender: m.sender,
+          role: m.role,
+          content: safeTruncateContent(m.content, 600),
+        }));
+
+        const omissionHeader =
+          omittedCount > 0 ? `(${omittedCount} earlier messages were omitted.)\n` : '';
+        combinedSystemPrompt += `\n\n## Incremental Peer Messages Delta (<untrusted-json-block>)\n${omissionHeader}<untrusted-json-block>\n${JSON.stringify(
+          recentDeltas,
+          null,
+          2
+        )}\n</untrusted-json-block>`;
+      }
     }
 
     return {
@@ -214,13 +253,17 @@ export class RuntimeEnvironment {
       cwd,
       env,
       deltaMessages,
-      blackboardSnapshot
+      blackboardSnapshot,
     };
   }
 
-  public assembleContextPrompt(botIdOrName: string, roomId?: string, deltaMessages?: any[]): string {
+  public assembleContextPrompt(
+    botIdOrName: string,
+    roomId?: string,
+    deltaMessages?: Array<{ id?: string; role?: string; sender: string; content: string; timestamp?: number }>
+  ): string {
     const sessionId = roomId ? `session_${roomId}` : 'session_default';
-    const turnContext = this.assembleTurnContext(botIdOrName, sessionId, roomId);
+    const turnContext = this.assembleTurnContext(botIdOrName, sessionId, roomId, deltaMessages);
     return turnContext.systemPrompt;
   }
 
@@ -240,4 +283,3 @@ export class RuntimeEnvironment {
     return dir;
   }
 }
-

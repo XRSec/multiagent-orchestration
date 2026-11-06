@@ -64,7 +64,7 @@ The upper path is the daemon's active composition. The lower path is a separatel
 
 `BlackboardOrchestrator` implements a more explicit task workflow: local fast-path classification, optional moAdmin distillation, a TypeScript-controlled FSM loop, role-specific moCode/moCI/moAdmin turns, MCP-mediated blackboard mutations, cross-review, and human escalation. `BlackboardStore` persists a versioned state and audit entries in SQLite WAL; lifecycle hooks handle dangerous commands and compaction re-anchoring.
 
-This path has its own state model and database under `<projectRoot>/.claude/blackboard_ssot.db`. It is not the store used by the daemon's `AgentOrchestrator` path. Tests such as `test/blackboard-atomic.test.ts` validate this blackboard subsystem directly, but that does not establish that the web-to-daemon request path uses it.
+This path has its own state model and database under `data/blackboard_ssot.db (legacy fallback: <projectRoot>/.claude/blackboard_ssot.db)`. It is not the store used by the daemon's `AgentOrchestrator` path. Tests such as `test/blackboard-atomic.test.ts` validate this blackboard subsystem directly, but that does not establish that the web-to-daemon request path uses it.
 
 
 ### 3.3 Web API and Fallback Plane
@@ -103,7 +103,7 @@ The web layer still contains SSE-related comments, `DistillStreamEvent` types, a
 |---|---|---|
 | Bots, rooms, sessions, messages, cursors | `StorageManager` and `orchestrator.db` | The daemon passes a configurable data directory; its default is `<projectRoot>/.daemon`. Direct `StorageManager` construction without a custom path uses `~/.multiagent-orchestration/storage`. |
 | Group coordination | `groups/<slug>/room.json`, `GROUP_CHARTER.md`, `GROUP_MEMORY.md`, plus room/message rows in SQLite | The main daemon path appends readable summaries to `GROUP_MEMORY.md`; this is not the same representation as the structured blackboard SSOT. |
-| V4 blackboard task state | `BlackboardStore` in `.claude/blackboard_ssot.db` with WAL and audit table | Separate database and orchestration lifecycle; do not assume automatic synchronization with `orchestrator.db` or group markdown. |
+| V4 blackboard task state | `BlackboardStore` in `data/blackboard_ssot.db` with WAL and audit table | Separate database and orchestration lifecycle; do not assume automatic synchronization with `orchestrator.db` or group markdown. |
 | Agent identity and capabilities | `profile.json`, `capabilities.json`, `workbench.json`, `SOUL.md`, per-agent `claude_config/` | Agents may resolve from user agents, `Customizations/agents`, or repository `Bots`; precedence differs by resolver and should be kept explicit. |
 | Model/provider settings | `UniversalConfigLoader` and `models.json` from user data or project customization fallback | API keys may be interpolated from environment variables. MCP discovery also reads host Claude MCP configuration in the current loader. |
 | Runtime environment | `RuntimeEnvironment` and `ClaudeSdkRunner` | Sensitive environment variables are stripped and per-agent config directories are set, but the source still contains machine-specific executable/MCP paths and legacy SDK lookup candidates. |
@@ -144,7 +144,7 @@ Other documentation and implementation drift to track:
 
 1. Use active source and tests to describe runtime behavior; use specifications to describe intent and target invariants.
 2. Name the active request path (`GatewayServer -> DaemonServer -> AgentOrchestrator`) in implementation docs.
-3. Decide whether `BlackboardOrchestrator` is a replacement, a room-workflow plugin, or an experimental/alternate runtime. Until then, document it as separate.
+3. **Unified Orchestration Target (v4.1 Blueprint)**: Merge `BlackboardOrchestrator` capabilities (`FastPath` 0ms regex bypass, `BlackboardStore` `data/blackboard_ssot.db`, `mcp__blackboard__*` & `mcp__orchestrator__*` MCP tools, and 3-tier QA circuit breaker) directly into the live `GatewayServer -> DaemonServer -> AgentOrchestrator -> ClaudeSdkRunner` execution spine.
 4. Assign one authoritative owner for task state. If both SQLite databases and Markdown memory remain, define explicit ownership and synchronization rules instead of treating all of them as a universal SSOT.
 5. Add integration coverage for cross-room runner isolation, delivery of peer deltas to model context, Gateway mention routing, abort semantics, REST fallback semantics, event ordering, and the selected blackboard execution path.
 6. Remove stale architecture claims or annotate them with status and evidence links when the implementation changes.
@@ -154,3 +154,9 @@ Other documentation and implementation drift to track:
 - `docs/architecture/companion-groupchat-blackboard-v4-production-full-spec.md`
 - `docs/architecture/moadmin-orchestration-and-agent-first-standards-deep-dive.md`
 - `docs/architecture/enterprise-multiagent-orchestration-architecture-compendium.md`
+- `docs/architecture/session-lifecycle-compaction-and-rewind-specs.md`
+- `docs/architecture/storage-and-runtime-architecture-specs.md`
+- `docs/architecture/cindy-chat-mechanisms-and-blackboard-system.md`
+- `docs/architecture/collaboration-efficiency-and-cache-memory-optimization.md`
+- `docs/standards/documentation-standards.md`
+- `docs/architecture/multi-agent-linkage-reference-study.md`

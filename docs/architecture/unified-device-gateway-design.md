@@ -32,7 +32,7 @@
 │   │   统一 WebSocket 网关服务 (GatewayServer @ 0.0.0.0:38080)     │     │
 │   │   - GET /health: 存活探测 (供 FRP / 监控探针使用)             │     │
 │   │   - WS /gateway: 全双工双向控制信道 (带可选 Token 鉴权)       │     │
-│   │   - 64 MiB 出站背压拦截 & 30s 心跳租约看门狗                  │     │
+│   │   - 64 MiB 出站背压拦截 & 15s 心跳 / 45s 租约看门狗                  │     │
 │   │   - REMOTE_INVOKE_ALLOWLIST 远程调用白名单 (默认拒绝制)      │     │
 │   │   - PUSH_FORWARD_ALLOWLIST Topic 订阅流式转发                │     │
 │   └──────────────────────────────▲───────────────────────────────┘     │

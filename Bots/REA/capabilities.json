@@ -1,0 +1,86 @@
+{
+  "permissions": "trusted",
+  "permissionLevel": "full",
+  "toolsetMode": "allowlist",
+  "mcpMode": "isolated",
+  "orchestrationRole": "analyst",
+  "groupActions": [
+    "talk",
+    "finish"
+  ],
+  "model": "claude-sonnet-4-6",
+  "fallbackModel": "gemini-3.8-flash",
+  "providerId": "cpa",
+  "effort": "high",
+  "thinkingLevel": "high",
+  "fastMode": false,
+  "harness": "claude",
+  "modelOverride": {
+    "harness": "claude",
+    "model": "claude-sonnet-4-6",
+    "fallbackModel": "gemini-3.8-flash",
+    "providerId": "cpa",
+    "effort": "high",
+    "fastMode": false
+  },
+  "modelChain": [
+    {
+      "harness": "claude",
+      "providerId": "cpa",
+      "model": "claude-sonnet-4-6",
+      "effort": "high",
+      "fastMode": false
+    },
+    {
+      "harness": "claude",
+      "providerId": "cpa",
+      "model": "gemini-3.8-flash",
+      "effort": "high",
+      "fastMode": false
+    }
+  ],
+  "tools": [
+    "read_file",
+    "write_file",
+    "edit_file",
+    "run_command",
+    "send_message",
+    "search_web",
+    "fetch_content"
+  ],
+  "sdkTools": [
+    "Read",
+    "Write",
+    "Edit",
+    "Bash",
+    "Glob",
+    "Grep",
+    "WebSearch",
+    "WebFetch"
+  ],
+  "mcpTools": [
+    "mcp__blackboard__read_blackboard",
+    "mcp__blackboard__update_task_status",
+    "mcp__rea__disassemble",
+    "mcp__rea__decompile",
+    "mcp__rea__analyze_binary",
+    "mcp__rea__search_symbols"
+  ],
+  "allowedWritePaths": [
+    "docs/research/",
+    "poc/",
+    "./workspace/tmp/",
+    "./workspace/documents/"
+  ],
+  "disallowedWritePaths": [
+    "src/",
+    "test/",
+    "~/.claude",
+    ".env"
+  ],
+  "skills": [
+    "agent-first-docs",
+    "script-standards"
+  ],
+  "mcpServers": {}
+}

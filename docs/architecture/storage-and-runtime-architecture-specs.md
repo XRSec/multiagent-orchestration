@@ -28,6 +28,8 @@ To eliminate the "one-size-fits-all" trap, the `multiagent-orchestration` platfo
 
 ## 2. Storage Topology (Storage Locations Specification)
 
+> **Status note**: the per-room `room.db` and per-DM `chat.db` below are a target layout and are not implemented. The implementation uses one `orchestrator.db` under `<storageDir>` (default `$MULTIAGENT_HOME/storage`) with `rooms`, `sessions`, `messages` and `member_cursors` tables. `BlackboardStore` writes `blackboard_ssot.db` under `<projectRoot>/data`. The Web API server opens `<projectRoot>/.daemon/orchestrator.db`. These three locations must be reconciled before a non-default data directory is supported.
+
 The file system hierarchy is strictly partitioned into three distinct planes: **Global State Plane**, **Workspace Project Plane**, and **Bot Asset Plane**.
 
 ```
@@ -198,7 +200,7 @@ Before each turn, the `ContextAssembler` builds the dynamic prompt stream:
 2. **Charter Ingestion**: `GROUP_CHARTER.md` (If executing in a room context).
 3. **Blackboard Snapshot**: Latest state of `GROUP_MEMORY.md`.
 4. **Delta Slicing**:
-   - Query `room.db` for messages where `sequence > bot.last_seen_sequence`.
+   - Query `messages` in `orchestrator.db` for rows where `sequence > bot.last_seen_sequence`.
    - Deliver only incremental delta messages.
    - Update `bot.last_seen_sequence = max(sequence)`.
 5. **Anti-Loop Safety Token**:
@@ -210,7 +212,13 @@ Before each turn, the `ContextAssembler` builds the dynamic prompt stream:
 ## 4. Implementation Validation & Integrity Guarantees
 
 All components of this specification are verified against the following invariants:
-1. **Zero Host Leakage**: `~/.claude/` stat atime/mtime remains 100% unaltered across any bot execution.
+1. **Host isolation**: the host Claude config directory mtime is unchanged across a test run, verified by storage-runtime Test 9. Scope: files this system writes.
 2. **Schema Uniformity**: Every bot created conforms strictly to the standard `@Bots` schema (JSON + MD + SQLite FTS5).
 3. **ACID Transactionality**: Group messages, sequence counters, and cursor updates are wrapped in SQLite transactions.
 
+
+---
+
+## 5. Session persistence, rewind and compaction
+
+See [session-lifecycle-compaction-and-rewind-specs.md](session-lifecycle-compaction-and-rewind-specs.md). It owns these rules.

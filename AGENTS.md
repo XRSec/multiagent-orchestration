@@ -44,15 +44,15 @@ IMPORTANT: Think and respond in Chinese. Bootstrap environment with `source .env
 
 ## 3. Seven Mo-Bots Roster & Domain Boundaries
 
-| Bot ID | Display Name | Primary CWD | Domain & Scope | Allowed Write Scope |
-|---|---|---|---|---|
-| `bot_moadmin_director_03` | **moAdmin** | `.` | Orchestration director, task decomposition & fallback coordinator | `groups/`, `Customizations/group/`, `docs/`, `logs/` |
-| `bot_mocode_engine_01` | **moCode** | `.` | Fullstack developer & system architect | `src/`, `test/`, `poc/`, `scripts/` |
-| `bot_modoc_scribe_02` | **moDoc** | `docs/` | Architecture scribe & documentation steward | `docs/`, `*.md` |
-| `bot_moci_sentinel_07` | **MoCI** | `test/` | Continuous integration & test gatekeeper | `test/`, `logs/`, `reports/`, `coverage/`, `.github/` |
-| `bot_mogit_scm_05` | **MoGit** | `.` | SCM, git tree cleanliness & atomic squash | `.git/`, release scripts, tags, changelogs |
-| `bot_modeep_scout_04` | **MoDeep** | `./workspace/tmp/` | Deep research & upstream reverse engineering | `docs/research/`, `poc/`, `./workspace/tmp/`, `./workspace/documents/` |
-| `bot_mo_meta_06` | **Mo** | `Customizations/` | Meta-toolsmith & skill creator | `Customizations/skills/`, `Customizations/agents/<NewBot>/`, `Bots/<NewBot>/` |
+| Bot ID | Display Name | Model (Fallback: `gemini-3.8-flash`) | Primary CWD | Domain & MCP Capabilities | Allowed Write Scope |
+|---|---|---|---|---|---|
+| `bot_moadmin_director_03` | **moAdmin** | `claude-opus-4-6` | `.` | Orchestration director, `<group-Action>` (`talk`/`collaborate`/`finish`), `mcp__orchestrator__*`, `mcp__blackboard__*` | `groups/`, `Customizations/group/`, `docs/`, `logs/` |
+| `bot_mocode_engine_01` | **moCode** | `claude-opus-4-6` | `.` | Fullstack developer & architect, `Read`/`Write`/`Edit`/`Bash`/`Glob`/`Grep`, `mcp__blackboard__*` | `src/`, `test/`, `poc/`, `scripts/` |
+| `bot_modoc_scribe_02` | **moDoc** | `claude-sonnet-4-6` | `docs/` | Architecture scribe & doc steward, `Read`/`Write`/`Edit`/`Glob`/`Grep`, `mcp__blackboard__*` | `docs/`, `*.md` |
+| `bot_moci_sentinel_07` | **MoCI** | `claude-sonnet-4-6` | `test/` | CI & test gatekeeper, `Read`/`Write`/`Edit`/`Bash`, 3-tier QA verdict (`mcp__blackboard__*`) | `test/`, `logs/`, `reports/`, `coverage/`, `.github/` |
+| `bot_mogit_scm_05` | **MoGit** | `claude-sonnet-4-6` | `.` | SCM, git tree cleanliness & atomic squash, `Read`/`Write`/`Bash`, `mcp__blackboard__*` | `.git/`, `scripts/`, `CHANGELOG.md` |
+| `bot_modeep_scout_04` | **MoDeep** | `claude-opus-4-6` | `./workspace/tmp/` | Deep research & reverse engineering, `WebSearch`/`WebFetch`, `mcp__pi-web-search__*`, `mcp__blackboard__*` | `docs/research/`, `poc/`, `./workspace/tmp/`, `./workspace/documents/` |
+| `bot_mo_meta_06` | **Mo** | `claude-opus-4-6` | `Customizations/` | Meta-toolsmith & 4-pack bot creator, `Read`/`Write`/`Edit`/`Bash`, `mcp__blackboard__*` | `Customizations/skills/`, `Customizations/agents/<NewBot>/`, `Bots/<NewBot>/` |
 
 ---
 

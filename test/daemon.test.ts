@@ -212,6 +212,59 @@ async function runGatewayTests() {
   }
   console.log('  ✓ PASS: Worker task executed and security allowlist default-deny verified.\n');
 
+  console.log('[Test 9.5] Verifying Gateway Rewind, Compaction, Fork, Tombstone & Input Queue channels...');
+  const roomObj = storage.getRoom('gateway_core_room')!;
+  const gwSessionId = `session_${roomObj.id}`;
+  const msgToRewind = storage.appendMessage(gwSessionId, 'human_user', 'user', 'Ephemeral user prompt for rewind test', {
+    roomId: roomObj.id,
+    clientId: 'gw-rewind-client-id-01',
+  });
+  storage.appendMessage(gwSessionId, 'bot_moadmin_director_03', 'assistant', 'Ephemeral bot response to rewind', {
+    roomId: roomObj.id,
+    clientId: 'gw-rewind-asst-id-01',
+  });
+
+  const gwPreview = await client.invoke('rewind:preview', {
+    sessionId: gwSessionId,
+    clientId: 'gw-rewind-client-id-01',
+  });
+  assert(gwPreview.canRewind === true, 'rewind:preview must return canRewind=true');
+  assert(gwPreview.targetMessageId === msgToRewind.id, 'rewind:preview targetMessageId must match');
+
+  const gwCommit = await client.invoke('rewind:commit', {
+    sessionId: gwSessionId,
+    clientId: 'gw-rewind-client-id-01',
+    stopIfRunning: true,
+  });
+  assert(gwCommit.rewoundMessageCount === 2, `Expected 2 rewound messages, got ${gwCommit.rewoundMessageCount}`);
+
+  const gwCompact = await client.invoke('session:compact', {
+    sessionId: gwSessionId,
+    instructions: 'Preserve architecture decisions',
+  });
+  assert(gwCompact.scheduled === true, 'session:compact must schedule bridge compaction');
+
+  const gwFork = await client.invoke('session:fork', {
+    sourceSessionId: gwSessionId,
+    newSessionId: 'session_gw_forked_01',
+    title: 'Gateway Forked Session',
+  });
+  assert(gwFork.session.parent_session_id === gwSessionId, 'session:fork must link parent_session_id');
+
+  await client.invoke('session:queue:save', {
+    sessionId: gwSessionId,
+    items: [{ clientId: 'q_gw_1', content: 'Queued via Gateway', enqueuedAt: Date.now() }],
+  });
+  const gwQueueLoad = await client.invoke('session:queue:load', { sessionId: gwSessionId });
+  assert(gwQueueLoad.items.length === 1 && gwQueueLoad.items[0].clientId === 'q_gw_1', 'session:queue:load must return saved item');
+  await client.invoke('session:queue:clear', { sessionId: gwSessionId });
+  const gwQueueAfterClear = await client.invoke('session:queue:load', { sessionId: gwSessionId });
+  assert(gwQueueAfterClear.items.length === 0, 'session:queue:clear must empty queue');
+
+  const gwInterrupted = await client.invoke('session:interrupted', {});
+  assert(Array.isArray(gwInterrupted.interruptedSessions), 'session:interrupted must return array');
+  console.log('  ✓ PASS: Gateway Rewind, Compaction, Fork, and Input Queue channels verified.\n');
+
   console.log('[Test 10] Disconnecting client, stopping Daemon, and auditing host ~/.claude...');
   client.disconnect();
   assert(!client.connected, 'Client should be disconnected');

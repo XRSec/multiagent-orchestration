@@ -1,14 +1,16 @@
 /**
  * Purpose: Subpage detail views for Bot settings (profile, personality, memory, projects, model, capabilities, advanced).
- * Context: Rendered within BotSettingsDrawer when navigating away from the home settings menu.
+ * Context: Rendered within BotSettingsDrawer; the 'model' subpage dynamically loads all models from /api/config/models
+ *          and configures the companion's 4-slot model chain (Primary + 3 Fallbacks) and thinking effort.
  * Usage: Subpage renderer component inside BotSettingsDrawer.
  * Prerequisites: React, lucide-react, BotItem type.
  */
 
-import React from 'react';
-import { Plus, Folder } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Plus, Folder, Sparkles, ShieldAlert, Layers, Sliders, Check, RotateCcw } from 'lucide-react';
 import { BotItem } from '@/mock/bots';
 import { BotCapabilityMatrix } from '@/components/bots/BotCapabilityMatrix';
+import { BotModelChainEditor, type BotModelRoute } from '@/components/bots/BotModelChainEditor';
 import { useToast } from '@/contexts/ToastContext';
 
 export type SettingsSubPage =
@@ -46,6 +48,27 @@ export interface BotSettingsSubpagesProps {
   onSaveSubSettings: () => void;
 }
 
+interface CatalogModelOption {
+  id: string;
+  name?: string;
+  displayName?: string;
+  provider?: string;
+  providerId?: string;
+  vendor?: string;
+  enabled?: boolean;
+}
+
+const DEFAULT_FALLBACK_MODELS = [
+  { id: 'claude-opus-5-5', displayName: 'Claude Opus 5.5', vendor: 'ANTHROPIC', provider: 'Claude' },
+  { id: 'claude-opus-4-6', displayName: 'Claude Opus 4.6 (Thinking)', vendor: 'ANTHROPIC', provider: 'Claude' },
+  { id: 'claude-sonnet-5-5', displayName: 'Claude Sonnet 5.5', vendor: 'ANTHROPIC', provider: 'Claude' },
+  { id: 'claude-sonnet-4-6', displayName: 'Claude Sonnet 4.6 (Thinking)', vendor: 'ANTHROPIC', provider: 'Claude' },
+  { id: 'gemini-4-argon-web', displayName: 'gemini-4-argon-web', vendor: '谷歌', provider: 'Claude' },
+  { id: 'gemini-4-argon', displayName: 'Gemini 4 Argon', vendor: '谷歌', provider: 'Claude' },
+  { id: 'gemini-3.8-flash', displayName: 'Gemini 3.8 Flash', vendor: '谷歌', provider: 'Claude' },
+  { id: 'gemini-3.5-flash-lite', displayName: 'Gemini 3.5 Flash Lite', vendor: '谷歌', provider: 'Claude' },
+];
+
 export function BotSettingsSubpages({
   settingsPage,
   bot,
@@ -65,6 +88,123 @@ export function BotSettingsSubpages({
   onSaveSubSettings,
 }: BotSettingsSubpagesProps) {
   const { showToast } = useToast();
+
+  // Dynamic full model catalog loaded from /api/config/models
+  const [catalogModels, setCatalogModels] = useState<CatalogModelOption[]>(DEFAULT_FALLBACK_MODELS);
+  const [slot2Fallback1, setSlot2Fallback1] = useState<string>('gemini-3.8-flash');
+  const [slot3Fallback2, setSlot3Fallback2] = useState<string>('claude-sonnet-4-6');
+  const [slot4Fallback3, setSlot4Fallback3] = useState<string>('gemini-3.5-flash-lite');
+  const [thinkingLevel, setThinkingLevel] = useState<string>('high');
+  const [savingBotModel, setSavingBotModel] = useState<boolean>(false);
+
+  useEffect(() => {
+    let active = true;
+    async function loadModelsAndBotCaps() {
+      try {
+        const [modelsRes, botRes] = await Promise.all([
+          fetch('/api/config/models').then((r) => r.json()).catch(() => null),
+          fetch(`/api/bots/${encodeURIComponent(bot.id)}`).then((r) => r.json()).catch(() => null),
+        ]);
+        if (!active) return;
+
+        if (modelsRes?.ok && Array.isArray(modelsRes.models) && modelsRes.models.length > 0) {
+          setCatalogModels(modelsRes.models);
+        }
+
+        const caps = botRes?.bot?.capabilities || (bot as any).rawCapabilities || {};
+        if (caps.model) setBotModel(caps.model);
+        if (caps.fallbackModel) setSlot2Fallback1(caps.fallbackModel);
+        if (caps.thinkingLevel) setThinkingLevel(caps.thinkingLevel);
+
+        if (Array.isArray(caps.modelChain) && caps.modelChain.length > 0) {
+          const chainIds = caps.modelChain
+            .map((item: any) => (typeof item === 'string' ? item : item?.model))
+            .filter(Boolean);
+          if (chainIds[0]) setBotModel(chainIds[0]);
+          if (chainIds[1]) setSlot2Fallback1(chainIds[1]);
+          if (chainIds[2]) setSlot3Fallback2(chainIds[2]);
+          if (chainIds[3]) setSlot4Fallback3(chainIds[3]);
+        }
+      } catch {}
+    }
+    loadModelsAndBotCaps();
+    return () => {
+      active = false;
+    };
+  }, [bot.id]);
+
+  // Group models by vendor so all models across all providers are displayed clearly
+  const groupedModels = useMemo(() => {
+    const groups = new Map<string, CatalogModelOption[]>();
+    for (const m of catalogModels) {
+      const g = m.vendor
+        ? `${m.provider || 'Claude'} · ${m.vendor}`
+        : m.provider || '已配置模型';
+      if (!groups.has(g)) groups.set(g, []);
+      groups.get(g)!.push(m);
+    }
+    return Array.from(groups.entries());
+  }, [catalogModels]);
+
+  const renderGroupedSelect = (
+    value: string,
+    onChange: (v: string) => void,
+    testId: string
+  ) => (
+    <select
+      data-testid={testId}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full bg-surface border border-border-default rounded-xl px-3 py-2 text-text-primary font-mono text-xs focus:outline-none focus:border-accent-blue cursor-pointer"
+    >
+      {groupedModels.map(([groupLabel, list]) => (
+        <optgroup key={groupLabel} label={groupLabel}>
+          {list.map((m) => (
+            <option key={`${m.providerId || ''}:${m.id}`} value={m.id}>
+              {m.displayName && m.displayName !== m.id
+                ? `${m.displayName} (${m.id})`
+                : m.id}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+      {!catalogModels.some((m) => m.id === value) && value ? (
+        <option value={value}>{value}</option>
+      ) : null}
+    </select>
+  );
+
+  const handleSaveBotModelChain = async () => {
+    setSavingBotModel(true);
+    try {
+      const modelChain = [
+        { model: botModel, effort: thinkingLevel },
+        { model: slot2Fallback1, effort: thinkingLevel },
+        { model: slot3Fallback2, effort: thinkingLevel },
+        { model: slot4Fallback3, effort: 'low' },
+      ];
+      const res = await fetch(`/api/bots/${encodeURIComponent(bot.id)}/capabilities`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: botModel,
+          fallbackModel: slot2Fallback1,
+          thinkingLevel,
+          effort: thinkingLevel,
+          modelChain,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || '保存失败');
+      showToast(`已保存 ${botName} 的 4 级模型路由配置！`, 'success');
+      onSaveSubSettings();
+    } catch (err: any) {
+      showToast(`保存伙伴模型失败: ${err.message}`, 'error');
+    } finally {
+      setSavingBotModel(false);
+    }
+  };
+
   return (
     <>
       {/* SUBPAGE: 资料 (Profile) */}
@@ -205,36 +345,48 @@ export function BotSettingsSubpages({
         </div>
       )}
 
-      {/* SUBPAGE: 模型 (Model) */}
+      {/* SUBPAGE: 模型 (Cindy BotModelChainEditor) */}
       {settingsPage === 'model' && (
-        <div className="flex-1 overflow-y-auto p-6 space-y-5 text-xs">
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 text-xs">
           <div>
-            <h3 className="text-sm font-bold text-text-primary">模型配置</h3>
-            <p className="text-text-tertiary text-[11px] mt-0.5">为 {botName} 挑选专属驱动模型</p>
+            <h3 className="text-sm font-bold text-text-primary">伙伴模型与备用链</h3>
+            <p className="text-text-tertiary text-[11px] mt-0.5">
+              为 {botName} 配置首选模型与多级故障转移备用链（全量同步自 models.json 共 {catalogModels.length} 个模型）
+            </p>
           </div>
 
-          <div className="p-4 bg-surface-elevated border border-border-default rounded-2xl space-y-3">
-            <div>
-              <label className="text-text-tertiary text-[11px] block mb-1">首选推理模型</label>
-              <select
-                value={botModel}
-                onChange={(e) => setBotModel(e.target.value)}
-                className="w-full bg-surface border border-border-default rounded-xl px-3 py-2 text-text-primary font-mono focus:outline-none"
-              >
-                <option value="claude-opus-5-5">Claude Opus 5.5 (高推理)</option>
-                <option value="claude-sonnet-5-5">Claude Sonnet 5.5 (均衡)</option>
-                <option value="gpt-5.5">GPT-5.5 (Codex)</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-              </select>
-            </div>
-          </div>
+          <BotModelChainEditor
+            value={[
+              { model: botModel, effort: thinkingLevel },
+              { model: slot2Fallback1, effort: thinkingLevel },
+              { model: slot3Fallback2, effort: thinkingLevel },
+              { model: slot4Fallback3, effort: 'low' },
+            ]}
+            models={catalogModels}
+            onRestoreDefault={() => {
+              setBotModel('claude-opus-4-6');
+              setSlot2Fallback1('gemini-3.8-flash');
+              setSlot3Fallback2('claude-sonnet-4-6');
+              setSlot4Fallback3('gemini-3.5-flash-lite');
+              setThinkingLevel('high');
+            }}
+            onChange={(nextRoutes: BotModelRoute[]) => {
+              if (nextRoutes[0]?.model) setBotModel(nextRoutes[0].model);
+              if (nextRoutes[0]?.effort) setThinkingLevel(nextRoutes[0].effort);
+              if (nextRoutes[1]?.model) setSlot2Fallback1(nextRoutes[1].model);
+              if (nextRoutes[2]?.model) setSlot3Fallback2(nextRoutes[2].model);
+              if (nextRoutes[3]?.model) setSlot4Fallback3(nextRoutes[3].model);
+            }}
+          />
 
           <button
             type="button"
-            onClick={onSaveSubSettings}
-            className="w-full py-2.5 bg-accent-cta text-accent-cta-fg rounded-xl font-bold text-xs hover:bg-accent-hover transition-colors shadow-sm cursor-pointer"
+            disabled={savingBotModel}
+            onClick={handleSaveBotModelChain}
+            className="w-full py-2.5 bg-accent-blue text-white rounded-full font-bold text-xs hover:bg-accent-blue/90 disabled:opacity-50 transition-colors shadow-sm flex items-center justify-center gap-1.5 cursor-pointer"
           >
-            保存模型设置
+            <Check className="w-3.5 h-3.5" />
+            <span>{savingBotModel ? '正在写入 capabilities.json...' : '保存伙伴模型链设置'}</span>
           </button>
         </div>
       )}

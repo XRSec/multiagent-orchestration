@@ -7,6 +7,8 @@
 
 import * as crypto from 'node:crypto';
 import * as path from 'node:path';
+import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
 import { z } from 'zod';
 import {
   BlackboardState,
@@ -17,19 +19,15 @@ import {
 import { BlackboardStore, compactTouchedFiles } from './BlackboardStore';
 
 function getSdkTools(): { tool: any; createSdkMcpServer: any } {
-  const candidates = [
-    '@anthropic-ai/claude-agent-sdk',
-    path.resolve(__dirname, '../../../../extensions/CindyR/node_modules/@anthropic-ai/claude-agent-sdk'),
-    path.resolve(__dirname, '../../../../extensions/multiagent-orchestration-old/node_modules/@anthropic-ai/claude-agent-sdk'),
-  ];
-  for (const c of candidates) {
-    try {
-      const sdk = require(c);
-      if (typeof sdk.tool === 'function' && typeof sdk.createSdkMcpServer === 'function') {
-        return { tool: sdk.tool, createSdkMcpServer: sdk.createSdkMcpServer };
-      }
-    } catch {}
-  }
+  const cwd = process.cwd();
+  const wsRoot = fs.existsSync(path.join(cwd, 'Customizations')) ? cwd : path.resolve(cwd, '../..');
+  try {
+    const req = createRequire(path.join(wsRoot, 'package.json'));
+    const sdk = req('@anthropic-ai/claude-agent-sdk');
+    if (typeof sdk?.tool === 'function' && typeof sdk?.createSdkMcpServer === 'function') {
+      return { tool: sdk.tool, createSdkMcpServer: sdk.createSdkMcpServer };
+    }
+  } catch {}
   throw new Error('Failed to resolve @anthropic-ai/claude-agent-sdk tool APIs');
 }
 

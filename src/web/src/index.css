@@ -4,6 +4,21 @@
  * 严格覆盖 Firefox, IE/Edge 及 WebKit (Chrome, Safari, Opera)
  */
 .no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+/**
+ * CSS 隐形滚动条工具类
+ * 隐藏原生滚动条，但保持触控板与滚轮顺滑滚动
+ * 严格覆盖 Firefox, IE/Edge 及 WebKit (Chrome, Safari, Opera)
+ */
+.no-scrollbar {
   scrollbar-width: none !important; /* Firefox */
   -ms-overflow-style: none !important; /* IE / Edge */
 }

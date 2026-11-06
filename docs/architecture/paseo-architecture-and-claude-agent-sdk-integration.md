@@ -375,7 +375,7 @@ export function demuxBinaryFrame(buffer: Uint8Array): DemuxedFrame {
 
 ### 7.1 类继承与依赖注入体系
 
-在 `CindyR/packages/maker-core/src/agents/claude-code/index.ts:975` 中，`ClaudeCodeAgent` 继承自框架基类 `BaseAgent`：
+在 `CindyR/packages/maker-core/src/agents/claude-code/index.ts` 中，`ClaudeCodeAgent` 继承自框架基类 `BaseAgent`：
 ```typescript
 export class ClaudeCodeAgent extends BaseAgent {
   readonly kind = 'claude-code' as const;
@@ -429,7 +429,7 @@ Cindy 支持两类 MCP 接入形态，并通过 SDK 参数实施最高级别的�
    通过 `CustomMcpProvider` 将外部独立服务（如数据库分析器、浏览器驱动）以标准 HTTP/SSE 格式传递给 SDK 子进程。
 3. **Bot 白名单过滤 (`isBotMcpServerAllowed`) 与 `strictMcpConfig`**:
    - `bot-runtime-policy.ts` 强制校验工具必须属于基础服务集合或在 Bot Profile 中显式挂载；
-   - **`strictMcpConfig: true`**: 根据官方 SDK 规范（`sdk.d.ts:2296`），该选项强制 Claude Code **完全忽略磁盘上的任何外部 MCP 配置**（包括用户 `~/.claude.json`、项目 `.mcp.json` 及子代理 frontmatter），仅加载代码中由 `options.mcpServers` 明确传入的服务！
+   - **`strictMcpConfig: true`**: 根据官方 SDK 规范（`sdk.d.ts` 中 `strictMcpConfig` 选项），该选项强制 Claude Code **完全忽略磁盘上的任何外部 MCP 配置**（包括用户 `~/.claude.json`、项目 `.mcp.json` 及子代理 frontmatter），仅加载代码中由 `options.mcpServers` 明确传入的服务！
 4. **三路细粒度工具审批拦截 (`CanUseTool`)**:
    SDK 在执行工具前触发 `canUseTool(toolName, input, options)`：
    - **路径一 (`AskUserQuestion`)**: 拦截并向前端发起交互卡片，等待用户作答后回填到 `updatedInput.answers` 放行；
@@ -463,7 +463,7 @@ Cindy 支持两类 MCP 接入形态，并通过 SDK 参数实施最高级别的�
 | **接入核心** | `@anthropic-ai/claude-agent-sdk` | 独立子进程 (JSON-RPC / PTY) | `@anthropic-ai/claude-agent-sdk@0.3.292` |
 | **进程形态** | Daemon 内部实例化 SDK 子进程 | 脱机独立子进程 (Detached PTY) | Electron/Node 宿主内存直接调度 SDK |
 | **MCP 工具注入** | 通过内置 `/mcp/agents` HTTP 反向暴露 | 命令行参数或标准输入/输出流 | 内存中直接装配 In-Process SDK MCP (`type: 'sdk'`) 与远程 HTTP MCP |
-| **配置目录依赖** | 默认继承宿主环境或指定工作区 | 环境变量沙箱隔离 | 现存共享 `~/.claude`（待按 R3 改造为独立 `CLAUDE_CONFIG_DIR`） |
+| **配置目录依赖** | 默认继承宿主环境或指定工作区 | 环境变量沙箱隔离 | v4.1 已全面强制注入独立 `CLAUDE_CONFIG_DIR=<bot_dir>/claude_config`（零 `~/.claude` 触碰） |
 | **工具调用鉴权** | Daemon 推送 `agent_permission_request` | PTY 交互拦截 | SDK `canUseTool` 细粒度回调 + 策略拦截 |
 | **多轮对话输入** | 单次 Query 或工作区指令流 | 终端 stdin 输入流 | `inputQueue` 异步队列流式喂入 |
 
@@ -476,4 +476,4 @@ Cindy 支持两类 MCP 接入形态，并通过 SDK 参数实施最高级别的�
 2. **SDK 集成的深度与工业级加固**:
    Cindy 对 `@anthropic-ai/claude-agent-sdk` 的运用不仅覆盖了标准接口，更在**鉴权门禁、环境净化、敏感工具拦截、流式看门狗、401 凭证热刷与上下文压缩**方面构建了工业级的安全防御体系。
 3. **针对 R3（Bot 独立 MCP 隔离）的演进抓手**:
-   当前 Cindy 在逻辑上已经施加了 `strictMcpConfig: true`、`settingSources: []` 与 `plugins` 本地沙箱；唯一的遗留短板是本地桌面端为了复用已有的订阅登录，未设置独立的 `CLAUDE_CONFIG_DIR`，导致底层项目转录历史仍落盘在宿主 `~/.claude/projects/`。后续架构改造只需在 `env-builder.ts` 中针对带有 `botRuntimeProfile` 的会话动态分配独立的 `<botHome>/claude_config`，即可彻底实现宿主环境的 0 侵入与多 Bot 的绝对物理隔离。
+   当前 Cindy 在逻辑上已经施加了 `strictMcpConfig: true`、`settingSources: []` 与 `plugins` 本地沙箱；在 v4.1 架构中，已通过为每个 Bot 动态分配独立的 `<bot_dir>/claude_config`（配合 `settingSources: []` 与 `strictMcpConfig: true`）并将转录统一落盘至 `storage/transcripts/` 与 `~/.multiagent-orchestration/transcripts/`，彻底实现了宿主 `~/.claude` 环境的 0 侵入与多 Bot 的绝对物理隔离。

@@ -55,4 +55,8 @@ Bots**/shell-snapshots/
 /Customizations/models.json
 .agents/teamwork/
 
-*.log
+*.logdata/
+/Customizations/models.json.bak
+*.models.json.tmp
+apps
+tools

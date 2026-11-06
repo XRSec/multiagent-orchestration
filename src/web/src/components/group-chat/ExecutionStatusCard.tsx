@@ -70,7 +70,7 @@ export const ExecutionStatusCard: React.FC<ExecutionStatusCardProps> = ({
   return (
     <div
       data-testid="execution-status-card"
-      className={`w-full rounded-xl bg-surface-elevated/90 border border-border-default/80 p-2.5 sm:p-3 text-xs shadow-xs select-none transition-all ${className}`}
+      className={`w-full rounded-xl bg-surface-elevated/90 border border-border-default/80 p-2.5 sm:p-3 text-xs shadow-xs select-text transition-all ${className}`}
     >
       {/* Scrollable Container with max-height and strict invisible scrollbar */}
       <div

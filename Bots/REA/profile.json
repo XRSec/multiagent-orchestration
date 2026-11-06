@@ -1,0 +1,49 @@
+{
+  "id": "bot_rea_partner_08",
+  "display_name": "REA · 逆向工程与代码审计专家",
+  "description": "专职二进制逆向、代码审计、安全分析与漏洞研究的技术情报专家",
+  "avatar": "🔬",
+  "avatar_color": "orange",
+  "status": "active",
+  "current_version": 1,
+  "canonical_session_id": "",
+  "created_at": 1794000000000,
+  "updated_at": 1794000000000,
+  "capabilities": {
+    "permissions": "trusted",
+    "toolsetMode": "allowlist",
+    "mcpMode": "isolated",
+    "model": "claude-sonnet-4-6",
+    "modelOverride": {
+      "harness": "claude",
+      "providerId": "cpa",
+      "model": "claude-sonnet-4-6",
+      "fallbackModel": "gemini-3.8-flash",
+      "effort": "high",
+      "fastMode": false,
+      "thinkingLevel": "high"
+    },
+    "providerId": "cpa",
+    "effort": "high",
+    "fastMode": false,
+    "harness": "claude",
+    "modelChain": [
+      {
+        "harness": "claude",
+        "providerId": "cpa",
+        "model": "claude-sonnet-4-6",
+        "effort": "high",
+        "fastMode": false
+      },
+      {
+        "harness": "claude",
+        "providerId": "cpa",
+        "model": "gemini-3.8-flash",
+        "effort": "high",
+        "fastMode": false
+      }
+    ],
+    "thinkingLevel": "high",
+    "fallbackModel": "gemini-3.8-flash"
+  }
+}

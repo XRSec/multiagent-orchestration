@@ -365,7 +365,7 @@ export const MessageItem: React.FC<MessageItemProps> = ({
         {/* 【后置】Content Bubble: 消息正文气泡 (MarkdownContent) */}
         <div
           data-testid="message-content-bubble"
-          className={`w-fit max-w-full p-2.5 sm:p-3.5 shadow-xs text-text-primary ${
+          className={`w-fit max-w-full p-2.5 sm:p-3.5 shadow-xs text-text-primary select-text cursor-text ${
             isUser
               ? 'bg-accent-blue/10 border border-accent-blue/30 rounded-2xl rounded-tr-sm'
               : 'bg-surface-elevated/90 border border-border-subtle rounded-2xl rounded-tl-sm'

@@ -26,6 +26,13 @@ export interface PersistentSession {
   tagColor?: string;
   archived?: boolean;
   forkedFromId?: string;
+  sdkSessionId?: string | null;
+  parentSessionId?: string | null;
+  forkedAtMessageId?: string | null;
+  contextTokens?: number;
+  contextWindow?: number;
+  activeTurnStartedAt?: number | null;
+  lastTurnEndedAt?: number | null;
 }
 
 const BASE_DIR = path.join(os.homedir(), '.multiagent-orchestration');

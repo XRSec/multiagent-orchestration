@@ -75,7 +75,7 @@ export function BotSessionPage() {
             },
           }));
           setAllBots(mapped);
-          const found = mapped.find((b) => b.id === botId || b.name === botId);
+          const found = mapped.find((b) => b.id === botId || b.name.toLowerCase() === (botId || '').toLowerCase() || `bot_${b.name.toLowerCase()}` === (botId || '').toLowerCase());
           if (found) {
             setCurrentBot(found);
             setBotName(found.name);
@@ -343,7 +343,33 @@ export function BotSessionPage() {
         });
       }
     } catch (err: any) {
-      console.error('[BotSessionPage] agent:chat invoke failed:', err);
+      console.warn('[BotSessionPage] WebSocket agent:chat unavailable, falling back to HTTP /api/bots/:id/chat:', err?.message || err);
+      try {
+        const res = await fetch(`/api/bots/${encodeURIComponent(currentBot.id)}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: textToSend, directSessionId }),
+        });
+        const data = await res.json();
+        if (res.ok && data.ok && data.replyContent) {
+          setMessages((prev) => {
+            const lastIdx = prev.length - 1;
+            if (lastIdx >= 0 && prev[lastIdx].role === 'assistant') {
+              const updated = [...prev];
+              updated[lastIdx] = {
+                ...updated[lastIdx],
+                content: data.replyContent,
+                timestamp: nowStr,
+              };
+              return updated;
+            }
+            return prev;
+          });
+          return;
+        }
+      } catch (httpErr) {
+        console.error('[BotSessionPage] HTTP chat fallback failed:', httpErr);
+      }
       setMessages((prev) => {
         const lastIdx = prev.length - 1;
         if (lastIdx >= 0 && prev[lastIdx].role === 'assistant') {
@@ -376,7 +402,7 @@ export function BotSessionPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden select-none bg-surface text-text-primary relative">
+    <div className="flex-1 flex flex-col h-full overflow-hidden bg-surface text-text-primary relative">
       {/* 1. Header */}
       <BotSessionHeader
         bot={currentBot}

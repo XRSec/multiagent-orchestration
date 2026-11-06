@@ -2,7 +2,7 @@
 
 ## 1. Test Suite Status & Verification Gate
 - **Status**: **READY** (100% Pass)
-- **Total Test Cases**: 28 automated tests across 4 tiers
+- **Total Test Cases**: 29 automated tests across 4 tiers
 - **Execution Engine**: Node.js `node:test` + `node:assert/strict` executed via `tsx`
 - **Execution Time**: ~3.5s total runtime
 - **Exit Code**: 0 (Zero assertion failures, zero unhandled rejections)
@@ -33,11 +33,11 @@ npx tsx test/e2e/tier4-real-world-scenarios.test.ts
 
 | Tier | Suite Name | Test Count | Status | Duration | Feature Scope |
 |---|---|---|---|---|---|
-| **Tier 1** | Feature Coverage (Category-Partition) | 11 | **PASS** | 674ms | F01–F04, F06–F09, F12, F14–F15, F18–F23 |
+| **Tier 1** | Feature Coverage (Category-Partition) | 12 | **PASS** | 674ms | F01–F04, F06–F09, F12, F14–F15, F18–F23 |
 | **Tier 2** | Boundary Value Analysis & Corner Cases | 8 | **PASS** | 1052ms | F01–F03, F16–F17, BVA Limits & Default-Deny |
 | **Tier 3** | Cross-Feature Interactions & Combinatorial | 5 | **PASS** | 1128ms | F14–F15, F18, F20–F21, F23 (Concurrency) |
 | **Tier 4** | Real-World Scenarios & Workload | 4 | **PASS** | 662ms | F15–F16, F24–F25, F27 (Ego-Browser UI Invariants) |
-| **TOTAL** | **Master E2E Test Suite** | **28** | **PASS** | **3516ms** | **Complete Coverage (F01 – F27)** |
+| **TOTAL** | **Master E2E Test Suite** | **29** | **PASS** | **3516ms** | **Complete Coverage (F01 – F27)** |
 
 ---
 
@@ -69,13 +69,13 @@ npx tsx test/e2e/tier4-real-world-scenarios.test.ts
 | **F22** | Model Configuration Panel | `test/e2e/tier1-feature-coverage.test.ts` | Verified `models.json` loading with primary model vs distillation model and reasoning effort. |
 | **F23** | Prompt Distillation Pipeline | `test/e2e/tier1-feature-coverage.test.ts`<br>`test/e2e/tier3-cross-feature.test.ts` | Verified 0ms fast-path regex bypass, intent distillation mode, and fail-open preservation. |
 | **F24** | E2E Testing Infrastructure | `test/e2e/run-all-e2e.ts`<br>`TEST_INFRA.md` | Complete E2E testing framework with multi-tier isolation and ephemeral port allocations. |
-| **F25** | 100% E2E Test Pass (Tiers 1-4) | `test/e2e/run-all-e2e.ts` | 28/28 tests passing with exit code 0. |
+| **F25** | 100% E2E Test Pass (Tiers 1-4) | `test/e2e/run-all-e2e.ts` | 29/29 tests passing with exit code 0. |
 | **F26** | Tier 5 Adversarial Coverage Hardening | `test/e2e/tier2-boundary-corner.test.ts` | Malformed non-JSON frame fuzzing, default-deny rejection, unauthenticated rejection. |
 | **F27** | Ego-Browser E2E Automated Verification | `test/e2e/tier4-real-world-scenarios.test.ts` | Verified ExecutionStatusCard strictly above bubble, ActiveBotIndicator, and Zero Invalid Date. |
 
 ---
 
-## 4. Implementation Bugs Identified & Escalated
+## 4. Implementation Bugs Identified & Resolved (v4.1)
 
 During test suite development, two implementation issues were uncovered and are escalated to the implementation track:
 1. **`src/daemon/gateway/GatewayClient.ts` Handshake Rejection Hang**:
@@ -84,3 +84,17 @@ During test suite development, two implementation issues were uncovered and are 
 2. **`src/daemon/gateway/allowlist.ts` Missing Milestone 1 Channels (F03)**:
    - *Observation*: Feature F03 specifies adding `agent:abort`, `session:history`, `session:list`, and `agent:list` to `REMOTE_INVOKE_ALLOWLIST`. Currently, `agent:abort`, `session:history`, and `session:list` are not yet included in `REMOTE_INVOKE_ALLOWLIST`, causing invokes to reject with `INVALID_REQUEST`.
    - *Escalation*: Add `'agent:abort'`, `'session:history'`, and `'session:list'` to `REMOTE_INVOKE_ALLOWLIST` in Milestone 1.
+
+## 6. v4.1 Session Lifecycle, Rewind & Compaction Verification Suite
+- **Test File**: `test/session-lifecycle-rewind-compaction.test.ts`
+- **Command**: `npx tsx test/session-lifecycle-rewind-compaction.test.ts`
+- **Checkpoints (9/9 PASS)**:
+  1. Dual-ID Session Storage (`id` vs `sdk_session_id`) & Atomic CAS `compareAndClearSdkSessionId`.
+  2. Two-Phase Message Rewind (`rewind:preview` & `rewind:commit`), Soft-Delete `rewind_at`, Prior Assistant Anchor & Group Cursor Clamping.
+  3. Message Tombstone (`message_tombstone`) & One-Shot `context_rebuild` Handoff.
+  4. Session Forking (`forkSessionAtMessage`) & SHA-256 `computeForkSourceMessagesDigest` Verification.
+  5. `MemoryFlushController` Watermarks (`[0.70, 0.85, 0.92]`) & `compact_boundary` Reset.
+  6. `isClaudeResumeSessionNotFound` Classifier, Copy-On-Relocate Transcripts & `repairForkedClaudeJsonl`.
+  7. Crash-Safe Input Queue Snapshots (`16 MiB` Guard) & Interrupted Turn Detection (`active_turn_started_at > last_turn_ended_at`).
+  8. Shadow Git Savepoint Engine (`refs/cindy/savepoints/<sessionId>`) & Cross-Session Peer Overlap Guard.
+  9. `<untrusted-json-block>` Peer Delta Injection, 4-Byte Emoji Safe Truncation & `<group-Action>` / `@mention` Routing.

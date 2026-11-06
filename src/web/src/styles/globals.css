@@ -82,7 +82,6 @@ body {
   overflow: hidden;
   height: 100vh;
   width: 100vw;
-  user-select: none;
 }
 
 * {
@@ -106,4 +105,10 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-tertiary);
+}
+
+.select-text,
+.select-text * {
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }

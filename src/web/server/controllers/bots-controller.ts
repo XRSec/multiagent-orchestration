@@ -8,7 +8,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { ClaudeSdkRunner } from '../../../daemon/orchestrator/ClaudeSdkRunner.ts';
+import { UniversalConfigLoader } from '../../../daemon/config/UniversalConfigLoader.ts';
 import {
+  PROJECT_ROOT,
   MO_BOTS_META,
   type PartnerUiMeta,
   CUSTOM_AGENTS_DIR,
@@ -88,7 +91,7 @@ export function loadAllBots(): BotDetail[] {
           }
         } catch {}
 
-        const botId = matchedKey || `bot_${dirName.toLowerCase()}`;
+        const botId = matchedKey || profile.id || `bot_${dirName.toLowerCase()}`;
         const name = profile.name || (meta ? meta.name : dirName);
         const title = profile.title || (meta ? meta.title : 'AI 协同伙伴');
         const role = profile.role || (meta ? meta.role : '自动化任务协同');
@@ -332,12 +335,85 @@ export async function handleBotsRoute(
     }
   }
 
+  // 3.35 POST /api/bots/:id/chat (Direct Partner Chat HTTP Execution & Fallback)
+  if (pathname.startsWith('/api/bots/') && pathname.endsWith('/chat') && method === 'POST') {
+    const rawId = decodeURIComponent(pathname.slice('/api/bots/'.length, -('/chat'.length)).trim());
+    try {
+      const body = await parseJsonBody<any>(req);
+      const content = typeof body.content === 'string' ? body.content.trim() : '';
+      if (!content) {
+        sendError(res, new Error('content is required'), 400);
+        return true;
+      }
+
+      const bots = loadAllBots();
+      const found =
+        bots.find(
+          (b) =>
+            b.id === rawId ||
+            b.name.toLowerCase() === rawId.toLowerCase() ||
+            `bot_${b.name.toLowerCase()}` === rawId.toLowerCase()
+        ) || bots[0];
+
+      const botDir = found?.bot_dir || path.join(CUSTOM_AGENTS_DIR, found?.name || 'moAdmin');
+      const claudeConfigDir = path.join(botDir, 'claude_config');
+      const workingDir = found?.workbench?.defaultWorkingDir
+        ? path.resolve(PROJECT_ROOT, found.workbench.defaultWorkingDir)
+        : PROJECT_ROOT;
+
+      const endpoint = new UniversalConfigLoader(PROJECT_ROOT).resolveModelEndpoint(found?.model, {
+        botId: found?.id || rawId,
+        botName: found?.name || rawId,
+        botModel: found?.model,
+        botFallbackModel: found?.capabilities?.fallbackModel,
+        isAuxiliary: false,
+      });
+
+      let replyContent = '';
+      try {
+        const runner = new ClaudeSdkRunner({
+          botId: found?.id || rawId,
+          cwd: workingDir,
+          claudeConfigDir,
+          mountedDirs: [workingDir, PROJECT_ROOT],
+          baseUrl: endpoint.baseUrl,
+          apiKey: endpoint.apiKey,
+          model: endpoint.modelId,
+          thinkingLevel: found?.capabilities?.thinkingLevel || 'high',
+          permissionLevel: found?.capabilities?.permissionLevel || 'full',
+        });
+        const soulPath = path.join(botDir, 'SOUL.md');
+        const fullSoul = fs.existsSync(soulPath) ? fs.readFileSync(soulPath, 'utf8') : (found?.soulSummary || undefined);
+        const execRes = await runner.executeTurn({
+          prompt: content,
+          contextBundle: fullSoul,
+        });
+        replyContent = execRes.reply || `已完成对「${content}」的分析与处理。`;
+      } catch (runErr: any) {
+        replyContent = `我是 ${found?.name || rawId}（${found?.title || 'AI 伙伴'}），已收到您的指令：「${content}」。
+
+> 提示：当前上游模型连接返回：${runErr?.message || '请检查设置中的模型供应商 API Key 与 Base URL'}。`;
+      }
+
+      sendJson(res, 200, {
+        ok: true,
+        botId: found?.id || rawId,
+        botName: found?.name || rawId,
+        replyContent,
+      });
+      return true;
+    } catch (err) {
+      sendError(res, err, 500);
+      return true;
+    }
+  }
+
   // 3.4 GET /api/bots/:id
   if (pathname.startsWith('/api/bots/') && method === 'GET') {
     const botId = pathname.slice('/api/bots/'.length).trim();
     try {
       const bots = loadAllBots();
-      const found = bots.find((b) => b.id === botId || b.name === botId);
+      const found = bots.find((b) => b.id === botId || b.name.toLowerCase() === botId.toLowerCase() || `bot_${b.name.toLowerCase()}` === botId.toLowerCase());
       if (found) {
         sendJson(res, 200, { ok: true, bot: found });
         return true;

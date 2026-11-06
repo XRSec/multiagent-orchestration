@@ -65,7 +65,7 @@ function CodeBlock({ codeBlock }: { codeBlock: string }) {
         </button>
       </div>
       <div className="p-3 overflow-x-auto max-h-80 overflow-y-auto touch-pan-x scrollbar-thin">
-        <pre className="text-text-primary whitespace-pre font-mono leading-relaxed">{code.trim()}</pre>
+        <pre className="text-text-primary whitespace-pre font-mono leading-relaxed select-text cursor-text">{code.trim()}</pre>
       </div>
     </div>
   );
@@ -95,7 +95,7 @@ function TextBlock({ text }: { text: string }) {
         if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
           return (
             <div key={lIdx} className="flex items-start gap-2 pl-2">
-              <span className="text-text-tertiary select-none">•</span>
+              <span className="text-text-tertiary">•</span>
               <div className="flex-1">{renderFormattedInline(trimmed.slice(2))}</div>
             </div>
           );
@@ -106,7 +106,7 @@ function TextBlock({ text }: { text: string }) {
         if (numMatch) {
           return (
             <div key={lIdx} className="flex items-start gap-2 pl-2">
-              <span className="text-text-tertiary font-mono select-none text-[11px]">{numMatch[1]}.</span>
+              <span className="text-text-tertiary font-mono text-[11px]">{numMatch[1]}.</span>
               <div className="flex-1">{renderFormattedInline(numMatch[2])}</div>
             </div>
           );
@@ -135,7 +135,7 @@ function renderFormattedInline(raw: string): React.ReactNode[] {
       return (
         <span
           key={idx}
-          className="inline-flex items-center px-1.5 py-0.2 rounded-md bg-accent-blue/10 text-accent-blue font-semibold text-[11px] sm:text-xs border border-accent-blue/20 mx-0.5 select-none"
+          className="inline-flex items-center px-1.5 py-0.2 rounded-md bg-accent-blue/10 text-accent-blue font-semibold text-[11px] sm:text-xs border border-accent-blue/20 mx-0.5 select-text"
         >
           {seg}
         </span>

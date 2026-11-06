@@ -6,7 +6,9 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import net from 'node:net';
 import {
+  PROJECT_ROOT,
   setCorsHeaders,
   clearRoomTimers,
   toSafeIsoString,
@@ -55,10 +57,59 @@ export {
 /**
  * Main Vite room API plugin registering modularized server middlewares
  */
+
+let embeddedDaemonPromise: Promise<any> | null = null;
+
+function isPortListening(port: number, host = '127.0.0.1'): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(600);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.connect(port, host);
+  });
+}
+
+async function ensureEmbeddedGatewayDaemon(): Promise<void> {
+  if (embeddedDaemonPromise) return embeddedDaemonPromise;
+  embeddedDaemonPromise = (async () => {
+    const alreadyUp = await isPortListening(38080, '127.0.0.1');
+    if (alreadyUp) {
+      return null;
+    }
+    try {
+      const { DaemonServer } = await import('../../daemon/transport/DaemonServer.ts');
+      const daemon = new DaemonServer({
+        projectRoot: PROJECT_ROOT,
+        httpPort: 38080,
+        httpHost: '127.0.0.1',
+      });
+      await daemon.start();
+      console.log('✓ [viteRoomApi] Auto-started embedded Gateway Daemon on ws://127.0.0.1:38080/gateway');
+      return daemon;
+    } catch (err: any) {
+      console.warn('[viteRoomApi] Embedded Gateway Daemon startup skipped:', err?.message || err);
+      return null;
+    }
+  })();
+  return embeddedDaemonPromise;
+}
+
 export function viteRoomApiPlugin() {
   return {
     name: 'vite-room-api-plugin',
     configureServer(server: any) {
+      ensureEmbeddedGatewayDaemon();
       server.middlewares.use(async (req: IncomingMessage, res: ServerResponse, next: () => void) => {
         const urlStr = req.url || '';
         const url = new URL(urlStr, 'http://localhost');

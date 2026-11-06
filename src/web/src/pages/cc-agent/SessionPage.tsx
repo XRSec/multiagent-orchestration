@@ -427,8 +427,8 @@ export function CCAgentSessionView() {
                     </div>
                   )}
                   <div className="flex flex-col items-end">
-                    <div className="bg-surface-elevated/90 backdrop-blur-md border border-border-default rounded-2xl rounded-tr-sm p-3.5 max-w-xl shadow-sm text-text-primary text-sm leading-relaxed">
-                      <p>{msg.content}</p>
+                    <div className="bg-surface-elevated/90 backdrop-blur-md border border-border-default rounded-2xl rounded-tr-sm p-3.5 max-w-xl shadow-sm text-text-primary text-sm leading-relaxed select-text cursor-text">
+                      <p className="select-text cursor-text whitespace-pre-wrap break-words">{msg.content}</p>
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-text-tertiary mt-1 px-1">
                       <span>{msg.timestamp}</span>

@@ -1,6 +1,6 @@
 /**
  * Purpose: Model provider configurations and persistent chat session management endpoints.
- * Context: Web server controller managing model options and sidebar session state.
+ * Context: Web server controller managing model options, sidebar session state, and rewind/compaction sub-routes.
  * Usage: Mounted by Vite plugin middleware to serve /api/config/models and /api/sessions routes.
  * Prerequisites: Node.js runtime, model-config-service, and session-storage persistence.
  */
@@ -16,13 +16,11 @@ import {
 } from '../session-storage.ts';
 import {
   handleGetSessionMessages,
-  handlePostSessionMessage
+  handlePostSessionMessage,
+  handleSessionLifecycleAction
 } from './session-messages-controller.ts';
-import {
-  loadProvidersConfig,
-  updateProviderConfig,
-  saveModelPreferences
-} from '../services/provider-config-service.ts';
+import { saveModelPreferences } from '../services/provider-config-service.ts';
+import { handleProviderConfigRoute } from './provider-config-controller.ts';
 
 export async function handleSessionAndConfigRoute(
   pathname: string,
@@ -30,6 +28,11 @@ export async function handleSessionAndConfigRoute(
   req: IncomingMessage,
   res: ServerResponse
 ): Promise<boolean> {
+  // Config Providers (CRUD + fetch-models), same-origin only
+  if (await handleProviderConfigRoute(pathname, method, req, res)) {
+    return true;
+  }
+
   // Config Models (GET & PUT)
   if (pathname === '/api/config/models') {
     if (method === 'GET') {
@@ -56,34 +59,8 @@ export async function handleSessionAndConfigRoute(
     }
   }
 
-  // Config Providers (GET & PUT)
-  if (pathname === '/api/config/providers') {
-    if (method === 'GET') {
-      try {
-        const providers = loadProvidersConfig();
-        sendJson(res, 200, { ok: true, providers });
-        return true;
-      } catch (err) {
-        sendError(res, err, 500);
-        return true;
-      }
-    }
-    if (method === 'PUT') {
-      try {
-        const body = await parseJsonBody(req);
-        const updated = updateProviderConfig(body);
-        sendJson(res, 200, { ok: true, provider: updated });
-        return true;
-      } catch (err) {
-        sendError(res, err, 400);
-        return true;
-      }
-    }
-  }
-
   // Sessions
   if (pathname === '/api/sessions' || pathname.startsWith('/api/sessions/')) {
-    // Session messages sub-route: /api/sessions/:sessionId/messages
     const messagesMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/messages$/);
     if (messagesMatch) {
       const sId = decodeURIComponent(messagesMatch[1]);
@@ -93,6 +70,13 @@ export async function handleSessionAndConfigRoute(
       if (method === 'POST') {
         return await handlePostSessionMessage(sId, req, res);
       }
+    }
+
+    const actionMatch = pathname.match(/^\/api\/sessions\/([^/]+)\/(rewind\/preview|rewind\/commit|tombstone|relocate)$/);
+    if (actionMatch) {
+      const sId = decodeURIComponent(actionMatch[1]);
+      const action = actionMatch[2];
+      return await handleSessionLifecycleAction(sId, action, method, req, res);
     }
 
     const sessionId = pathname.startsWith('/api/sessions/')
@@ -122,7 +106,7 @@ export async function handleSessionAndConfigRoute(
           title: body.title || '新对话',
           workingDir: body.workingDir || PROJECT_ROOT,
           agentKind: body.agentKind || 'claude-code',
-          model: body.model || 'claude-fable-5[1M]',
+          model: body.model || 'claude-opus-4-6',
           effort: body.effort || 'high',
           isPinned: Boolean(body.isPinned),
           isMuted: Boolean(body.isMuted),
@@ -133,7 +117,9 @@ export async function handleSessionAndConfigRoute(
           tags: Array.isArray(body.tags) ? body.tags : [],
           tagColor: body.tagColor,
           archived: Boolean(body.archived),
-          forkedFromId: body.forkedFromId
+          forkedFromId: body.forkedFromId,
+          sdkSessionId: body.sdkSessionId ?? null,
+          parentSessionId: body.parentSessionId ?? body.forkedFromId ?? null
         };
         const updated = upsertPersistentSession(newSession);
         sendJson(res, 201, { ok: true, session: newSession, sessions: updated });
@@ -147,18 +133,22 @@ export async function handleSessionAndConfigRoute(
         }
         const body = await parseJsonBody(req);
         const currentList = loadPersistentSessions();
-        const existing = currentList.find((s) => s.id === sessionId) || {
+        const existing = currentList.find((s) => s.id === sessionId);
+        if (existing && body.workingDir && body.workingDir !== existing.workingDir) {
+          await handleSessionLifecycleAction(sessionId, 'relocate', 'POST', req, res).catch(() => {});
+        }
+        const base = existing || {
           id: sessionId,
           title: '会话',
           workingDir: PROJECT_ROOT,
           agentKind: 'claude-code' as const,
-          model: 'claude-fable-5[1M]',
+          model: 'claude-opus-4-6',
           status: 'idle' as const,
           updatedAt: '刚刚',
           messageCount: 0
         };
         const merged: PersistentSession = {
-          ...existing,
+          ...base,
           ...body,
           id: sessionId
         };

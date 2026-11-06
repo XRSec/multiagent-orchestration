@@ -14,7 +14,7 @@ export const REMOTE_INVOKE_ALLOWLIST = [
   // System & Health
   'system:status',
   'system:ping',
-  
+
   // Agent & Orchestration (Web Client Core)
   'agent:list',
   'agent:get',
@@ -22,11 +22,23 @@ export const REMOTE_INVOKE_ALLOWLIST = [
   'agent:abort',
   'agent:speaker-status',
   'agent:get-context',
-  
-  // Session & Message History (Web Client Core)
+
+  // Session Lifecycle, Compaction, Fork, Tombstone & Queue (v4.1 Cindy Parity)
   'session:list',
   'session:history',
-  
+  'session:compact',
+  'session:fork',
+  'session:tombstone',
+  'session:relocate',
+  'session:interrupted',
+  'session:queue:save',
+  'session:queue:load',
+  'session:queue:clear',
+
+  // Two-Phase Message & File Rewind
+  'rewind:preview',
+  'rewind:commit',
+
   // Room & Blackboard
   'room:create',
   'room:get',
@@ -34,11 +46,11 @@ export const REMOTE_INVOKE_ALLOWLIST = [
   'room:unsubscribe',
   'room:blackboard:read',
   'room:blackboard:update',
-  
+
   // Task & Worker Execution
   'worker:task:execute',
   'worker:task:kill',
-  
+
   // Gateway Subscriptions
   'gateway:subscribe',
   'gateway:unsubscribe',
@@ -55,14 +67,19 @@ export const PUSH_FORWARD_ALLOWLIST = [
   'agent:text_delta',
   'agent:turn_complete',
   'agent:turn_interrupted',
-  
+
   // Legacy / Raw chunk compatibility
   'agent:stream_chunk',
-  
+
+  // Session Rewind & Compaction Lifecycle Events
+  'session:rewound',
+  'session:compacted',
+  'memory:flush_threshold',
+
   // Blackboard & Coordination
   'blackboard:updated',
   'circuit_breaker:tripped',
-  
+
   // Worker Execution
   'worker:stdout',
   'worker:stderr',
@@ -85,4 +102,3 @@ export function computeAllowlistHash(): string {
   const sorted = [...REMOTE_INVOKE_ALLOWLIST].sort().join('\n');
   return crypto.createHash('sha256').update(sorted).digest('hex').slice(0, 16);
 }
-

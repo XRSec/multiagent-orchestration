@@ -1,11 +1,13 @@
 /**
- * Purpose: Merged Model & Reasoning Effort Picker Popover adhering 1:1 to Claude official UI.
- * Context: Reflects user-configured models only (no mocks), uses custom aliases, and embeds effort submenu.
+ * Purpose: Cindy-aligned Model & Reasoning Effort Picker Popover with official ProviderLogoMark brand icons.
+ * Context: Groups enabled models by brand/vendor (ANTHROPIC, 谷歌, OPENAI, etc.) and embeds Thinking Effort submenu.
  * Usage: <ModelAndEffortPicker currentModelId={...} onModelChange={...} currentEffort={...} onEffortChange={...} />
  */
 
-import React, { useState, useEffect, useRef } from 'react';
-import { Sparkles, ChevronDown, ChevronRight, Check } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { ChevronDown, ChevronRight, Check } from 'lucide-react';
+import { ProviderLogoMark } from '@/components/icons/ProviderLogoMark';
+import { resolveModelBrand } from '@/components/settings/UnifiedModelList';
 
 export interface ModelItem {
   id: string;
@@ -16,6 +18,9 @@ export interface ModelItem {
   isDefault?: boolean;
   role?: string;
   provider: string;
+  providerId?: string;
+  vendor?: string;
+  enabled?: boolean;
 }
 
 export interface EffortItem {
@@ -44,16 +49,14 @@ export function ModelAndEffortPicker({
   const [isEffortSubmenuOpen, setIsEffortSubmenuOpen] = useState(false);
   const [models, setModels] = useState<ModelItem[]>([]);
   const [efforts, setEfforts] = useState<EffortItem[]>([
-    { id: 'low', label: '低', tokens: 2000 },
-    { id: 'medium', label: '中', tokens: 8000 },
-    { id: 'high', label: '高', tokens: 16000 },
-    { id: 'extra', label: '额外', tokens: 24000 },
-    { id: 'max', label: '最高', tokens: 32000, isDefault: true },
+    { id: 'low', label: '低 (4K)', tokens: 4096 },
+    { id: 'medium', label: '中 (16K)', tokens: 16384 },
+    { id: 'high', label: '高 (32K)', tokens: 32000, isDefault: true },
+    { id: 'max', label: '极高 (64K)', tokens: 64000 },
   ]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Load configured models from backend
   useEffect(() => {
     async function fetchConfig() {
       try {
@@ -64,7 +67,6 @@ export function ModelAndEffortPicker({
           if (Array.isArray(data.reasoningEfforts) && data.reasoningEfforts.length > 0) {
             setEfforts(data.reasoningEfforts);
           }
-          // If no active model chosen, set backend active default
           if (!currentModelId && data.activeDefaultModel) {
             onModelChange(data.activeDefaultModel);
           }
@@ -74,9 +76,8 @@ export function ModelAndEffortPicker({
       }
     }
     fetchConfig();
-  }, []);
+  }, [isOpen]);
 
-  // Close when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -92,29 +93,60 @@ export function ModelAndEffortPicker({
     };
   }, [isOpen]);
 
-  // Active items lookup
-  const activeModel = models.find((m) => m.id === currentModelId) || models[0];
-  const activeEffort = efforts.find((e) => e.id === currentEffort || e.label === currentEffort) || efforts[efforts.length - 1];
+  // Only show models enabled by the switch in ProvidersTab (plus currentModelId if selected)
+  const visibleModels = useMemo(
+    () => models.filter((m) => m.enabled !== false || m.id === currentModelId),
+    [models, currentModelId]
+  );
 
-  const displayModelName = activeModel?.displayName || activeModel?.shortLabel || currentModelId || 'Gemini 3.8 Flash';
-  const displayEffortLabel = activeEffort?.label || '最高';
+  const groupedByBrand = useMemo(() => {
+    const map = new Map<string, { label: string; items: ModelItem[] }>();
+    for (const m of visibleModels) {
+      const brand = resolveModelBrand({ id: m.id, name: m.displayName || m.name, vendor: m.vendor });
+      if (!map.has(brand.key)) {
+        map.set(brand.key, { label: brand.label, items: [] });
+      }
+      map.get(brand.key)!.items.push(m);
+    }
+    return Array.from(map.entries());
+  }, [visibleModels]);
+
+  const activeModel = visibleModels.find((m) => m.id === currentModelId) || visibleModels[0];
+  const activeBrand = resolveModelBrand({
+    id: activeModel?.id || currentModelId || 'claude-opus-4-6',
+    name: activeModel?.displayName,
+    vendor: activeModel?.vendor,
+  });
+  const activeEffort =
+    efforts.find((e) => e.id === currentEffort || e.label === currentEffort) ||
+    efforts.find((e) => e.id === 'high') ||
+    efforts[0];
+
+  const displayModelName =
+    activeModel?.displayName || activeModel?.shortLabel || currentModelId || 'Claude Opus 4.6';
+  const displayEffortLabel = activeEffort?.id?.toUpperCase() || 'HIGH';
 
   return (
     <div className={`relative inline-block select-none ${className}`} ref={containerRef}>
-      {/* 触发胶囊按钮 (参考 Claude 截图) */}
       <button
         type="button"
         onClick={() => {
           setIsOpen(!isOpen);
           setIsEffortSubmenuOpen(false);
         }}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-surface-chip hover:bg-surface-hover text-text-primary text-[11px] font-medium transition-colors border border-border-subtle cursor-pointer shadow-xs"
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-chip hover:bg-surface-hover text-text-primary text-[11px] font-medium transition-colors border border-border-subtle cursor-pointer shadow-2xs"
         title="选择模型及思考深度"
       >
-        <Sparkles className="w-3.5 h-3.5 text-accent-blue" />
-        <span className="font-mono">{displayModelName}</span>
+        <span className="text-text-secondary flex items-center">
+          <ProviderLogoMark
+            providerId={activeModel?.providerId || 'cpa'}
+            logoKind={activeBrand.logoKind}
+            size={13}
+          />
+        </span>
+        <span className="truncate max-w-[180px]">{displayModelName}</span>
         <span className="text-text-tertiary">·</span>
-        <span className="text-text-secondary">{displayEffortLabel}</span>
+        <span className="text-text-secondary font-mono text-[10px]">{displayEffortLabel}</span>
         <ChevronDown
           className={`w-3 h-3 text-text-tertiary transition-transform ${
             isOpen ? 'rotate-180' : ''
@@ -122,65 +154,58 @@ export function ModelAndEffortPicker({
         />
       </button>
 
-      {/* 主弹窗：模型 · 此会话 (1:1 对齐用户截图) */}
       {isOpen && (
         <div className="absolute right-0 bottom-full mb-2 w-80 bg-surface-elevated border border-border-default rounded-2xl shadow-2xl p-2 z-50 text-xs animate-in fade-in zoom-in-95 duration-100">
-          <div className="px-3 py-1.5 text-[11px] text-text-tertiary font-medium">
-            模型 · 此会话
+          <div className="px-3 py-1.5 text-[11px] text-text-tertiary font-medium flex items-center justify-between">
+            <span>选择对话模型</span>
+            <span className="font-mono text-[10px]">{visibleModels.length} 个已启用</span>
           </div>
 
-          {/* 模型列表 */}
-          <div className="space-y-0.5 max-h-72 overflow-y-auto">
-            {models.map((m, idx) => {
-              const isSelected = m.id === (activeModel?.id || currentModelId);
-              return (
-                <div
-                  key={m.id}
-                  onClick={() => {
-                    onModelChange(m.id);
-                    setIsOpen(false);
-                  }}
-                  className={`flex items-start justify-between px-3 py-2 rounded-xl cursor-pointer transition-colors group ${
-                    isSelected
-                      ? 'bg-surface-chip text-text-primary font-medium'
-                      : 'hover:bg-surface-hover text-text-primary'
-                  }`}
-                >
-                  <div className="min-w-0 flex-1 pr-2">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-semibold truncate">
-                        {m.displayName || m.shortLabel || m.name}
-                      </span>
-                      {m.isDefault && (
-                        <span className="text-[10px] bg-surface-hover border border-border-subtle text-text-tertiary px-1.5 py-0.2 rounded font-normal shrink-0">
-                          默认
-                        </span>
-                      )}
-                    </div>
-                    {m.description && (
-                      <div className="text-[11px] text-text-tertiary mt-0.5 truncate leading-tight">
-                        {m.description}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="shrink-0 flex items-center justify-end w-5 h-5 mt-0.5">
-                    {isSelected ? (
-                      <Check className="w-4 h-4 text-accent-blue" />
-                    ) : (
-                      <span className="text-[11px] text-text-tertiary opacity-60">
-                        {idx + 1}
-                      </span>
-                    )}
-                  </div>
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-0.5">
+            {groupedByBrand.map(([brandKey, group]) => (
+              <div key={brandKey} className="space-y-0.5">
+                <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-text-tertiary">
+                  {group.label}
                 </div>
-              );
-            })}
+                {group.items.map((m) => {
+                  const isSelected = m.id === (activeModel?.id || currentModelId);
+                  const b = resolveModelBrand({ id: m.id, name: m.displayName, vendor: m.vendor });
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => {
+                        onModelChange(m.id);
+                        setIsOpen(false);
+                      }}
+                      className={`flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'bg-surface-chip text-text-primary font-semibold'
+                          : 'hover:bg-surface-hover text-text-primary'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <span className="text-text-secondary shrink-0">
+                          <ProviderLogoMark
+                            providerId={m.providerId || 'cpa'}
+                            logoKind={b.logoKind}
+                            size={15}
+                          />
+                        </span>
+                        <span className="text-xs truncate">
+                          {m.displayName || m.shortLabel || m.name}
+                        </span>
+                      </div>
+                      {isSelected && <Check className="w-4 h-4 text-accent-blue shrink-0" />}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
           </div>
 
           <div className="h-px bg-border-subtle my-1.5" />
 
-          {/* 思考深度行 (含左侧悬浮子菜单) */}
+          {/* Thinking Effort Submenu */}
           <div
             className="relative"
             onMouseEnter={() => setIsEffortSubmenuOpen(true)}
@@ -190,26 +215,26 @@ export function ModelAndEffortPicker({
             }}
           >
             <div className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-surface-hover cursor-pointer text-xs transition-colors">
-              <span className="text-text-primary font-medium">思考深度</span>
+              <span className="text-text-primary font-medium">思考深度 (Effort)</span>
               <div className="flex items-center gap-1 text-text-tertiary">
-                <span className="text-text-secondary">{displayEffortLabel}</span>
+                <span className="text-text-secondary font-mono">{displayEffortLabel}</span>
                 <ChevronRight className="w-3.5 h-3.5" />
               </div>
             </div>
 
-            {/* 思考深度二级子菜单 (向左侧弹出，1:1 对齐用户截图) */}
             {isEffortSubmenuOpen && (
               <div
                 className="absolute right-full bottom-0 mr-2 w-64 bg-surface-elevated border border-border-default rounded-2xl shadow-2xl p-2.5 z-60 text-xs animate-in fade-in zoom-in-95 duration-100"
                 onClick={(e) => e.stopPropagation()}
               >
                 <div className="text-[11px] text-text-secondary leading-relaxed px-1 pb-2 mb-1.5 border-b border-border-subtle">
-                  Higher effort means more thorough responses, but takes longer and uses your limits faster.
+                  更高的思考档位会分配更多隐式推理 Token，适合复杂架构与调试任务。
                 </div>
 
                 <div className="space-y-0.5">
                   {efforts.map((eff) => {
-                    const isSelected = eff.id === activeEffort.id || eff.label === activeEffort.label;
+                    const isSelected =
+                      eff.id === activeEffort?.id || eff.label === activeEffort?.label;
                     return (
                       <div
                         key={eff.id}
@@ -224,17 +249,8 @@ export function ModelAndEffortPicker({
                             : 'hover:bg-surface-hover text-text-primary'
                         }`}
                       >
-                        <div className="flex items-center gap-1.5">
-                          <span>{eff.label}</span>
-                          {eff.isDefault && (
-                            <span className="text-[10px] bg-surface-hover border border-border-subtle text-text-tertiary px-1.5 py-0.2 rounded font-normal">
-                              默认
-                            </span>
-                          )}
-                        </div>
-                        {isSelected && (
-                          <Check className="w-4 h-4 text-accent-blue" />
-                        )}
+                        <span>{eff.label}</span>
+                        {isSelected && <Check className="w-4 h-4 text-accent-blue" />}
                       </div>
                     );
                   })}

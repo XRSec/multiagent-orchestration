@@ -22,7 +22,7 @@ export interface BotSessionTimelineProps {
 
 export function BotSessionTimeline({ messages }: BotSessionTimelineProps) {
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 max-w-3xl w-full mx-auto">
+    <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 max-w-3xl w-full mx-auto select-text">
       {messages.map((m) => (
         <div
           key={m.id}
@@ -42,7 +42,7 @@ export function BotSessionTimeline({ messages }: BotSessionTimelineProps) {
                 : 'bg-surface-elevated border border-border-default text-text-primary rounded-tl-sm'
             }`}
           >
-            <p>{m.content}</p>
+            <p className="select-text cursor-text whitespace-pre-wrap break-words">{m.content}</p>
             <div className="flex items-center justify-between text-[10px] opacity-60 mt-2 font-mono">
               <span>{m.sender}</span>
               <span>{m.timestamp}</span>
