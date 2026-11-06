@@ -15,8 +15,8 @@ locale: en-US
 
 * **[2] I/O & LINE BUDGET CONTRACTS**
   * **[2.1] Quantified Line Limits**:
-    * `[2.1.1]` Single script target length: `<= 600` lines.
-    * `[2.1.2]` Decoupling review threshold: `>= 500` lines.
+    * `[2.1.1]` Single script normal length budget: `<= 500` lines.
+    * `[2.1.2]` Extended justification band: `500-800` lines (requires a one-line justification in the file header).
     * `[2.1.3]` Hard redline limit: `> 800` lines (MUST be refactored into modular sub-files under `scripts/<tool-name>/` or `./lib/`).
     * `[2.1.4]` Single function scope: `<= 50` lines; cyclomatic complexity `<= 10`.
   * **[2.2] Universal 3-4 Line Header Contract**:

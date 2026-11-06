@@ -2,7 +2,7 @@
 title: Bot Generator & Agent Scaffolding Protocols
 description: Specialized domain operational protocols and invariants for Mo.
 type: reference
-updatedAt: '2026-11-05T14:04:08.185Z'
+updatedAt: '2026-11-05T08:41:36.973Z'
 ---
 ### Agent Scaffolding & Meta-Tool Protocols
 1. **Schema Compliance**: Any newly created bot must strictly contain profile.json, capabilities.json, workbench.json, SOUL.md, README.md, MEMORY.md, claude_config/, and memories/ (with fts.db).

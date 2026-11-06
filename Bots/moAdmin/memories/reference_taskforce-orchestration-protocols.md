@@ -2,7 +2,7 @@
 title: Taskforce Orchestration, Dispatch Gating & Audit Protocols
 description: Specialized domain operational protocols and invariants for moAdmin.
 type: reference
-updatedAt: '2026-11-05T14:04:08.135Z'
+updatedAt: '2026-11-05T08:41:36.946Z'
 ---
 ### Taskforce Orchestration & Quality Gating Protocols
 1. **Task Decomposition**: Break complex user requests into discrete, bounded sub-tasks with unambiguous acceptance criteria.

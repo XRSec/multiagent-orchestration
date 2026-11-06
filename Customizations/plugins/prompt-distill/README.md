@@ -31,20 +31,20 @@
 
 ## 🚀 安装与加载
 
-### 方法 1：在当前项目或全局配置中启用
-在 `~/.claude/settings.json` 或项目级 `.claude/settings.json` 中配置：
+### 方法 1：在 Bot 隔离沙箱配置或自持化目录中启用
+在 `<bot_dir>/claude_config/settings.json` 或 `~/.multiagent-orchestration/plugins/` 中配置（遵循宿主 `~/.claude` 零污染铁律）：
 
 ```json
 {
   "plugins": [
-    "/Users/xr/IDEA.localized/multiagent-orchestration/Customizations/plugins/prompt-distill"
+    "<projectRoot>/Customizations/plugins/prompt-distill"
   ]
 }
 ```
 
 ### 方法 2：启动时通过参数加载
 ```bash
-claude --plugin-dir /Users/xr/IDEA.localized/multiagent-orchestration/Customizations/plugins/prompt-distill
+claude --plugin-dir ./Customizations/plugins/prompt-distill
 ```
 
 ---
@@ -58,7 +58,7 @@ claude --plugin-dir /Users/xr/IDEA.localized/multiagent-orchestration/Customizat
   "baseUrl": "$CPA_BASE_URL",
   "apiKey": "$CPA_API_KEY",
   "timeoutMs": 30000,
-  "storageDir": "~/.claude/state/prompt-distill",
+  "storageDir": "~/.multiagent-orchestration/state/prompt-distill",
   "enable0msBypass": true,
   "enableGuardrails": true,
   "slidingWindowDepth": 2,

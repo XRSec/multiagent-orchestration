@@ -118,7 +118,7 @@
      "mcpServers": {
        "isolated_calculator": {
          "command": "node",
-         "args": ["/Users/xr/IDEA.localized/multiagent-orchestration/tools/calculator.mjs"],
+         "args": ["<projectRoot>/tools/calculator.mjs"],
          "env": {
            "CALC_PRECISION": "4"
          }

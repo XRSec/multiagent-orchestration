@@ -1,10 +1,10 @@
 # Multi-Agent Web Chat View & Execution Status Card Architecture Specification
 
 ## 1. Overview & Objectives
-This document establishes the official engineering architecture and visual interaction contract for the `multiagent-orchestration` web frontend (`apps/web`), focusing specifically on:
+This document establishes the official engineering architecture and visual interaction contract for the `multiagent-orchestration` web frontend (`src/web`), focusing specifically on:
 1. **Multi-Agent Room Chat View**: Left/right split chat timeline aligning with Cindy & AGY aesthetic design guidelines.
-2. **User Test Message Display**: Full support for real-time and mock user test messages ("测试我发的消息"), correctly styled and right-aligned with avatar and role badging.
-3. **Execution Status Card**: Strictly mounted directly below each message bubble (`ExecutionStatusCard.tsx`), displaying Thinking breakdown, Tool execution trace, and Done metrics.
+2. **User Test Message Display**: Full support for real-time user messages, correctly styled and right-aligned with avatar and role badging.
+3. **Execution Status Card (`Process First, Conclusion Last`)**: Strictly mounted directly **ABOVE** each message content bubble (`ExecutionStatusCard.tsx`), displaying Thinking breakdown, Tool execution trace, and Done metrics before the final conclusion text.
 4. **Max-Height & Hidden Scrollbar Constraint**: Enforces maximum container height (`max-h-56` / `max-h-60`), activates vertical scrolling (`overflow-y: auto`) on overflow, and completely suppresses native scrollbars (`.no-scrollbar`, `scrollbar-width: none !important`, `::-webkit-scrollbar: display: none !important`).
 
 ---
@@ -14,26 +14,26 @@ This document establishes the official engineering architecture and visual inter
 ```
 BotGroupChatPage (/bots/groups/:groupId)
   │
-  ├── RoomHeader (Room Switcher, 7 Mo-Bots Avatars, Monotonic Sequence Badge)
+  ├── RoomHeader (Room Switcher, 7 Mo-Bots Avatars, ActiveBotIndicator, Monotonic Sequence Badge)
   │
   ├── MessageTimeline (Auto-scroll, Monotonic Sequence Enforcer: a.sequence - b.sequence)
   │     │
   │     ├── MessageItem (User: Right / Bot: Left; 28px Avatar, 720px max width)
   │     │     │
-  │     │     ├── ContentBubble (User: Accent Blue / Bot: Elevated Surface Card)
+  │     │     ├── ExecutionStatusCard (Strictly Mounted ABOVE ContentBubble — Process First, Conclusion Last)
+  │     │     │     │
+  │     │     │     ├── Status Header (Thinking/Tool/Done + Latency Timer)
+  │     │     │     ├── ThinkingCard (Sparkles, Collapsible, Left Guide Rail)
+  │     │     │     ├── ToolExecutingCard (Terminal, Code2, Args & Output Pre blocks)
+  │     │     │     └── DoneSummaryCard (CheckCircle2, Total & Stage Time Breakdown)
   │     │     │
-  │     │     └── ExecutionStatusCard (Strictly Mounted Below Bubble)
-  │     │           │
-  │     │           ├── Status Header (Thinking/Tool/Done + Latency Timer)
-  │     │           ├── ThinkingCard (Sparkles, Collapsible, Left Guide Rail)
-  │     │           ├── ToolExecutingCard (Terminal, Code2, Args & Output Pre blocks)
-  │     │           └── DoneSummaryCard (CheckCircle2, Total & Stage Time Breakdown)
+  │     │     └── ContentBubble (User: Accent Blue / Bot: Elevated Surface Card)
   │     │
   │     └── AgentThinkingIndicator (Live Pulse when Bots are Processing)
   │
   └── Bottom Composer Card
         ├── MentionAutocompleteMenu (@moAdmin, @moCode, @moDoc, @MoCI, etc.)
-        ├── Quick Slash Mode Bar (/goal, /teamwork, /boost, ⚡ 测试我发的消息)
+        ├── Quick Slash Mode Bar (/goal, /teamwork, /boost)
         └── Rounded Input with Send Arrow
 ```
 
@@ -43,7 +43,7 @@ BotGroupChatPage (/bots/groups/:groupId)
 
 To guarantee complete scrollbar invisibility across Chromium (Electron/Chrome), WebKit (Safari/iOS), Gecko (Firefox), and Windows Edge:
 
-### 3.1 CSS Rules (`apps/web/src/index.css` & `src/styles/globals.css`)
+### 3.1 CSS Rules (`src/web/src/index.css` & `src/web/src/styles/globals.css`)
 ```css
 .no-scrollbar {
   scrollbar-width: none !important; /* Firefox */

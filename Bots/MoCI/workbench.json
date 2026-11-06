@@ -6,5 +6,5 @@
   ],
   "activePanel": "chat",
   "theme": "system",
-  "defaultWorkingDir": "Build Sandbox (test/, poc/)"
+  "defaultWorkingDir": "test"
 }

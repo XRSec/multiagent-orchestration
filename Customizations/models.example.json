@@ -1,0 +1,105 @@
+{
+  "version": "2.2.0",
+  "defaultProvider": "cpa",
+  "defaultModel": "gemini-3.1-pro-high",
+  "defaultEffort": "high",
+  "defaultThinkingLevel": "high",
+  "providers": {
+    "cpa": {
+      "id": "cpa",
+      "name": "Claude Proxy Adapter (CPA Unified Gateway)",
+      "baseUrlEnv": "CPA_BASE_URL",
+      "apiKeyEnv": "CPA_API_KEY",
+      "protocol": "anthropic-messages-v1",
+      "timeoutMs": 120000
+    },
+    "anthropic": {
+      "id": "anthropic",
+      "name": "Anthropic Direct API",
+      "baseUrlEnv": "ANTHROPIC_BASE_URL",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "protocol": "anthropic-messages-v1",
+      "timeoutMs": 120000
+    }
+  },
+  "models": [
+    {
+      "id": "gemini-3.1-pro-high",
+      "providerId": "cpa",
+      "displayName": "Gemini 3.1 Pro (High Effort)",
+      "effort": "high",
+      "thinkingLevel": "high",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 65536,
+      "roles": ["moAdmin", "moDoc", "MoCI", "MoGit", "MoDeep", "Mo"]
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "providerId": "cpa",
+      "displayName": "Claude Sonnet 4.6 (High Effort)",
+      "effort": "high",
+      "thinkingLevel": "high",
+      "contextWindow": 200000,
+      "maxOutputTokens": 64000,
+      "roles": ["moCode"]
+    },
+    {
+      "id": "gemini-3.8-flash",
+      "providerId": "cpa",
+      "displayName": "Gemini 3.8 Flash (Low Latency Distiller)",
+      "effort": "low",
+      "thinkingLevel": "none",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 16384,
+      "roles": ["prompt-distill"]
+    },
+    {
+      "id": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+      "providerId": "cpa",
+      "displayName": "Anthropic Default Haiku (Fast Distiller)",
+      "effort": "low",
+      "thinkingLevel": "none",
+      "contextWindow": 200000,
+      "maxOutputTokens": 8192,
+      "roles": ["prompt-distill"]
+    }
+  ],
+  "botModelRouting": {
+    "moAdmin": {
+      "providerId": "cpa",
+      "modelChain": [{ "model": "gemini-3.1-pro-high", "effort": "high" }]
+    },
+    "moCode": {
+      "providerId": "cpa",
+      "modelChain": [{ "model": "claude-sonnet-4-6", "effort": "high" }]
+    },
+    "moDoc": {
+      "providerId": "cpa",
+      "modelChain": [{ "model": "gemini-3.1-pro-high", "effort": "high" }]
+    },
+    "MoCI": {
+      "providerId": "cpa",
+      "modelChain": [{ "model": "gemini-3.1-pro-high", "effort": "high" }]
+    },
+    "MoGit": {
+      "providerId": "cpa",
+      "modelChain": [{ "model": "gemini-3.1-pro-high", "effort": "high" }]
+    },
+    "MoDeep": {
+      "providerId": "cpa",
+      "modelChain": [{ "model": "gemini-3.1-pro-high", "effort": "high" }]
+    },
+    "Mo": {
+      "providerId": "cpa",
+      "modelChain": [{ "model": "gemini-3.1-pro-high", "effort": "high" }]
+    }
+  },
+  "distillation": {
+    "primaryModel": "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "fallbackModel": "gemini-3.8-flash",
+    "timeoutMs": 30000,
+    "slidingWindowDepth": 2,
+    "decayLambda": 0.35,
+    "enable0msBypass": true
+  }
+}

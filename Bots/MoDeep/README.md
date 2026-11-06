@@ -6,7 +6,7 @@
 - **Role**: Intelligence & Deep Research Scout
 - **Harness**: Claude Code CLI / Agent SDK (`CLAUDE_CONFIG_DIR` isolated)
 - **Primary CWD**: `./workspace/tmp/`
-- **Write Scope**: `./workspace/tmp/, ./workspace/documents/`
+- **Write Scope**: `docs/research/, poc/, ./workspace/tmp/, ./workspace/documents/`
 - **Canonical Session ID**: `6d4f7e55-b413-4c96-bd6a-7f1a2b5c4d04`
 
 ## Directory Structure

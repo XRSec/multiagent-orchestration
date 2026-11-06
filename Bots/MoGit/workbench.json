@@ -6,5 +6,5 @@
   ],
   "activePanel": "chat",
   "theme": "system",
-  "defaultWorkingDir": "Project Root (Git SCM Sandbox)"
+  "defaultWorkingDir": "."
 }

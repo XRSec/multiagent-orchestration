@@ -41,29 +41,32 @@
 
 ### 2. Core Architectural Principles
 1. **Paseo/Cindy Unified Device Gateway (Port 38080)**:
-   - Single WebSocket transport on `ws://127.0.0.1:38080/gateway` with `/health` HTTP probe.
+   - Single WebSocket transport on `ws://127.0.0.1:38080/gateway` with `/health` HTTP probe (Vite dev server on `127.0.0.1:5173` proxies `/api` and `/gateway` to `:38080`).
    - All client-server interactions use Cindy's full-duplex Envelope frames: `kind: 'link-open' | 'link-accept' | 'invoke' | 'invoke-result' | 'push' | 'ping' | 'pong'`.
+   - Heartbeat & Backpressure: `pingIntervalMs: 15000` (`15s`), `zombieTimeoutMs: 45000` (`45s`), `maxBackpressureBytes: 67108864` (`64 MiB`).
    - Streaming pushes use topic subscription `session:<roomId>` and `direct:<sessionId>`.
-   - Standard 7-frame streaming contract: `agent:turn_start`, `agent:thinking`, `agent:tool_use`, `agent:tool_result`, `agent:text_delta`, `agent:turn_complete`, `agent:turn_interrupted`.
-   - Complete eradication of SSE (`EventSource`), `setTimeout` simulated responses, and fake regex tool traces.
-2. **Independent Companion Autonomy**:
-   - 7 Mo-Bots in `Customizations/agents/<bot_id>/` with 4-pack assets: `profile.json`, `capabilities.json`, `workbench.json`, `SOUL.md`.
-   - Dynamic scanning and capability persistence APIs; unbinding `MOCK_BOTS` on all frontend pages.
-   - Real Claude SDK (`@anthropic-ai/claude-agent-sdk`) execution via native Mach-O `claude.exe`.
-3. **Blackboard Coordination & Single-Speaker Arbitration**:
-   - Shared blackboard: `room.json`, `GROUP_CHARTER.md`, `GROUP_MEMORY.md`.
-   - Single-speaker protocol with explicit `@mention` priority or `moAdmin` arbitration.
-   - 5-turn autonomous interaction circuit breaker to eliminate infinite loops and polite echoing; `NO_REPLY` silent skip.
+   - Standard 7-frame daemon streaming contract (`agent:turn_start`, `agent:thinking`, `agent:tool_use`, `agent:tool_result`, `agent:text_delta`, `agent:turn_complete`, `agent:turn_interrupted`) cross-mapped to 12 UI/gateway event channels (`turn_start`, `text_delta`, `thinking_delta`, `tool_start`, `tool_input_delta`, `tool_output_delta`, `tool_done`, `turn_done`, `message_created`, `orchestration_phase`, `bot_status`, `prompt_distill`).
+   - **Zero-SSE Mandate**: Complete eradication of SSE (`EventSource` / `/api/events`), `setTimeout` simulated responses, and fake regex tool traces.
+2. **Independent Companion Autonomy & Zero Host Pollution**:
+   - Zero bytes read or written to `~/.claude/`; isolated per-bot `CLAUDE_CONFIG_DIR=<bot_dir>/claude_config` (`settingSources: []`, `strictMcpConfig: true`) under `~/.multiagent-orchestration/`.
+   - 7 Mo-Bots synchronized across `Customizations/agents/<BotName>/` and `Bots/<BotName>/` with 4-pack assets: `profile.json`, `capabilities.json`, `workbench.json`, `SOUL.md`.
+   - Dynamic scanning and capability persistence APIs; unbinding `MOCK_BOTS` on all frontend pages (`src/web`).
+   - Real Claude SDK (`@anthropic-ai/claude-agent-sdk`) execution with model routing via `Customizations/models.json` (`claude-opus-4-6` / `claude-sonnet-4-6`, fallback `gemini-3.8-flash`).
+3. **Blackboard Coordination, Dual-SQLite WAL & Single-Speaker Arbitration**:
+   - Dual-SQLite WAL storage (`better-sqlite3`): `data/orchestrator.db` and `data/blackboard_ssot.db`.
+   - Shared triple-file group blackboard in `groups/<slug>/` and `Customizations/group/<slug>/`: `room.json`, `GROUP_CHARTER.md`, `GROUP_MEMORY.md`.
+   - Single-speaker protocol (`single_speaker_mode: true`) with explicit `@mention` priority or `moAdmin` fallback arbitration.
+   - Two-tier turn quota (`max_consecutive_steps: 5`, `max_turns_per_round: 10`, `max_circles_per_round: 3`) and `<group-Action>` XML tags (`talk`, `collaborate`, `finish`) to eliminate infinite loops; `NO_REPLY` silent skip.
 4. **Session Lifecycle & Safe Deletion Invariant**:
    - Session pinning, muting, renaming, archiving, and deletion.
-   - ALL physical deletions MUST invoke `/opt/xrsec/.env/rmfile <target>`.
-   - Transcript persistence to `storage/transcripts/{sessionId}.jsonl`.
+   - ALL physical deletions MUST invoke `/opt/xrsec/.env/rmfile <target>` (zero `rm` or `rm -rf`).
+   - Transcript persistence to `storage/transcripts/{sessionId}.jsonl` (or `~/.multiagent-orchestration/transcripts/`).
 5. **Cindy 4-Tier Capability Matrix & Prompt Distill Pipeline**:
    - 4-Tier Capability Matrix: Chat-only (isolated sandbox), Config, Basic Tools (read-only), Full Access (bypass).
    - Dynamic MCP / Skill tree folding with preset one-click configurations.
-   - 4-Stage Prompt Distill Pipeline: 0ms local rule bypass, small model intent distillation, fail-open safety guard, visual diff view.
-6. **Ego-Browser End-to-End Verification**:
-   - Automated browser testing on `http://localhost:5173` verifying real WebSocket connection, real-time thinking status card above content bubble, real tool cards, and real model responses.
+   - 4-Stage Prompt Distill Pipeline: 0ms local rule bypass (`enable0msBypass: true`), small model intent distillation (`timeoutMs: 30000`, `slidingWindowDepth: 2`, `decayLambda: 0.35`, `prompts/round2.md`), fail-open safety guard, visual diff view, state persisted in `~/.multiagent-orchestration/state/prompt-distill`.
+6. **Ego-Browser End-to-End Verification & UI Mental Model (`src/web`)**:
+   - Automated browser and E2E testing (`npx tsx test/e2e/run-all-e2e.ts` + `test/e2e-web/web-chat-e2e.test.ts`) verifying real WebSocket connection, `ExecutionStatusCard` strictly **ABOVE** the content bubble (`Process First, Conclusion Last`), `ActiveBotIndicator` 0ms live mount, and `Zero Invalid Date` fallback.
 
 ---
 
@@ -105,19 +108,19 @@
 
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Gateway WS Envelope & Web Client Layer | F01, F02, F03, F04, F05, F06, F07 | none | DONE (pnpm build pass, 28/28 E2E pass, Gate PASS) |
+| M1 | Gateway WS Envelope, Storage & Web Client Foundation | F01, F02, F03, F04, F05, F06, F07 | none | DONE (pnpm build pass, 28/28 E2E pass, Gate PASS) |
 | E2E | E2E Testing Track (Requirement-Driven) | F24 (Tiers 1-4 Test Suites, Runner, TEST_READY.md) | none (parallel) | DONE (TEST_READY.md published, 28/28 tests passing) |
-| M2 | Companion Autonomy & Real Claude SDK Engine Bridge | F08, F09, F10, F11, F12, F13 | M1 (contracts) | IN_PROGRESS |
-| M3 | Direct Chat, Group Blackboard & Safe Lifecycle Engine | F14, F15, F16, F17, F18, F19 | M1, M2 | PLANNED |
-| M4 | Cindy 4-Tier Matrix, Model & Distill Pipeline | F20, F21, F22, F23 | M2 | PLANNED |
-| M5 | Final Milestone: 100% E2E Pass, Tier 5 Hardening & Ego-Browser | F25, F26, F27 | M1, M2, M3, M4, E2E | PLANNED |
+| M2 | Companion Autonomy, 7 Mo-Bots 4-Pack & Claude SDK Bridge | F08, F09, F10, F11, F12, F13 | M1 (contracts) | DONE (7 Mo-Bots 4-pack synchronized, SDK bridge verified) |
+| M3 | Direct Chat, Group Blackboard, Gateway IPC & Safe Lifecycle | F14, F15, F16, F17, F18, F19 | M1, M2 | DONE (Blackboard triple-file & safe delete verified) |
+| M4 | Cindy 4-Tier Matrix, Model Config, Prompt Distill & Web Studio (`src/web`) | F20, F21, F22, F23 | M2 | DONE (4-Tier matrix, distill pipeline & Web Studio verified) |
+| M5 | Full-Link E2E (F01–F27), Tier 5 Hardening & Ego-Browser Gate | F25, F26, F27 | M1, M2, M3, M4, E2E | DONE (28/28 E2E tests in `test/e2e/run-all-e2e.ts` + `test/e2e-web/web-chat-e2e.test.ts`) |
 
 ---
 
 ## Interface Contracts
 
 ### 1. Web Client ↔ GatewayServer (Port 38080)
-- **Transport**: WebSocket `ws://127.0.0.1:38080/gateway` (or Vite `/gateway`)
+- **Transport**: WebSocket `ws://127.0.0.1:38080/gateway` (or Vite `/gateway`), Heartbeat `pingIntervalMs: 15000` (`15s`), `zombieTimeoutMs: 45000` (`45s`), `maxBackpressureBytes: 67108864` (`64 MiB`).
 - **Envelope Format**:
   ```typescript
   type EnvelopeKind = 'link-open' | 'link-accept' | 'invoke' | 'invoke-result' | 'push' | 'ping' | 'pong';
@@ -137,15 +140,16 @@
   - `room:subscribe`: `{ topic: string }` -> `{ subscribed: true }`
   - `agent:list`: `{}` -> `{ bots: BotItem[] }`
   - `session:list`: `{}` -> `{ sessions: SessionItem[] }`
-- **Push Topics & Event Types**:
+- **Push Topics & Canonical Event Mapping (7 Daemon `agent:*` Events ↔ 12 UI Stream Channels)**:
   - Topic: `session:<roomId>` or `direct:<sessionId>`
   - Events:
-    - `agent:turn_start`: `{ turnId: string; botId: string; timestamp: number }`
-    - `agent:thinking`: `{ turnId: string; botId: string; thinking_delta: string; accumulated: string }`
-    - `agent:tool_use`: `{ turnId: string; botId: string; toolCallId: string; toolName: string; input: any }`
-    - `agent:tool_result`: `{ turnId: string; botId: string; toolCallId: string; toolName: string; result: any; durationMs: number }`
-    - `agent:text_delta`: `{ turnId: string; botId: string; text_delta: string }`
-    - `agent:turn_complete`: `{ turnId: string; botId: string; text: string; status: 'completed' | 'interrupted'; metrics: { durationMs: number; tokens?: number } }`
+    - `agent:turn_start` (UI channel: `turn_start`): `{ turnId: string; botId: string; timestamp: number }`
+    - `agent:thinking` (UI channel: `thinking_delta`): `{ turnId: string; botId: string; thinking_delta: string; accumulated: string }`
+    - `agent:tool_use` (UI channels: `tool_start`, `tool_input_delta`): `{ turnId: string; botId: string; toolCallId: string; toolName: string; input: any }`
+    - `agent:tool_result` (UI channels: `tool_output_delta`, `tool_done`): `{ turnId: string; botId: string; toolCallId: string; toolName: string; result: any; durationMs: number }`
+    - `agent:text_delta` (UI channel: `text_delta`): `{ turnId: string; botId: string; text_delta: string }`
+    - `agent:turn_complete` / `agent:turn_interrupted` (UI channel: `turn_done`): `{ turnId: string; botId: string; text: string; status: 'completed' | 'interrupted'; metrics: { durationMs: number; tokens?: number } }`
+    - Room/Lifecycle UI push channels: `message_created`, `orchestration_phase`, `bot_status`, `prompt_distill`.
 
 ### 2. GatewayServer ↔ AgentOrchestrator ↔ ClaudeSdkRunner
 - **Orchestrator Signature**:

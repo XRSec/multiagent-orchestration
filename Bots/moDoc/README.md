@@ -6,7 +6,7 @@
 - **Role**: Technical Documentation & Architecture Scribe
 - **Harness**: Claude Code CLI / Agent SDK (`CLAUDE_CONFIG_DIR` isolated)
 - **Primary CWD**: `docs/`
-- **Write Scope**: `docs/`
+- **Write Scope**: `docs/, *.md`
 - **Canonical Session ID**: `8b2d5c33-92f1-4a74-9b4e-5d9e0f3a2b02`
 
 ## Directory Structure

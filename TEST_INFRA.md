@@ -119,9 +119,10 @@ test/
    npx tsx test/e2e/tier3-cross-feature.test.ts
    npx tsx test/e2e/tier4-real-world-scenarios.test.ts
    ```
-3. **Alternative Native Fast Runner**:
+3. **Alternative Native Fast Runner & Web Studio E2E Suite**:
    ```bash
-   ./extensions/CindyR/node_modules/.bin/tsx --test test/e2e/*.test.ts
+   npx tsx --test test/e2e/*.test.ts
+   npx vitest run test/e2e-web/web-chat-e2e.test.ts
    ```
 
 ### Pass/Fail Semantics

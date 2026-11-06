@@ -6,5 +6,5 @@
   ],
   "activePanel": "chat",
   "theme": "system",
-  "defaultWorkingDir": "Project Root (/Users/xr/IDEA.localized/multiagent-orchestration)"
+  "defaultWorkingDir": "."
 }

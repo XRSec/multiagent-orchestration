@@ -161,7 +161,7 @@ npx tsx test/verify-isolation.ts
 ========================================================================
 
 [Step 1] Initializing HostIsolationGuard surveillance against ~/.claude
-  Target Host Claude Directory: /Users/xr/.claude
+  Target Host Claude Directory: <USER_HOME>/.claude
   ✓ PASS: Host ~/.claude surveillance active and fs hooks armed.
 
 [Step 2] Booting Bot Alpha and Bot Beta with isolated sandboxes
@@ -196,7 +196,7 @@ npx tsx test/verify-isolation.ts
 
 [Step 8] Performing Comprehensive Host ~/.claude Isolation Audit
   Audit Result:
-    Host Claude Dir: /Users/xr/.claude
+    Host Claude Dir: <USER_HOME>/.claude
     Host Dir Existed: true
     Host Dir Touched: false
     Read Violations: 0
@@ -207,8 +207,8 @@ npx tsx test/verify-isolation.ts
 
 [Step 9] Verifying Active Guard Defense Against Simulated Unauthorized Host Intrusion
   Trapped Violations:
-    [readFileSync] /Users/xr/.claude/settings.json
-    [writeFileSync] /Users/xr/.claude/rogue-injection.tmp
+    [readFileSync] <USER_HOME>/.claude/settings.json
+    [writeFileSync] <USER_HOME>/.claude/rogue-injection.tmp
   ✓ PASS: HostIsolationGuard active enforcement verified: illegal operations are immediately aborted.
 
 ========================================================================

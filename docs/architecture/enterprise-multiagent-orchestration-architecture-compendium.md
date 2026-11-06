@@ -41,8 +41,8 @@
 flowchart TB
     subgraph HumanLayer["人类交互与意图捕获层"]
         UserDevice["终端用户 (Desktop / Mobile 390px)"]
-        UI["React 19 SPA (pi-web 标准 / 虚拟键盘避让 / 触觉反馈)"]
-        UserDevice <-->|SSE / REST / Haptics| UI
+        UI["React 19 SPA (src/web / 虚拟键盘避让 / 触觉反馈)"]
+        UserDevice <-->|WebSocket /gateway & REST| UI
     end
 
     subgraph GatewayLayer["意图门禁与安全提炼网关 (Prompt Distill Gateway)"]
@@ -74,12 +74,12 @@ flowchart TB
     subgraph ExecutionStream["执行流可观测管道 (Execution Flow Parser)"]
         BotFleet -->|stdout / stderr / JSON-RPC / Token Stream| ParserEngine[流式状态机解析器]
         ParserEngine -->|Thinking / Tool Call / Output| StatusCard["ExecutionStatusCard (严格置于消息上方)"]
-        StatusCard -->|实时 SSE 推送| UI
+        StatusCard -->|实时 WebSocket push 推送| UI
     end
 
     subgraph StorageGovernance["自持化存储与隔离环境 (Zero Pollution)"]
         LocalModelConfig["权威模型配置 (~/.multiagent-orchestration/models.json)"]
-        SQLiteDB["本地自持化数据库 (sessions / messages / skills)"]
+        SQLiteDB["本地自持化数据库 (orchestrator.db & blackboard_ssot.db)"]
         BotFleet <--> LocalModelConfig
         BotFleet <--> SQLiteDB
     end
@@ -114,29 +114,31 @@ flowchart TB
 ### 2.4 有界自主轮次 (Bounded Autonomous Turns)
 
 在人类没有介入的场景下，智能体间的自动接力协作设定了严密的数学上限：
-- **自主轮次预算**：$N_{\text{auto}} \le 5$ 轮。
-- 达到第 5 轮时，`moAdmin` 强制接管，冻结状态机并生成结构化阶段报告，触发人类操作员停等检查点（Operator Checkpoint），由人类显式确认后方可开启下一段预算。
+- **两级自主轮次预算**：
+  - 单发言人连续对话步数上限（`max_consecutive_steps`）：$N_{\text{talk}} \le 5$ 步（第 6 步触发操作员确认检查点）；
+  - 单轮总交互熔断上限（`max_turns_per_round`）：$N_{\text{round}} \le 10$ 轮（最大循环圈数 `max_circles_per_round` = $3$）。
+- 达到阈值时，`moAdmin` 强制接管，冻结状态机并生成结构化阶段报告，触发人类操作员停等检查点（Operator Checkpoint），由人类显式确认后方可开启下一段预算。
 
 ### 2.5 兜底托管分发 (Fallback Dispatch)
 
 当人类用户发送了一条广播式消息而未显式 `@` 任何指定智能体时：
 1. 调度层启动**兜底认领路由**；
 2. 架构总控智能体 **`bot_moadmin_director_03` (moAdmin)** 强制作为首要认领人；
-3. `moAdmin` 快速解析需求特征，将其拆解为原子任务子图（DAG），并通过显式调用或派发将子任务交接给领域伙伴（如 `moCode` 处理实现、`MoCI` 处理验证），同时建立 SSE 全局广播向人类可视化呈现派发拓扑。
+3. `moAdmin` 快速解析需求特征，将其拆解为原子任务子图（DAG），并通过显式调用或派发将子任务交接给领域伙伴（如 `moCode` 处理实现、`MoCI` 处理验证），同时通过统一 WebSocket 网关（`ws://127.0.0.1:38080/gateway`）`push` 信封向人类实时广播派发拓扑。
 
 ### 2.6 Seven Mo-Bots 职能图谱与写入沙箱边界
 
-为避免智能体权责不清导致的代码越权修改，平台确立了七大伙伴的花名册与写入白名单：
+为避免智能体权责不清导致的代码越权修改，平台确立了七大伙伴的花名册与写入白名单（与 `AGENTS.md` 100% 对齐）：
 
-| 智能体标识 (Bot ID) | 角色显示名称 | 核心专业领域与职责 | 物理允许写入白名单 (Write Scope) |
-|---|---|---|---|
-| `bot_moadmin_director_03` | **moAdmin** | 编排总指挥、意图拆解、流转协调、阻断仲裁 | `groups/`, `docs/`, `logs/` |
-| `bot_mocode_engine_01` | **moCode** | 全栈开发专家、系统架构师、代码生产核心 | `src/`, `packages/`, `test/`, `poc/` |
-| `bot_modoc_scribe_02` | **moDoc** | 架构文档官、协议规范管理员、知识库维护 | `docs/`, `*.md` |
-| `bot_moci_sentinel_07` | **MoCI** | 持续集成守卫、自动化测试、质量门禁巡检 | `test/`, `.github/`, CI scripts |
-| `bot_mogit_scm_05` | **MoGit** | SCM 专家、Git 历史纯洁度治理、原子 Squash | `.git/`, release scripts |
-| `bot_modeep_scout_04` | **MoDeep** | 深度逆向研究、上游协议探索、可行性 PoC | `research/`, `poc/` |
-| `bot_mo_meta_06` | **Mo** | 元工具开发者、Skill 技能工厂、CLI 扩展工具 | `Customizations/skills/`, tools |
+| 智能体标识 (Bot ID) | 角色显示名称 | 默认工作目录 (CWD) | 核心专业领域与职责 | 物理允许写入白名单 (Write Scope) |
+|---|---|---|---|---|
+| `bot_moadmin_director_03` | **moAdmin** | `.` | 编排总指挥、意图拆解、流转协调、阻断仲裁 | `groups/`, `Customizations/group/`, `docs/`, `logs/` |
+| `bot_mocode_engine_01` | **moCode** | `.` | 全栈开发专家、系统架构师、代码生产核心 | `src/`, `test/`, `poc/`, `scripts/` |
+| `bot_modoc_scribe_02` | **moDoc** | `docs/` | 架构文档官、协议规范管理员、知识库维护 | `docs/`, `*.md` |
+| `bot_moci_sentinel_07` | **MoCI** | `test/` | 持续集成守卫、自动化测试、质量门禁巡检 | `test/`, `logs/`, `reports/`, `coverage/`, `.github/` |
+| `bot_mogit_scm_05` | **MoGit** | `.` | SCM 专家、Git 历史纯洁度治理、原子 Squash | `.git/`, release scripts, tags, changelogs |
+| `bot_modeep_scout_04` | **MoDeep** | `./workspace/tmp/` | 深度逆向研究、上游协议探索、可行性 PoC | `docs/research/`, `poc/`, `./workspace/tmp/`, `./workspace/documents/` |
+| `bot_mo_meta_06` | **Mo** | `Customizations/` | 元工具开发者、Skill 技能工厂、伙伴锻造 | `Customizations/skills/`, `Customizations/agents/<NewBot>/`, `Bots/<NewBot>/` |
 
 ---
 
@@ -213,7 +215,7 @@ $$L_{\text{ctx}}(t) = L_0 + \sum_{i=1}^{t} \text{tokens}(m_i)$$
 在早期阶段，群聊界面经常出现“用户发送消息后，伙伴回复中包含长串混乱的工具调用文本，却解析不出执行卡片”的严重缺陷。
 
 深度排查揭示了其根本原因：
-1. **多协议异构混淆**：智能体执行引擎（Claude Code CLI、Subprocess、JSON-RPC、SSE）在流式输出时，既包含标准事件格式（如 `type: "tool_use"`），又包含模型自由文本中手写的 Markdown 代码块（如 ````bash ... ````）；
+1. **多协议异构混淆**：智能体执行引擎（Claude Agent SDK、NDJSON Subprocess、JSON-RPC）在流式输出时，既包含标准事件格式（如 `type: "tool_use"`），又包含模型自由文本中手写的 Markdown 代码块（如 ````bash ... ````）；
 2. **分段切片截断（Chunk Fragmentation）**：网络传输的流式 Token 片段在 JSON 边界处被切碎，前端解析器若未维护带缓冲的状态机，就会触发 `JSON.parse` 崩溃并退化为原始纯文本；
 3. **元数据时序错乱**：思考链路（Thinking Process）与工具输出（Tool Result）到达时间异步，导致前端无法将结果归属于对应的工具卡片。
 
@@ -239,18 +241,19 @@ stateDiagram-v2
     Finalized --> [*]
 ```
 
-### 4.3 实时 SSE 协同流水线
+### 4.3 实时 WebSocket 网关全双工推送流水线 (Zero-SSE)
 
-1. **事件标准化**：后端守护进程统一产出强类型事件流：
+1. **事件标准化**：后端守护进程通过统一单端口网关（`ws://127.0.0.1:38080/gateway`）产出强类型 `push` 信封流（彻底废除遗留 SSE `EventSource`）：
    ```typescript
-   export type AgentEvent =
-     | { type: 'agent_status'; botId: string; status: 'thinking' | 'tool_executing' | 'idle' }
-     | { type: 'tool_call'; id: string; tool: string; input: Record<string, unknown> }
-     | { type: 'tool_output'; id: string; output: string; exitCode: number }
-     | { type: 'token_delta'; delta: string }
-     | { type: 'checkpoint_require'; reason: string };
+   export type AgentStreamEvent =
+     | { event: 'agent:turn_start'; turnId: string; botId: string; timestamp: number }
+     | { event: 'agent:thinking'; turnId: string; botId: string; thinking_delta: string }
+     | { event: 'agent:tool_use'; turnId: string; botId: string; toolCallId: string; toolName: string; input: Record<string, unknown> }
+     | { event: 'agent:tool_result'; turnId: string; botId: string; toolCallId: string; toolName: string; result: unknown; durationMs: number }
+     | { event: 'agent:text_delta'; turnId: string; botId: string; text_delta: string }
+     | { event: 'agent:turn_complete' | 'agent:turn_interrupted'; turnId: string; botId: string; status: string };
    ```
-2. **UI 实时响应**：前端 Hook（`useGroupChatMessages`）消费 SSE 流，在内存中动态维护工具调用树，确保工具调用过程即时渲染为交互式折叠卡片。
+2. **UI 实时响应**：前端 Hook（`useGatewaySocket` & `useRoomMessages`）消费 WebSocket `push` 流（辅以 REST 快照水合兜底），在内存中动态维护工具调用树，确保工具调用过程即时渲染为位于消息气泡上方的交互式折叠卡片（`ExecutionStatusCard`）。
 
 ---
 
@@ -505,7 +508,7 @@ flowchart LR
 
 ### 9.1 5 分钟周期后台自主巡检守护机制
 
-系统实现了全自动健康度自愈循环（[`scripts/system-monitor-and-self-check.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/scripts/system-monitor-and-self-check.ts)）：
+系统实现了全自动健康度自愈循环（[`scripts/system-monitor-and-self-check.ts`](../../scripts/system-monitor-and-self-check.ts)）：
 - **周期巡查**：每隔 5 分钟自动唤起无侵入式心跳探针；
 - **探针覆盖**：
   1. 7 位智能体沙箱进程在线状态（Health Status）；
@@ -514,9 +517,9 @@ flowchart LR
   4. 宿主污染检测扫描；
 - **全绿达标交付**：在既定里程碑达成 7/7 伙伴 100% HEALTHY 在线、沙箱物理隔离无污染、群聊协同消息稳定递增。
 
-### 9.2 四层 29 项全绿 E2E 自动化测试流水线
+### 9.2 四层 28 项全绿 E2E 自动化测试流水线
 
-系统落地了完整的端到端自动化测试流水线（[`test/e2e/run-all-e2e.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/test/e2e/run-all-e2e.ts)），分层覆盖：
+系统落地了完整的端到端自动化测试流水线（[`test/e2e/run-all-e2e.ts`](../../test/e2e/run-all-e2e.ts)），分层覆盖：
 1. **Layer 1: 基础服务与模型路由测试 (Base & Model Gateway)**：验证模型加载、Fallback 策略、持久化读写；
 2. **Layer 2: 7 智能体群聊与单发言人协议测试 (Group Chat & Single Speaker)**：验证增量信号、`NO_REPLY` 丢弃、有界自主轮次；
 3. **Layer 3: 意图提炼与黑板状态测试 (Prompt Distill & Blackboard)**：验证四要素输出、长上下文防漂移、话题分叉与合并；
@@ -526,20 +529,20 @@ flowchart LR
 
 | 资产分类 | 文件路径 / 模块 | 核心功能与架构职责 | 关联规范 / 协议 |
 |---|---|---|---|
-| **中枢调度** | [`src/daemon/orchestrator/AgentOrchestrator.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/daemon/orchestrator/AgentOrchestrator.ts) | 单发言人状态机、自主轮次计数、进程管理与事件分发 | 单发言人协议 / 有界轮次 |
-| **黑板调度** | [`src/daemon/orchestrator/BlackboardOrchestrator.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/daemon/orchestrator/BlackboardOrchestrator.ts) | 看板任务推进、跨 Bot 评审与停滞阻断 | 看板工作流 / 防死锁 |
-| **0ms 直通门禁**| [`src/daemon/orchestrator/fastPath.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/daemon/orchestrator/fastPath.ts) | 0ms 正则短路放行（确认词、CLI命令、紧急阻断） | Prompt Distill 旁路哲学 |
-| **黑板持久底座**| [`src/daemon/blackboard/BlackboardStore.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/daemon/blackboard/BlackboardStore.ts) | `node:sqlite` WAL 原子并发读写，跨进程防失忆 | SQLite WAL 物理底座 |
-| **模型配置服务** | [`src/web/server/model-config-service.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/web/server/model-config-service.ts) | 权威配置读取与写入，彻底切除宿主外部依赖 | 自持化隔离标准 |
-| **执行流卡片** | [`src/web/src/components/group-chat/ExecutionStatusCard.tsx`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/web/src/components/group-chat/ExecutionStatusCard.tsx) | 工具执行态、思考流折叠面板，严格置于气泡上方 | 过程先于结论铁律 |
-| **即时反馈指示器** | [`src/web/src/components/group-chat/ActiveBotIndicator.tsx`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/web/src/components/group-chat/ActiveBotIndicator.tsx) | 0ms 挂载毫秒级计时器与阶段状态徽章 | 零黑盒瞬时反馈 |
-| **移动端主布局** | [`src/web/src/layouts/MainLayout.tsx`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/web/src/layouts/MainLayout.tsx) | 390px 抽屉化侧栏、离线感知条挂载、Toast 挂载 | pi-web 移动端标准 |
-| **移动端吸底导航** | [`src/web/src/layouts/MobileBottomNav.tsx`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/web/src/layouts/MobileBottomNav.tsx) | 虚拟键盘捕获级聚焦避让，防遮挡 | 虚拟键盘避让机制 |
-| **触觉反馈工具** | [`src/web/src/utils/haptics.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/web/src/utils/haptics.ts) | 移动原生级触控微震动抽象封装 | 触觉感知标准 |
-| **全局无阻塞通知**| [`src/web/src/contexts/ToastContext.tsx`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/web/src/contexts/ToastContext.tsx) | 全局毛玻璃淡出 Toast，100% 灭绝阻塞 alert | 无阻塞交互规范 |
-| **端到端测试套件** | [`test/e2e/run-all-e2e.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/test/e2e/run-all-e2e.ts) | 4 层 29 项回归用例集成测试套件 | 质量门禁标准 |
-| **定时自检脚本** | [`scripts/system-monitor-and-self-check.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/scripts/system-monitor-and-self-check.ts) | 5 分钟守护探针、健康度判定与自愈报告 | 自动化运营规范 |
-| **工程治理规范** | [`AGENTS.md`](file:///Users/xr/IDEA.localized/multiagent-orchestration/AGENTS.md) | 根目录操作宪章、7 Bot 边界与严苛机器纪律 | `@script-standards` / `@agent-first-docs` |
+| **中枢调度** | `src/daemon/orchestrator/AgentOrchestrator.ts` | 单发言人状态机、自主轮次计数、进程管理与事件分发 | 单发言人协议 / 有界轮次 |
+| **黑板调度** | `src/daemon/orchestrator/BlackboardOrchestrator.ts` | 看板任务推进、跨 Bot 评审与停滞阻断 | 看板工作流 / 防死锁 |
+| **0ms 直通门禁**| `src/daemon/orchestrator/fastPath.ts` | 0ms 正则短路放行（确认词、CLI命令、紧急阻断） | Prompt Distill 旁路哲学 |
+| **黑板持久底座**| `src/daemon/blackboard/BlackboardStore.ts` | Dual-SQLite WAL 原子并发读写，跨进程防失忆 | SQLite WAL 物理底座 |
+| **模型配置服务** | `src/web/server/model-config-service.ts` | 权威配置读取与写入，彻底切除宿主外部依赖 | 自持化隔离标准 |
+| **执行流卡片** | `src/web/src/components/group-chat/ExecutionStatusCard.tsx` | 工具执行态、思考流折叠面板，严格置于气泡上方 | 过程先于结论铁律 |
+| **即时反馈指示器** | `src/web/src/components/group-chat/ActiveBotIndicator.tsx` | 0ms 挂载毫秒级计时器与阶段状态徽章 | 零黑盒瞬时反馈 |
+| **移动端主布局** | `src/web/src/layouts/MainLayout.tsx` | 390px 抽屉化侧栏、离线感知条挂载、Toast 挂载 | pi-web 移动端标准 |
+| **移动端吸底导航** | `src/web/src/layouts/MobileBottomNav.tsx` | 虚拟键盘捕获级聚焦避让，防遮挡 | 虚拟键盘避让机制 |
+| **触觉反馈工具** | `src/web/src/utils/haptics.ts` | 移动原生级触控微震动抽象封装 | 触觉感知标准 |
+| **全局无阻塞通知**| `src/web/src/contexts/ToastContext.tsx` | 全局毛玻璃淡出 Toast，100% 灭绝阻塞 alert | 无阻塞交互规范 |
+| **端到端测试套件** | [`test/e2e/run-all-e2e.ts`](../../test/e2e/run-all-e2e.ts) | 4 层 28 项回归用例集成测试套件 | 质量门禁标准 |
+| **定时自检脚本** | [`scripts/system-monitor-and-self-check.ts`](../../scripts/system-monitor-and-self-check.ts) | 5 分钟守护探针、健康度判定与自愈报告 | 自动化运营规范 |
+| **工程治理规范** | [`AGENTS.md`](../../AGENTS.md) | 根目录操作宪章、7 Bot 边界与严苛机器纪律 | `@script-standards` / `@agent-first-docs` |
 
 ---
 
@@ -551,14 +554,14 @@ flowchart LR
 
 | 文档分类与代际 | 对应文档路径 | 核心主张与内容 | 当前工程有效性与生命周期状态 |
 |---|---|---|---|
-| **第一代：历史遗留原型文档 (Legacy Predecessor)** | [`docs/architecture/cindy-chat-mechanisms-and-blackboard-system.md`](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/architecture/cindy-chat-mechanisms-and-blackboard-system.md) | 继承自 `CindyR` 与旧版原型，依赖内存黑板与纯前端 mock 假设计 | **🔴 已彻底废弃 (DEPRECATED)**。内存黑板与前端 mock 假设已被生产代码推翻。 |
-| **第一代：历史遗留原型文档 (Legacy Predecessor)** | [`docs/architecture/multiagent_web_chat_view.md`](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/architecture/multiagent_web_chat_view.md) | 早期静态 UI 切图与纯 Mock 视图设计方案 | **🔴 已彻底废弃 (DEPRECATED)**。已被现代 React 19 + pi-web 真实交互体系取代。 |
-| **第一代：历史遗留原型文档 (Legacy Predecessor)** | [`docs/architecture/paseo-architecture-and-claude-agent-sdk-integration.md`](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/architecture/paseo-architecture-and-claude-agent-sdk-integration.md) | 早期对外部 SDK 与 Paseo 的草案构想，含已弃用的命名空间 | **🔴 已废弃保留归档 (ARCHIVED)**。不可用于当下接口开发。 |
-| **第二代：中阶推演与技术修正文档 (Evolutionary Transition)** | [`docs/architecture/prompt_distill_design.md`](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/architecture/prompt_distill_design.md) (v2.0.0-ENTERPRISE) | 深度推翻了 Hook 原地变异输入的幻想，确立高信噪比背景增强与 0ms 正则直通 | **🟡 机制哲学有效 (THEORETICAL BASELINE)**。其 0ms 旁路思想已固化在 `src/daemon/orchestrator/fastPath.ts`。 |
-| **第二代：中阶推演与技术修正文档 (Evolutionary Transition)** | [`docs/architecture/companion-groupchat-blackboard-v4-production-full-spec.md`](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/architecture/companion-groupchat-blackboard-v4-production-full-spec.md) (v4.0-PRODUCTION) | 详述 v1.0 Hook 拦截、v2.0 P2P 传话筒、v3.0 内存黑板失忆机理，确立 SQLite WAL + TS FSM + 1400 Token 预算 | **🟢 核心机制生效 (PRODUCTION SPEC)**。为当前守护进程与黑板存储的物理理论底座。 |
-| **第三代：活态生产基线与操作宪章 (Living Production Specs)** | [`AGENTS.md`](file:///Users/xr/IDEA.localized/multiagent-orchestration/AGENTS.md) | 根目录操作宪章：7 Mo-Bots 白名单、`@script-standards`、`@agent-first-docs`、Safe Delete、Git Squash | **🟢 最高执行准则 (LIVING LAW)**。所有 Agent 每次会话必须严格遵循。 |
-| **第三代：活态生产基线与系统代码 (Living Implementation & Testing)** | [`src/daemon/orchestrator/AgentOrchestrator.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/daemon/orchestrator/AgentOrchestrator.ts)<br/>[`src/web/server/model-config-service.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/web/server/model-config-service.ts)<br/>[`src/web/src/layouts/MobileBottomNav.tsx`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/web/src/layouts/MobileBottomNav.tsx)<br/>[`test/e2e/run-all-e2e.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/test/e2e/run-all-e2e.ts) | 真实物理落地的调度核心、自持模型配置服务、移动端虚拟键盘避让与 4 层 29 项回归测试 | **🟢 活态物理真理 (SOURCE OF TRUTH)**。经过端到端 100% 全绿验收的真实生产代码。 |
-| **第三代：全集与设计规范 (Compendium)** | [`docs/architecture/enterprise-multiagent-orchestration-architecture-compendium.md`](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/architecture/enterprise-multiagent-orchestration-architecture-compendium.md) (v3.0.0-ENTERPRISE) | 本文档。全景融合协同调度哲学、UI 精神模型、自持隔离防污染、6 大推论对比与真实代码资产映射 | **🟢 权威全集全景 (CANONICAL COMPENDIUM)**。统一指引后续系统拓展。 |
+| **第一代：历史遗留原型文档 (Legacy Predecessor)** | [`docs/architecture/cindy-chat-mechanisms-and-blackboard-system.md`](./cindy-chat-mechanisms-and-blackboard-system.md) | 继承自 `CindyR` 与旧版原型，依赖内存黑板与纯前端 mock 假设计 | **🔴 已彻底废弃 (DEPRECATED)**。内存黑板与前端 mock 假设已被生产代码推翻。 |
+| **第一代：历史遗留原型文档 (Legacy Predecessor)** | [`docs/architecture/multiagent_web_chat_view.md`](./multiagent_web_chat_view.md) | 早期 UI 切图与视图设计方案（已修正对齐 `src/web` 与气泡上方卡片规范） | **🟡 历史视图规范 (ALIGNED ARCHIVE)**。已对齐 React 19 + WebSocket 真实交互体系。 |
+| **第一代：历史遗留原型文档 (Legacy Predecessor)** | [`docs/architecture/paseo-architecture-and-claude-agent-sdk-integration.md`](./paseo-architecture-and-claude-agent-sdk-integration.md) | 早期对外部 SDK 与 Paseo 的草案构想，含已弃用的命名空间 | **🔴 已废弃保留归档 (ARCHIVED)**。不可用于当下接口开发。 |
+| **第二代：中阶推演与技术修正文档 (Evolutionary Transition)** | [`docs/architecture/prompt_distill_design.md`](./prompt_distill_design.md) (v2.0.0-ENTERPRISE) | 深度推翻了 Hook 原地变异输入的幻想，确立高信噪比背景增强与 0ms 正则直通 | **🟡 机制哲学有效 (THEORETICAL BASELINE)**。其 0ms 旁路思想已固化在 `src/daemon/orchestrator/fastPath.ts`。 |
+| **第二代：中阶推演与技术修正文档 (Evolutionary Transition)** | [`docs/architecture/companion-groupchat-blackboard-v4-production-full-spec.md`](./companion-groupchat-blackboard-v4-production-full-spec.md) (v4.0-PRODUCTION) | 详述 v1.0 Hook 拦截、v2.0 P2P 传话筒、v3.0 内存黑板失忆机理，确立 SQLite WAL + TS FSM + 1400 Token 预算 | **🟢 核心机制生效 (PRODUCTION SPEC)**。为当前守护进程与黑板存储的物理理论底座。 |
+| **第三代：活态生产基线与操作宪章 (Living Production Specs)** | [`AGENTS.md`](../../AGENTS.md) | 根目录操作宪章：7 Mo-Bots 白名单、`@script-standards`、`@agent-first-docs`、Safe Delete、Git Squash | **🟢 最高执行准则 (LIVING LAW)**。所有 Agent 每次会话必须严格遵循。 |
+| **第三代：活态生产基线与系统代码 (Living Implementation & Testing)** | `src/daemon/orchestrator/AgentOrchestrator.ts`<br/>`src/web/server/model-config-service.ts`<br/>`src/web/src/layouts/MobileBottomNav.tsx`<br/>`test/e2e/run-all-e2e.ts` | 真实物理落地的调度核心、自持模型配置服务、移动端虚拟键盘避让与 4 层 28 项回归测试 | **🟢 活态物理真理 (SOURCE OF TRUTH)**。经过端到端 100% 全绿验收的真实生产代码。 |
+| **第三代：全集与设计规范 (Compendium)** | [`docs/architecture/enterprise-multiagent-orchestration-architecture-compendium.md`](./enterprise-multiagent-orchestration-architecture-compendium.md) (v3.0.0-ENTERPRISE) | 本文档。全景融合协同调度哲学、UI 精神模型、自持隔离防污染、6 大推论对比与真实代码资产映射 | **🟢 权威全集全景 (CANONICAL COMPENDIUM)**。统一指引后续系统拓展。 |
 
 ---
 
@@ -576,7 +579,7 @@ flowchart LR
     end
 
     subgraph ModernTruth["当下生产级事实与物理基石 (真实代码)"]
-        T1["真相 1: node:sqlite WAL<br/>(BlackboardStore.ts 跨进程原子持久化)"]
+        T1["真相 1: Dual-SQLite WAL<br/>(orchestrator.db & blackboard_ssot.db 跨进程原子持久化)"]
         T2["真相 2: 高信噪比背景增强 + 0ms 旁路<br/>(fastPath.ts 确定性放行与上下文追加)"]
         T3["真相 3: 绝对自持化数据隔离<br/>(~/.multiagent-orchestration/ 闭环)"]
         T4["真相 4: 全栈真实持久化驱动<br/>(model-config-service.ts & SQLite)"]
@@ -590,16 +593,16 @@ flowchart LR
 
 1. **认知偏差 1：跨进程内存黑板失忆陷阱**
    - *老文档假定*：多个 Agent 进程可以通过内存单例或简单的 JSON 文件进行黑板通信；
-   - *物理真相*：多智能体并发 CLI 运行时分属不同操作系统进程，内存完全隔离；JSON 并发写必然发生覆盖与损坏。当前系统已彻底收敛至 [`src/daemon/blackboard/BlackboardStore.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/daemon/blackboard/BlackboardStore.ts)，以原生 Node.js 22/26 `node:sqlite`（DatabaseSync）WAL 模式作为全局唯一跨进程事实基座（SSOT）。
+   - *物理真相*：多智能体并发 CLI 运行时分属不同操作系统进程，内存完全隔离；JSON 并发写必然发生覆盖与损坏。当前系统已彻底收敛至 `src/daemon/blackboard/BlackboardStore.ts` 与 Dual-SQLite WAL 模式（`data/orchestrator.db` & `data/blackboard_ssot.db`）作为全局唯一跨进程事实基座（SSOT）。
 2. **认知偏差 2：Hook 原地静默篡改用户输入的神话**
    - *老文档假定*：通过拦截 `UserPromptSubmit` 返回 `suppressOriginalPrompt` 即可原地重写用户自然语言；
-   - *物理真相*：宿主引擎不支持非阻塞式的就地变异，`suppressOriginalPrompt` 仅在阻断模式（Exit 2）下生效；放行模式下宿主只做背景拼接，并依赖 Transcript 物理回放历史。当前系统在 [`src/daemon/orchestrator/fastPath.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/daemon/orchestrator/fastPath.ts) 采用“0ms 正则短路直通 + 高信噪比上下文增强”真实规约。
+   - *物理真相*：宿主引擎不支持非阻塞式的就地变异，`suppressOriginalPrompt` 仅在阻断模式（Exit 2）下生效；放行模式下宿主只做背景拼接，并依赖 Transcript 物理回放历史。当前系统在 `src/daemon/orchestrator/fastPath.ts` 采用“0ms 正则短路直通 + 高信噪比上下文增强”真实规约。
 3. **认知偏差 3：宿主环境依赖与目录污染漏洞**
    - *老文档假定*：为了方便，直接读取或继承宿主 `~/.claude/settings.json` 或环境变量；
-   - *物理真相*：这是极其危险的外部宿主污染行为，直接导致多端不可移植并可能篡改开发者机器配置。当前系统在 [`src/web/server/model-config-service.ts`](file:///Users/xr/IDEA.localized/multiagent-orchestration/src/web/server/model-config-service.ts) 与前端完全切除该依赖，强制统一指向权威自持目录 `~/.multiagent-orchestration/models.json`。
+   - *物理真相*：这是极其危险的外部宿主污染行为，直接导致多端不可移植并可能篡改开发者机器配置。当前系统在 `src/web/server/model-config-service.ts` 与前端完全切除该依赖，强制统一指向权威自持目录 `~/.multiagent-orchestration/models.json`（及项目镜像 `Customizations/models.json`）。
 4. **认知偏差 4：前端纯 Mock 的虚假闭环**
    - *老文档假定*：前端很多高级配置面板仅用 `src/web/src/mock/` 作为静态演示；
-   - *物理真相*：用户对“模型修改、API 更改都是 Mock”提出了明确批判。当前系统已完成全栈贯通，由后端 Express 服务实时读写持久化文件，彻底消除了假 Mock 状态。
+   - *物理真相*：用户对“模型修改、API 更改都是 Mock”提出了明确批判。当前系统已完成全栈贯通，由后端服务与 WebSocket 网关实时读写持久化文件，彻底消除了假 Mock 状态。
 
 ---
 

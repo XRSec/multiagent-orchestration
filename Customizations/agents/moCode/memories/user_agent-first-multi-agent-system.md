@@ -21,5 +21,5 @@ updatedAt: '2026-11-05T08:00:00.000Z'
 
 4. **Three-Tier Boundary Architecture**:
    - **Always**: Fail fast on schema violations, preserve verified citation evidence, enforce zero-pollution in read-only tasks.
-   - **Ask First**: Destructive file deletions, live trading/order submissions, external API configuration mutations.
+   - **Ask First**: Destructive file deletions (must use `/opt/xrsec/.env/rmfile <target>`), cross-domain writes outside allowed scope, external API configuration mutations.
    - **Never**: Prompt bloating via negative feedback loops ("Ball of Mud" anti-pattern), unconstrained context reading of giant docs, or unauthorized role assumption.

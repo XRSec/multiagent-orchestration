@@ -59,8 +59,8 @@ flowchart TD
 ### 3.1 Channel 1: Soft Steering (PreToolUse Hook Injection)
 - **Applicability**: Normal multi-step tool loops (e.g., iterative file inspection, sequential edits).
 - **Protocol**:
-  1. The host orchestrator writes the amendment directive to `~/.claude-nexus/mailboxes/<partner_id>.json`.
-  2. The hook script configured in `<partner_dir>/.claude/settings.json` intercepts the tool call.
+  1. The host orchestrator writes the amendment directive to `~/.multiagent-orchestration/mailboxes/<bot_id>.json` (or in-memory `PreToolUse` callback).
+  2. The hook configured in `<bot_dir>/claude_config/settings.json` intercepts the tool call (strictly `0` host `~/.claude` touch).
   3. The hook returns `additionalContext` containing high-priority instructions:
      ```json
      {

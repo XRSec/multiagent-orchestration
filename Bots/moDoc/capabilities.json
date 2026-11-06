@@ -29,5 +29,11 @@
     "edit_file",
     "run_command",
     "markdown_lint"
-  ]
+  ],
+  "permissionLevel": "full",
+  "skills": [
+    "script-standards",
+    "agent-first-docs"
+  ],
+  "mcpServers": {}
 }

@@ -27,5 +27,11 @@
     "read_file",
     "write_file",
     "run_command"
-  ]
+  ],
+  "permissionLevel": "full",
+  "skills": [
+    "script-standards",
+    "agent-first-docs"
+  ],
+  "mcpServers": {}
 }

@@ -5,8 +5,8 @@
 
 - **Role**: Continuous Integration & Test Sentinel
 - **Harness**: Claude Code CLI / Agent SDK (`CLAUDE_CONFIG_DIR` isolated)
-- **Primary CWD**: `Build Sandbox (test/, poc/)`
-- **Write Scope**: `test/, build/, dist/, coverage/`
+- **Primary CWD**: `test/`
+- **Write Scope**: `test/, logs/, reports/, coverage/, .github/`
 - **Canonical Session ID**: `3a7c0b88-e746-4fc9-ef9d-0c4d5e8f7a07`
 
 ## Directory Structure

@@ -13,7 +13,7 @@
 在 v1.0.0 早期设计中，曾假设通过 `UserPromptSubmit` 钩子返回 `hookSpecificOutput: { suppressOriginalPrompt: true, additionalContext: "..." }` 可以实现原地抹除/重写用户输入。经深层运行时机制审视，该假设存在根本性协议语义偏差：
 1. **`suppressOriginalPrompt` 真实语义**：该配置是与阻塞决策（`decision: "block"` 或 Exit 2）强绑定的安全配置项，用于避免意外粘贴的凭据泄露至控制台。在常规执行放行（Exit 0）时，宿主直接忽略该属性。
 2. **非阻塞模式下的组装机制**：宿主不支持就地变异（In-place Mutation）或抹除用户原始输入。钩子返回的 `hookSpecificOutput.additionalContext`，在宿主引擎内部作为附加上下文标记块（附加背景块）拼接到用户原始输入上方或下方一并交付主模型。
-3. **无状态循环历史回放**：Claude Code 主智能体依赖底层转录本（Transcript，位于 `~/.claude/projects/.../{sessionId}.jsonl`）进行无状态循环回放。即便前端尝试改写单轮输入，宿主仍会在下一轮从磁盘全量回放前序全部日志与工具调用历史。
+3. **无状态循环历史回放**：Claude Code 主智能体依赖底层隔离沙箱转录本（Transcript，位于 `<CLAUDE_CONFIG_DIR>/projects/.../{sessionId}.jsonl` 及 `storage/transcripts/{sessionId}.jsonl`，遵循宿主 `~/.claude` 零读写铁律）进行无状态循环回放。即便前端尝试改写单轮输入，宿主仍会在下一轮从磁盘全量回放前序全部日志与工具调用历史。
 
 ### 1.2 定位根本性重塑
 插件定位从**“前端指令拦截与替换网关”**全面重构为**“高信噪比结构化背景增强引擎（High-SNR Context Augmentation Engine）”**。
@@ -132,7 +132,7 @@
 ### 2.5 议题 5：并发与会话生命周期绑定安全
 - **分片目录树拓扑**：
   ```
-  ~/.claude/state/prompt-distill/
+  ~/.multiagent-orchestration/state/prompt-distill/
   └── ${session_id}/
       ├── meta.json                     (会话元数据与全局根目标 G0)
       ├── root.json                     (主会话状态与局部滑动窗口)
@@ -159,12 +159,13 @@
 Customizations/plugins/prompt-distill/
 ├── .claude-plugin/
 │   └── plugin.json             # 插件基础清单
-├── config.json                 # 运行参数 (模型/降级/超时/存储)
+├── config.json                 # 运行参数 (模型/降级/超时/存储: ~/.multiagent-orchestration/state/prompt-distill)
 ├── hooks/
 │   └── hooks.json              # 挂接 UserPromptSubmit, PreCompact, SessionStart, SessionEnd
 ├── prompts/
 │   ├── system.md               # 纯净结构化系统注入词 (无Tools/MCP/严禁生成代码)
 │   ├── round1.md               # 首轮 G0 与结构化执行目标提炼
+│   ├── round2.md               # 次轮增量意图与约束对齐模板
 │   ├── distill.md              # 上一轮主 Agent 正文技术事实沉淀
 │   └── next_turn.md            # 多轮消歧与结构化背景增强模板
 └── scripts/

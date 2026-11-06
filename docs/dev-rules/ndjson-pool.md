@@ -13,7 +13,7 @@ locale: en-US
   * **[1.1] Primary Engine (Electron / Node.js Main Process)**:
     * Standard: `@anthropic-ai/claude-agent-sdk` (`v0.3.310+`).
     * Protocol: Programmatic `stdio` NDJSON driver encapsulating native Claude Code binary.
-    * Credentials: Inherits local OAuth session from `~/.claude/` (Pro / Max subscription zero-cost reuse).
+    * Credentials: Isolated per-bot sandbox via `CLAUDE_CONFIG_DIR=<bot_dir>/claude_config` (`settingSources: []`, `strictMcpConfig: true`; strictly `0` bytes read/written to host `~/.claude/`) and CPA gateway credentials (`$CPA_BASE_URL`, `$CPA_API_KEY`).
     * In-Memory Advantage: `PreToolUse` hooks and `nexus-orchestrator-mcp` run as in-process callbacks (`0` external hook scripts, `0` IPC socket latency).
   * **[1.2] Secondary Engine (Rust/Tauri or Go Host Fallback)**:
     * Standard: Bare CLI `claude -p --input-format stream-json --output-format stream-json`.
@@ -36,5 +36,5 @@ locale: en-US
     * Hard interrupt triggers via `query.interrupt()` or `abortController.abort()` without process destruction.
 
 * **[3] WATCHDOG & EXECUTION INVARIANTS**
-  * **[3.1] Timeout Redline**: Maximum continuous silent execution: `30,000ms`.
-  * **[3.2] Sandbox Isolation**: `cwd` strictly points to `~/.multiagent-orchestration/partners/<id>/`.
+  * **[3.1] Timeout Redline**: Maximum continuous silent execution: `45,000ms` (aligned with Gateway zombie eviction threshold).
+  * **[3.2] Sandbox Isolation**: Bot assets reside in `~/.multiagent-orchestration/agents/<BotName>/` (mirrored in `Customizations/agents/<BotName>/` and `Bots/<BotName>/`), with `cwd` bound to each bot's `defaultWorkingDir` in `workbench.json`.

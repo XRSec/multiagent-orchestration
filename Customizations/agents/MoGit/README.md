@@ -5,8 +5,8 @@
 
 - **Role**: Git Governance & SCM Specialist
 - **Harness**: Claude Code CLI / Agent SDK (`CLAUDE_CONFIG_DIR` isolated)
-- **Primary CWD**: `Project Root (Git SCM Sandbox)`
-- **Write Scope**: `Git index, staged tree under explicit operator authorization`
+- **Primary CWD**: `. (Project Root)`
+- **Write Scope**: `.git/, release scripts, tags, changelogs`
 - **Canonical Session ID**: `5e5a8f66-c524-4da7-ce7b-8a2b3c6d5e05`
 
 ## Directory Structure

@@ -16,22 +16,22 @@
     "model": "gemini-3.8-flash",
     "modelOverride": {
       "harness": "claude",
-      "providerId": "anthropic",
+      "providerId": "cpa",
       "model": "gemini-3.8-flash",
       "effort": "high",
       "fastMode": false,
       "thinkingLevel": "high"
     },
-    "providerId": "anthropic",
+    "providerId": "cpa",
     "effort": "high",
     "fastMode": false,
     "harness": "claude",
     "modelChain": [
       {
         "harness": "claude",
-        "providerId": "anthropic",
+        "providerId": "cpa",
         "model": "gemini-3.8-flash",
-        "effort": "none",
+        "effort": "high",
         "fastMode": false
       }
     ],

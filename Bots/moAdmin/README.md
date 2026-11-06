@@ -5,8 +5,8 @@
 
 - **Role**: Taskforce Director & Orchestration Lead
 - **Harness**: Claude Code CLI / Agent SDK (`CLAUDE_CONFIG_DIR` isolated)
-- **Primary CWD**: `Project Root (Audit Mode)`
-- **Write Scope**: `docs/reviews/, ephemeral dispatch receipts`
+- **Primary CWD**: `. (Project Root)`
+- **Write Scope**: `groups/, Customizations/group/, docs/, logs/`
 - **Canonical Session ID**: `7c3e6d44-a302-4b85-ac5f-6e0f1a4b3c03`
 
 ## Directory Structure

@@ -28,5 +28,12 @@
     "write_file",
     "edit_file",
     "run_command"
-  ]
+  ],
+  "permissionLevel": "full",
+  "skills": [
+    "skill-creator-helper",
+    "agent-first-docs",
+    "script-standards"
+  ],
+  "mcpServers": {}
 }

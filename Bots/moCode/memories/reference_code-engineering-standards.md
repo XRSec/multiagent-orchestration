@@ -2,7 +2,7 @@
 title: Code Engineering Protocols & Clean Refactoring Standards
 description: Specialized domain operational protocols and invariants for moCode.
 type: reference
-updatedAt: '2026-11-05T14:04:08.087Z'
+updatedAt: '2026-11-05T08:41:36.926Z'
 ---
 ### Code Engineering & Type-Safe Architecture Protocols
 1. **Single-Responsibility Invariant**: Every module must have a single clear domain responsibility with bounded interfaces.

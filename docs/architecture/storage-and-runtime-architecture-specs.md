@@ -134,20 +134,20 @@ flowchart TB
 
     subgraph Sandboxes["Execution Plane: Process & Sandbox Boundaries"]
         subgraph WorkerCode["moCode Subprocess"]
-            EnvCode["Env: CLAUDE_CONFIG_DIR=Bots/moCode/claude_config<br/>CWD: /Users/xr/IDEA.localized/multiagent-orchestration<br/>Privilege: Code Read/Write/Lint"]
-            ClaudeCode["Claude Code CLI Engine (Stream-JSON)"]
+            EnvCode["Env: CLAUDE_CONFIG_DIR=Customizations/agents/moCode/claude_config<br/>CWD: . (Project Root)<br/>Privilege: Code Read/Write/Lint"]
+            ClaudeCode["Claude Agent SDK / CLI Engine (Stream-JSON)"]
             McpCode["moCode Dedicated MCP Servers"]
         end
 
         subgraph WorkerDoc["moDoc Subprocess"]
-            EnvDoc["Env: CLAUDE_CONFIG_DIR=Bots/moDoc/claude_config<br/>CWD: docs/<br/>Privilege: Markdown Authoring & Schema Validation"]
-            ClaudeDoc["Claude Code CLI Engine (Stream-JSON)"]
+            EnvDoc["Env: CLAUDE_CONFIG_DIR=Customizations/agents/moDoc/claude_config<br/>CWD: docs/<br/>Privilege: Markdown Authoring & Schema Validation"]
+            ClaudeDoc["Claude Agent SDK / CLI Engine (Stream-JSON)"]
             McpDoc["moDoc Dedicated MCP Servers"]
         end
 
         subgraph WorkerAdmin["moAdmin Subprocess"]
-            EnvAdmin["Env: CLAUDE_CONFIG_DIR=Bots/moAdmin/claude_config<br/>CWD: Workspace Root<br/>Privilege: Read-Only Audit & Task Dispatch"]
-            ClaudeAdmin["Claude Code CLI Engine (Stream-JSON)"]
+            EnvAdmin["Env: CLAUDE_CONFIG_DIR=Customizations/agents/moAdmin/claude_config<br/>CWD: . (Project Root)<br/>Privilege: Audit & Task Dispatch"]
+            ClaudeAdmin["Claude Agent SDK / CLI Engine (Stream-JSON)"]
             McpAdmin["moAdmin Dedicated MCP Servers"]
         end
     end
@@ -161,24 +161,24 @@ flowchart TB
 
 ### 3.1 Process Execution Model
 1. **Subprocess Isolation**:
-   - Each active Bot execution is spawned as an independent child process via `child_process.spawn` executing the native CLI (`/opt/homebrew/bin/claude` or Node SDK wrapper).
+   - Each active Bot execution runs in an isolated sandbox via `@anthropic-ai/claude-agent-sdk` (`ClaudeSdkRunner`) / native `claude` runtime binary.
    - Mode: Non-interactive, full-duplex NDJSON stream (`--input-format stream-json --output-format stream-json`).
 2. **Process Watchdog & Lifetime**:
-   - Each subprocess has a hard execution watchdog timer (default: `180s` per turn).
-   - In-flight cancellations use graceful signal interruption (`control_request: interrupt`), followed by `SIGTERM` / `SIGKILL` on timeout.
+   - Each subprocess has a hard execution watchdog timer (`45s` zombie eviction / `180s` long-tool grace).
+   - In-flight cancellations use graceful signal interruption (`control_request: interrupt` / `agent:abort`), followed by `SIGTERM` / `SIGKILL` on timeout.
 
 ### 3.2 Working Directory (CWD) Assignment Rules
-The current working directory (CWD) of each Bot subprocess is deterministically bound based on its operational domain to prevent accidental filesystem destruction:
+The current working directory (CWD) of each Bot subprocess is deterministically bound based on its operational domain (`workbench.json` & `AGENTS.md`) to prevent accidental filesystem destruction:
 
 | Bot Name | Runtime Working Directory (CWD) | Allowed Filesystem Write Scope |
 | :--- | :--- | :--- |
-| `moCode` | Project Root (`/Users/xr/IDEA.localized/multiagent-orchestration`) | `src/`, `packages/`, `test/`, `poc/` (Excluded: `Bots/`, `.git/`) |
-| `moDoc` | `docs/` | `docs/` only |
-| `moAdmin` | Project Root (Audit Mode) | `docs/reviews/`, ephemeral task dispatch receipts |
-| `MoDeep` | `./workspace/tmp/` (Scraping Sandbox) | `./workspace/tmp/`, `./workspace/documents/` |
-| `MoGit` | Project Root (SCM Sandbox) | Git index / working tree under explicit approval |
-| `Mo` | `Bots/` (Template Generator) | `Bots/<NewBot>/` only |
-| `MoCI` | `poc/` / Build Sandbox | `test/`, `build/`, `dist/`, `coverage/` |
+| `moAdmin` | `.` (Project Root) | `groups/`, `Customizations/group/`, `docs/`, `logs/` |
+| `moCode` | `.` (Project Root) | `src/`, `test/`, `poc/`, `scripts/` |
+| `moDoc` | `docs/` | `docs/`, `*.md` |
+| `MoCI` | `test/` | `test/`, `logs/`, `reports/`, `coverage/`, `.github/` |
+| `MoGit` | `.` (Project Root) | `.git/`, release scripts, tags, changelogs |
+| `MoDeep` | `./workspace/tmp/` | `docs/research/`, `poc/`, `./workspace/tmp/`, `./workspace/documents/` |
+| `Mo` | `Customizations/` | `Customizations/skills/`, `Customizations/agents/<NewBot>/`, `Bots/<NewBot>/` |
 
 ### 3.3 Environment Variable Cleansing & Injection
 When spawning any Bot subprocess:

@@ -4,7 +4,7 @@
   "baseUrl": "$CPA_BASE_URL",
   "apiKey": "$CPA_API_KEY",
   "timeoutMs": 30000,
-  "storageDir": "~/.claude/state/prompt-distill",
+  "storageDir": "~/.multiagent-orchestration/state/prompt-distill",
   "enable0msBypass": true,
   "enableGuardrails": true,
   "slidingWindowDepth": 2,

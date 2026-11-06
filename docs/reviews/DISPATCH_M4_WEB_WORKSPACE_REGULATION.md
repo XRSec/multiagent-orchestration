@@ -14,19 +14,19 @@
 Per Human Operator Directive, the core frontend project structure is definitively consolidated:
 
 1. **Sole Authoritative Workspace**:
-   - Location: `web/` (Absolute path: `/Users/xr/IDEA.localized/multiagent-orchestration/web`).
-   - Package Name: `@cindy/web` (Private workspace package).
+   - Location: `src/web/` (Relative to `<projectRoot>`).
+   - Package Name: `web` (Private workspace package in `pnpm-workspace.yaml`).
 2. **Unified Execution Commands**:
-   - Monorepo Root: `pnpm --filter @cindy/web dev`
-   - Package Dir: `cd web && pnpm dev`
-   - Build Verification: `pnpm --filter @cindy/web build`
+   - Monorepo Root: `pnpm web:dev` (or `pnpm --filter web dev`)
+   - Package Dir: `cd src/web && pnpm dev`
+   - Build Verification: `pnpm web:build` (or `pnpm --filter web build`)
 3. **Strict Zero-Access Boundary (Host & Legacy Quarantine)**:
    - All historical desktop pages launched via deprecated paths are permanently deleted.
-   - **MANDATORY**: Agents (`moCode`, `moDoc`, `MoCI`, `MoGit`, `MoDeep`, `Mo`) are strictly forbidden from scanning, reading, modifying, or creating artifacts inside `poc/`, `sandboxes/`, or legacy paths (`extensions/multiagent-orchestration-old/`).
+   - **MANDATORY**: Agents (`moCode`, `moDoc`, `MoCI`, `MoGit`, `MoDeep`, `Mo`) are strictly forbidden from scanning, reading, modifying, or creating artifacts inside legacy paths (`extensions/multiagent-orchestration-old/`) or host `~/.claude/`.
 4. **Target Feature Scope**:
-   - Multi-agent group chat interface (`web/src/pages/bots/BotGroupChatPage.tsx`).
-   - Human test message submission and multi-bot reactive streaming.
-   - Message timeline with sub-bubble execution status card (`ExecutionStatusCard.tsx`).
+   - Multi-agent group chat interface (`src/web/src/pages/bots/BotGroupChatPage.tsx`).
+   - Human message submission and multi-bot reactive streaming over WebSocket (`/gateway`).
+   - Message timeline with execution status card (`ExecutionStatusCard.tsx`) strictly mounted **ABOVE** the message content bubble (`Process First, Conclusion Last`).
    - Strict height limitation (`max-h-56` / `max-h-60`) with native scrollbar suppression (`.no-scrollbar`).
 
 ---
@@ -35,15 +35,15 @@ Per Human Operator Directive, the core frontend project structure is definitivel
 
 ### Directive to `bot_mocode_engine_01` (moCode):
 - Formally acknowledge receipt and accept the binding order (`接单确认`).
-- Direct all future frontend refactoring, component extensions, mock data feeds, and dev server validations exclusively into `web/`.
-- Ensure all automated scripts, tests, and package configurations point solely to `@cindy/web` at root or `./web`.
+- Direct all future frontend refactoring, component extensions, and dev server validations exclusively into `src/web/`.
+- Ensure all automated scripts, tests, and package configurations point solely to `src/web`.
 
 ### Directive to `bot_modoc_scribe_02` (moDoc):
-- Align all architectural documentation (`docs/architecture/`, `PROJECT.md`) to reflect `web/` as the single frontend source of truth.
+- Align all architectural documentation (`docs/architecture/`, `PROJECT.md`) to reflect `src/web/` as the single frontend source of truth.
 
 ---
 
 ## 3. Governance Gates
-- **Gate 1**: Zero cross-directory pollution into `poc/` or `sandboxes/`.
-- **Gate 2**: `pnpm --filter @cindy/web build` passes with 0 type errors.
-- **Gate 3**: Strict adherence to `.no-scrollbar` styling and container height ceilings.
+- **Gate 1**: Zero cross-directory pollution into host `~/.claude/`.
+- **Gate 2**: `pnpm web:build` passes with 0 type errors.
+- **Gate 3**: Strict adherence to `.no-scrollbar` styling, container height ceilings, and `ExecutionStatusCard` above bubble placement.

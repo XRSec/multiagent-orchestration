@@ -1,6 +1,6 @@
-# Cindy Web (App UI 页面壳子与 Mock 运行库)
+# Cindy Web Studio (`src/web` — 多智能体全双工工作台与网关客户端)
 
-本项目是将 **Cindy Desktop App** 中的全部原生 UI 页面与交互框架完整提取、解耦并移植为纯 Web 架构的独立项目。所有后端数据与复杂系统服务均已通过结构化 Mock 数据代替，开箱即用，可在任意现代浏览器中独立启动与全功能交互。
+本项目是 `multiagent-orchestration` 的官方 Web 前端工作台（`src/web`），将 **Cindy Desktop App** 的多智能体交互界面与统一单端口 WebSocket 网关（`ws://127.0.0.1:38080/gateway`）及 Dual-SQLite 持久化存储深度集成。所有群聊与单聊流式状态遵循 **过程在前、结论在后（`ExecutionStatusCard` 严格挂载于消息气泡上方）**、**0ms 实时 `ActiveBotIndicator`** 与 **零 `Invalid Date`** 铁律。
 
 ---
 
@@ -44,13 +44,13 @@
 
 ## 🚀 启动与构建
 
-在 `apps/web` 目录下执行（或在项目根目录下通过 `pnpm web:dev` / `pnpm web:build`）：
+在 `src/web` 目录下执行（或在项目根目录下通过 `pnpm web:dev` / `pnpm web:build`）：
 
 ```bash
 # 安装依赖
 pnpm install
 
-# 启动本地开发服务 (带热更新)
+# 启动本地开发服务 (带热更新，自动代理 /api 与 /gateway 至 127.0.0.1:38080)
 pnpm dev
 
 # 编译生产打包验证
@@ -60,21 +60,22 @@ pnpm build
 pnpm preview
 ```
 
-本地服务默认运行在 `http://localhost:5173/`。
+本地服务默认运行在 `http://localhost:5173/`（后端统一网关运行在 `http://127.0.0.1:38080` / `ws://127.0.0.1:38080/gateway`）。
 
 ---
 
 ## 📁 目录结构
 
 ```
-apps/web/
+src/web/
 ├── public/assets/          # Cindy 官方 Logo、头像与品牌素材
 ├── src/
 │   ├── assets/             # 界面组件静态资源
+│   ├── components/         # 核心业务组件 (ExecutionStatusCard, ActiveBotIndicator, BotCapabilityMatrix 等)
 │   ├── contexts/           # 主题上下文与全局状态
+│   ├── hooks/              # WebSocket 网关与房间状态 Hooks (useGatewaySocket, useRoomMessages 等)
 │   ├── layouts/            # 页面外壳布局 (Sidebar, ContentHeader, RightSidebar, MainLayout)
-│   ├── mock/               # 结构化 Mock 数据集 (会话、消息、机器人、技能、插件、设置)
-│   ├── pages/              # 各功能页面壳子
+│   ├── pages/              # 各功能页面
 │   │   ├── cc-agent/       # 对话任务、新建、文件浏览、Orca 协同、调度
 │   │   ├── bots/           # 伙伴总览、阵容、市场、1v1 聊天、群聊
 │   │   ├── skillhub/       # 技能库与技能市场
@@ -88,6 +89,6 @@ apps/web/
 │   └── main.tsx            # 应用挂载入口
 ├── index.html              # HTML 模板
 ├── tailwind.config.js      # 设计系统 Tailwind 配置
-├── vite.config.ts          # Vite 打包配置
+├── vite.config.ts          # Vite 打包与 /gateway 代理配置
 └── package.json            # 依赖管理
 ```

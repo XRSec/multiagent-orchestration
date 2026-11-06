@@ -4,9 +4,7 @@ Context: multiagent-orchestration runtime, aligned with skill-creator-helper and
 Prerequisites: source .env, ~/.multiagent-orchestration/skills/ mounted, pnpm 12+.
 -->
 
-IMPORTANT: Think and respond in Chinese
-
-source .env for pass
+IMPORTANT: Think and respond in Chinese. Bootstrap environment with `source .env` before invoking credentials or protected gateways.
 
 ## 1. Core Operating Disciplines (Strict Mandate)
 
@@ -46,15 +44,15 @@ source .env for pass
 
 ## 3. Seven Mo-Bots Roster & Domain Boundaries
 
-| Bot ID | Display Name | Domain & Scope | Allowed Write Scope |
-|---|---|---|---|
-| `bot_moadmin_director_03` | **moAdmin** | Orchestration director, task decomposition & fallback coordinator | `groups/`, `docs/`, `logs/` |
-| `bot_mocode_engine_01` | **moCode** | Fullstack developer & system architect | `src/`, `packages/`, `test/`, `poc/` |
-| `bot_modoc_scribe_02` | **moDoc** | Architecture scribe & documentation steward | `docs/`, `*.md` |
-| `bot_moci_sentinel_07` | **MoCI** | Continuous integration & test gatekeeper | `test/`, `.github/`, CI scripts |
-| `bot_mogit_scm_05` | **MoGit** | SCM, git tree cleanliness & atomic squash | `.git/`, release scripts |
-| `bot_modeep_scout_04` | **MoDeep** | Deep research & upstream reverse engineering | `research/`, `poc/` |
-| `bot_mo_meta_06` | **Mo** | Meta-toolsmith & skill creator | `Customizations/skills/`, tools |
+| Bot ID | Display Name | Primary CWD | Domain & Scope | Allowed Write Scope |
+|---|---|---|---|---|
+| `bot_moadmin_director_03` | **moAdmin** | `.` | Orchestration director, task decomposition & fallback coordinator | `groups/`, `Customizations/group/`, `docs/`, `logs/` |
+| `bot_mocode_engine_01` | **moCode** | `.` | Fullstack developer & system architect | `src/`, `test/`, `poc/`, `scripts/` |
+| `bot_modoc_scribe_02` | **moDoc** | `docs/` | Architecture scribe & documentation steward | `docs/`, `*.md` |
+| `bot_moci_sentinel_07` | **MoCI** | `test/` | Continuous integration & test gatekeeper | `test/`, `logs/`, `reports/`, `coverage/`, `.github/` |
+| `bot_mogit_scm_05` | **MoGit** | `.` | SCM, git tree cleanliness & atomic squash | `.git/`, release scripts, tags, changelogs |
+| `bot_modeep_scout_04` | **MoDeep** | `./workspace/tmp/` | Deep research & upstream reverse engineering | `docs/research/`, `poc/`, `./workspace/tmp/`, `./workspace/documents/` |
+| `bot_mo_meta_06` | **Mo** | `Customizations/` | Meta-toolsmith & skill creator | `Customizations/skills/`, `Customizations/agents/<NewBot>/`, `Bots/<NewBot>/` |
 
 ---
 
@@ -64,11 +62,11 @@ source .env for pass
 2. **Incremental Signal Only**: Deliver ONLY net-new findings in group chat.
 3. **Native Silent Skip (`NO_REPLY`)**: When unmentioned or without incremental delta, output exact token `NO_REPLY` and exit.
 4. **Bounded Autonomous Turns**: Maximum 5 autonomous turns per task before operator checkpoint confirmation.
-5. **Fallback Dispatch**: If human sends a message without `@mentioning` any bot, `moAdmin` automatically takes ownership, dispatches tasks, and broadcasts real-time execution states via SSE.
+5. **Fallback Dispatch**: If human sends a message without `@mentioning` any bot, `moAdmin` automatically takes ownership, dispatches tasks, and broadcasts real-time execution states via WebSocket push envelopes (`ws://127.0.0.1:38080/gateway`).
 
 ---
 
-## 5. Frontend & UI Mental Model Invariants
+## 5. Frontend & UI Mental Model Invariants (`src/web`)
 
 1. **Visual Flow Order**: Execution status (`ExecutionStatusCard`: thinking process & tool calls) MUST strictly render **ABOVE** the content bubble. Process first, conclusion last.
 2. **Instant Feedback**: When a user submits a message, the UI MUST immediately mount a live `ActiveBotIndicator` (stopwatch, executing badge, phase description) to eliminate quiet waiting black boxes.

@@ -9,10 +9,11 @@
 ---
 
 ## 2. 核心开发里程碑与分工计划 (Roadmap & Workstream)
-- [x] **M1: 存储与运行时隔离搭建**（已完成：SQLite WAL + 20 环境变量剥离 + 7 Mo-Bots 资产落盘）
-- [x] **M2: 设备网关单一通道收敛**（已完成：Cindy 风格 GatewayServer / GatewayClient + 64 MiB 背压 + 粘包流式解码）
-- [ ] **M3: 多智能体协同开发实战**（待推进：通过 moAdmin 驱动 moCode 与 moDoc 在当前群展开系统特性的协同迭代）
-- [ ] **M4: Web UI / 控制台跨端呈现**（待推进：基于 GatewayClient 挂接轻量前端界面）
+- [x] **M1: 存储与运行时隔离搭建**（已完成：Dual-SQLite WAL + 20 环境变量剥离 + 7 Mo-Bots 4-Pack 资产落盘）
+- [x] **M2: 设备网关单一通道收敛**（已完成：Cindy 风格 `GatewayServer` / `GatewayClient` @ `ws://127.0.0.1:38080/gateway` + 64 MiB 背压 + `15s/45s` 心跳保活）
+- [x] **M3: 多智能体协同开发实战**（已完成：通过 `moAdmin` 驱动 `moCode`、`moDoc`、`MoCI` 完成双层配额与 `<group-Action>` 协同流水线）
+- [x] **M4: Web Studio (`src/web`) 控制台跨端呈现**（已完成：三栏式工作台、`ExecutionStatusCard` 气泡上方前置、`ActiveBotIndicator` 0ms 挂载、四维能力矩阵与 Prompt Distill）
+- [x] **M5: 全链路 E2E 验收与宿主零污染门禁 (`F01–F27`)**（已完成：`npx tsx test/e2e/run-all-e2e.ts` 28/28 绿灯通过，宿主 `~/.claude/` 零污染）
 
 ---
 
@@ -30,5 +31,5 @@
 - [2026-11-05T15:05:00.000Z] **moCode**: 【核心缺陷彻底修复完成】已完成两大体验缺陷闭环修复：(1) 时间戳 Invalid Date 根除：后端采用 `toSafeIsoString()` 严格格式化为标准 ISO，前端 `MessageItem.tsx` 增加健壮数字时间戳解析与降级保护，绝无 Invalid Date 遗留；(2) 真实智能体消息全面挂载 `executionStatus` 卡片：包含 state: 'done'、'协同执行完成 · 生产就绪'、thinking 耗时细分、提取/生成的 Bash/Read/Write/Edit 真实工具轨迹与 latency 对象；(3) 前后端无缝兼容中划线 `multiagent-orchestration` 与下划线 `room_multiagent_orchestration`；(4) `pnpm --filter web build` 与 `pnpm build` 100% 通过（0 错误），双回归测试套件 100% GREEN。
 - [2026-11-05T14:52:05.690Z] **MoCI**: # 🛡️ MoCI 持续集成与测试质量验收报告
 - [2026-11-05T15:05:20.298Z] **moCode**: # 🛠️ 【moCode 核心全栈工程师】缺陷修复与系统升级成果汇报
-- [2026-11-05T15:20:00.000Z] **moCode**: 【核心交互体验全面重构落地】(1) 视觉流向重构：在 `MessageItem.tsx` 中严格贯彻“先执行后结果”心智，`ExecutionStatusCard` 前置于气泡上方（`mb-2.5`），正文气泡后置承接最终结论；(2) 实时活跃执行态卡片：前端发信后立即点亮 `ActiveBotIndicator`（跳动秒表、`manage_task` 实时工具徽章与调度状态），无缝消除 20 分钟盲等静止黑盒，并配备 4s 自动兜底心跳门禁；(3) 服务端主管兜底调度：在 `vite-room-api-plugin.ts` 中实现 `resolveTargetBots`，用户未显式 `@` 任何 Bot 时由 `bot_moadmin_director_03`（moAdmin）自动接单并即时广播 `turn_start` 与 `tool_executing` SSE 事件；(4) 构建与测试回归：`pnpm build` 与 `pnpm --filter web build` 100% 编译通过（0 错误），双自动化测试套件（`test/date-and-status-verification.test.ts` 6 项断言与 `test/web-four-dimensions-verification.test.ts` 6 项断言）全部 100% GREEN。
+- [2026-11-05T15:20:00.000Z] **moCode**: 【核心交互体验全面重构落地】(1) 视觉流向重构：在 `MessageItem.tsx` 中严格贯彻“先执行后结果”心智，`ExecutionStatusCard` 前置于气泡上方（`mb-2.5`），正文气泡后置承接最终结论；(2) 实时活跃执行态卡片：前端发信后立即点亮 `ActiveBotIndicator`（跳动秒表、`manage_task` 实时工具徽章与调度状态），无缝消除 20 分钟盲等静止黑盒，并配备 4s 自动兜底心跳门禁；(3) 服务端主管兜底调度：在 `vite-room-api-plugin.ts` 中实现 `resolveTargetBots`，用户未显式 `@` 任何 Bot 时由 `bot_moadmin_director_03`（moAdmin）自动接单并通过 WebSocket 网关 (`ws://127.0.0.1:38080/gateway`) `push` 帧即时广播流式执行状态事件；(4) 构建与测试回归：`pnpm build` 与 `pnpm --filter web build` 100% 编译通过（0 错误），双自动化测试套件（`test/date-and-status-verification.test.ts` 6 项断言与 `test/web-four-dimensions-verification.test.ts` 6 项断言）全部 100% GREEN。
 - [2026-11-05T15:37:21.494Z] **moCode**: # 🛠️ 【moCode 核心全栈工程师】交互体验重构实施成果汇报

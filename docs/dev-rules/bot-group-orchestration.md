@@ -11,15 +11,15 @@ locale: en-US
 
 * **[1] STORAGE TOPOLOGY & DIRECTORY SEPARATION**
   * **[1.1] Partner Directory Invariant**:
-    * Path: `~/.multiagent-orchestration/partners/<bot_id>/`.
-    * Scope: Partner private assets (`SOUL.md`, `MEMORY.md`, `skills/`, `workspace/`).
+    * Path: `~/.multiagent-orchestration/agents/<BotName>/` (mirrored in `Customizations/agents/<BotName>/` and `Bots/<BotName>/`).
+    * Scope: Partner 4-pack private assets (`profile.json`, `capabilities.json`, `workbench.json`, `SOUL.md`, `MEMORY.md`, `skills/`, `claude_config/`).
     * Isolation: Prohibited from storing shared group transcripts, plans, or peer blackboards.
   * **[1.2] Group Dedicated Storage Directory**:
-    * Path: `~/.multiagent-orchestration/groups/<group_slug>/`.
-    * Contents: `group.json` (metadata), `GROUP_CHARTER.md` (mission), `GROUP_MEMORY.md` (shared blackboard), `plans/` (division history), `artifacts/` (outputs).
-    * Decoupling: Fully isolated from target repositories; `0` group internal files written to user codebases.
+    * Path: `groups/<group_slug>/` and `Customizations/group/<group_slug>/` (and runtime `~/.multiagent-orchestration/groups/<group_slug>/`).
+    * Contents: `room.json` (metadata & turn parameters), `GROUP_CHARTER.md` (mission & routing laws), `GROUP_MEMORY.md` (shared consensus blackboard).
+    * Decoupling: Fully isolated from target repositories; `0` group internal files written to customer codebases.
   * **[1.3] Mounted Target Repositories (`mountedDirs`)**:
-    * Path: Array of absolute host directory paths (e.g., `/Users/xr/IDEA.localized/cliproxyapi`, `/Users/xr/IDEA.localized/Prism-Browser`).
+    * Path: Array of workspace directory paths (e.g., `<workspace_root>/cliproxyapi`, `<workspace_root>/Prism-Browser`).
     * Mechanism: Injected into partner tool sandbox whitelists without directory copying.
 
 * **[2] SESSION CHANNEL TOPOLOGY & PERSISTENCE INVARIANTS**

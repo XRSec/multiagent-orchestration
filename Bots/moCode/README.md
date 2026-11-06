@@ -5,8 +5,8 @@
 
 - **Role**: Code Architect & Software Engineer
 - **Harness**: Claude Code CLI / Agent SDK (`CLAUDE_CONFIG_DIR` isolated)
-- **Primary CWD**: `Project Root (/Users/xr/IDEA.localized/multiagent-orchestration)`
-- **Write Scope**: `src/, packages/, test/, poc/`
+- **Primary CWD**: `. (Project Root)`
+- **Write Scope**: `src/, test/, poc/, scripts/`
 - **Canonical Session ID**: `9a1c4b22-81e0-4963-8a3d-4c8d9e2f1a01`
 
 ## Directory Structure

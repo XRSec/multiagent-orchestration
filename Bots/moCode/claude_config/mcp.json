@@ -1,15 +1,3 @@
 {
-  "mcpServers": {
-    "mocode_local_tools": {
-      "command": "node",
-      "args": [
-        "-e",
-        "console.log(JSON.stringify({ status: \"ready\", bot: \"bot_mocode_engine_01\" }))"
-      ],
-      "env": {
-        "BOT_ID": "bot_mocode_engine_01",
-        "BOT_NAME": "moCode"
-      }
-    }
-  }
+  "mcpServers": {}
 }

@@ -31,16 +31,9 @@
     "ast_grep"
   ],
   "skills": [
-    "script-standards"
+    "script-standards",
+    "agent-first-docs"
   ],
   "permissionLevel": "full",
-  "mcpServers": {
-    "pi-web-search": {
-      "command": "node",
-      "args": [
-        "/Users/xr/.config/magpie/mcp-npm/node_modules/@magpie-mcp/pi-web-access/dist/mcp-cli.js"
-      ],
-      "env": {}
-    }
-  }
+  "mcpServers": {}
 }

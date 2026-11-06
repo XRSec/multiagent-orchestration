@@ -25,6 +25,13 @@
   ],
   "tools": [
     "read_file",
-    "run_command"
-  ]
+    "run_command",
+    "write_file"
+  ],
+  "permissionLevel": "full",
+  "skills": [
+    "script-standards",
+    "agent-first-docs"
+  ],
+  "mcpServers": {}
 }

@@ -31,15 +31,9 @@
   ],
   "permissionLevel": "full",
   "skills": [
-    "skill-creator-helper"
+    "skill-creator-helper",
+    "agent-first-docs",
+    "script-standards"
   ],
-  "mcpServers": {
-    "pi-web-search": {
-      "command": "node",
-      "args": [
-        "/Users/xr/.config/magpie/mcp-npm/node_modules/@magpie-mcp/pi-web-access/dist/mcp-cli.js"
-      ],
-      "env": {}
-    }
-  }
+  "mcpServers": {}
 }

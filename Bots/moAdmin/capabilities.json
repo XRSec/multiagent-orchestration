@@ -30,5 +30,11 @@
     "run_command",
     "send_message",
     "manage_task"
-  ]
+  ],
+  "permissionLevel": "full",
+  "skills": [
+    "script-standards",
+    "agent-first-docs"
+  ],
+  "mcpServers": {}
 }

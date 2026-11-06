@@ -7,8 +7,8 @@
   "status": "active",
   "current_version": 1,
   "canonical_session_id": "3a7c0b88-e746-4fc9-ef9d-0c4d5e8f7a07",
-  "created_at": 1793887448201,
-  "updated_at": 1793887448201,
+  "created_at": 1793868096982,
+  "updated_at": 1793868096982,
   "capabilities": {
     "permissions": "trusted",
     "toolsetMode": "allowlist",
@@ -16,10 +16,11 @@
     "model": "gemini-3.8-flash",
     "modelOverride": {
       "harness": "claude",
-      "model": "gemini-3.8-flash",
       "providerId": "cpa",
+      "model": "gemini-3.8-flash",
       "effort": "high",
-      "fastMode": false
+      "fastMode": false,
+      "thinkingLevel": "high"
     },
     "providerId": "cpa",
     "effort": "high",
@@ -28,11 +29,12 @@
     "modelChain": [
       {
         "harness": "claude",
-        "model": "gemini-3.8-flash",
         "providerId": "cpa",
+        "model": "gemini-3.8-flash",
         "effort": "high",
         "fastMode": false
       }
-    ]
+    ],
+    "thinkingLevel": "high"
   }
 }

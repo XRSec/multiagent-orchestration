@@ -1,6 +1,6 @@
 # moCode · 代码工程与架构师 — Knowledge Index
 - **Bot ID**: `bot_mocode_engine_01`
-- **Initialized**: 2026-11-05T14:04:08.087Z
+- **Initialized**: 2026-11-05T08:41:36.926Z
 - **Active Memory Shards**:
   - `user_agent-first-multi-agent-system.md`
   - `user_language-discipline.md`

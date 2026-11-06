@@ -1,8 +1,10 @@
 # System Architecture: Headless Subprocess Pool & Full-Duplex Stream Engine
 
+> **[HISTORICAL / SUPERSEDED BY v4.1 SSOT]**: This document captures the Gen-1/Gen-2 NDJSON subprocess lifecycle. In the active v4.1 architecture (`MEMORY.md`, `PROJECT.md`), runtime execution is driven by `@anthropic-ai/claude-agent-sdk` (`ClaudeSdkRunner`) with per-bot `CLAUDE_CONFIG_DIR=<bot_dir>/claude_config` isolation (`settingSources: []`, `strictMcpConfig: true`), Dual-SQLite WAL storage (`data/orchestrator.db` & `data/blackboard_ssot.db`), and the Unified WebSocket Gateway (`ws://127.0.0.1:38080/gateway`).
+
 ## 1. Executive Summary
 
-This specification governs the runtime architecture of the multi-agent coordination platform powered exclusively by the native Claude Code CLI (`/opt/homebrew/bin/claude`). The platform completely strips third-party SDK dependencies, proprietary wrapper harnesses, and PTY terminal parsing, replacing them with a deterministic, low-latency, full-duplex Newline-Delimited JSON (NDJSON) streaming pipeline.
+This specification governs the runtime architecture of the multi-agent coordination platform powered by `@anthropic-ai/claude-agent-sdk` and the native Claude Code runtime (`claude`). The platform eliminates PTY terminal parsing, replacing it with a deterministic, low-latency, full-duplex Newline-Delimited JSON (NDJSON) streaming pipeline bridged to the Unified WebSocket Gateway (`ws://127.0.0.1:38080/gateway`).
 
 ---
 
@@ -11,13 +13,13 @@ This specification governs the runtime architecture of the multi-agent coordinat
 ```mermaid
 sequenceDiagram
     autonumber
-    participant UI as Electron UI / Renderer
-    participant Host as ProcessPoolManager (Node.js)
+    participant UI as Web Studio / Gateway Client
+    participant Host as AgentOrchestrator / ProcessPoolManager
     participant Watchdog as ProcessWatchdog
-    participant Claude as Claude CLI Subprocess
+    participant Claude as Claude SDK / CLI Runtime
 
     UI->>Host: Dispatch task request (User / Lead)
-    Host->>Claude: spawn(claude -p --input-format stream-json --output-format stream-json ...)
+    Host->>Claude: query / spawn(claude -p --input-format stream-json --output-format stream-json ...)
     Host->>Watchdog: Register PID & Session UUID
     Claude-->>Host: stdout: {"type": "system", "subtype": "init", "session_id": "<uuid>"}
     Host->>UI: Stream initial session metadata
@@ -50,13 +52,13 @@ sequenceDiagram
 
 ## 3. Subprocess Launch Invariants & CLI Flag Configuration
 
-The host engine initiates worker processes with strict parameter matrices depending on the agent category. All legacy heterogeneous runtimes (Codex, Pi) have been completely deprecated and purged; Claude Code serves as the sole execution engine:
+The host engine initiates worker processes with strict parameter matrices depending on the agent category. All legacy heterogeneous runtimes (Codex, Pi) have been completely deprecated and purged; Claude Code (`@anthropic-ai/claude-agent-sdk`) serves as the sole execution engine:
 
 ### 3.1 Standard Subprocess Parameter Matrix
 
 | Parameter / Flag | Value | Operational Purpose |
 | :--- | :--- | :--- |
-| `Binary` | `/opt/homebrew/bin/claude` | Direct execution of the native CLI binary. |
+| `Binary` | `claude` (resolved via SDK / `PATH`) | Execution of the native Claude runtime binary. |
 | `-p` | Flag active | Headless, non-interactive execution mode. |
 | `--input-format` | `stream-json` | Real-time NDJSON stream ingestion via `stdin`. |
 | `--output-format` | `stream-json` | Real-time NDJSON event broadcasting via `stdout`. |
@@ -64,9 +66,9 @@ The host engine initiates worker processes with strict parameter matrices depend
 | `--include-partial-messages` | Flag active | Mandatory: delivers delta tokens for real-time UI streaming. |
 | `--dangerously-skip-permissions`| Flag active | Bypasses terminal approval prompts in sandboxed headless execution. |
 | `--append-system-prompt` | `"$(cat SOUL.md)"` | Appends agent identity and behavioral constraints without overriding native tools. |
-| `--mcp-config` | `./mcp.json` | Mounts agent-specific MCP tool definitions. |
-| `--allowedTools` | Specific whitelist | Restricts tool boundaries (e.g., `mcp__rea__*,Read,Grep,Bash(r2 *)`). |
-| `cwd` | `partners/<id>/` | Sets the execution context to the partner's root directory. |
+| `--mcp-config` | `<bot_dir>/claude_config/mcp.json` | Mounts agent-specific MCP tool definitions (`strictMcpConfig: true`). |
+| `--allowedTools` | Specific allowlist | Restricts tool boundaries per bot `capabilities.json` (never wildcard `mcp__*`). |
+| `cwd` | `<bot_defaultWorkingDir>` | Sets the execution context to the bot's configured `defaultWorkingDir` in `workbench.json`. |
 
 ---
 
@@ -131,7 +133,7 @@ For collaborative taskforce execution (governed by [BOT_GROUP_ORCHESTRATION_SPEC
    - Stores the group's own assets: `GROUP_CHARTER.md`, shared blackboard memory `GROUP_MEMORY.md`, division plans (`plans/`), and intermediate execution logs.
    - Decoupled from user codebases: Zero internal coordination clutter is written to customer projects.
 2. **Mounted Target Projects (`mountedDirs`)**:
-   - The actual repositories being analyzed and patched (e.g. `/Users/xr/IDEA.localized/cliproxyapi`, `/Users/xr/IDEA.localized/Prism-Browser`).
+   - The actual repositories being analyzed and patched (e.g. `<workspace_root>/cliproxyapi`, `<workspace_root>/Prism-Browser`).
    - Injected into tool sandbox whitelists so partners operate directly across repositories without directory replication.
 
 ### 6.2 Session Channels & Context Increments

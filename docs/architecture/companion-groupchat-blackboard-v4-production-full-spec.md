@@ -623,10 +623,10 @@ Claude Agent SDK 每次执行 `spawn("claude.exe")` 存在约 1.2~1.8 秒的二�
 - **演进路线**：实现 `WarmProcessPool.ts`。利用 SDK 导出的预热句柄，针对核心高频角色（`moCode` 与 `moCI`）在后台维护一个处于就绪态的备用子进程池。
 - **收益**：任务一旦流转至相应状态，直接挂载管道流，彻底消除 1.8 秒冷启动开销，将智能体唤醒耗时压减至毫秒级。
 
-### 7.2 OpenTelemetry 分布式追踪与 SSE 看板实时流
+### 7.2 OpenTelemetry 分布式追踪与 WebSocket 网关实时推送流
 
 - 调度引擎内置 `EventEmitter`，在每次状态迁移、阶梯质检与审查反馈时实时对外广播事件；
-- 提供标准 Server-Sent Events (SSE) 接口，直接与 Web 前端界面的 `ExecutionStatusCard` 与 `ActiveBotIndicator` 对齐，杜绝操作人员面对黑盒的安静等待，实时呈现智能体协同全景。
+- 通过统一单端口 WebSocket 网关（`ws://127.0.0.1:38080/gateway`）`push` 信封流（彻底取代旧版 SSE `EventSource`），直接与 Web 前端界面的 `ExecutionStatusCard`（严格挂载于消息气泡上方）与 `ActiveBotIndicator` 对齐，杜绝操作人员面对黑盒的安静等待，实时呈现智能体协同全景。
 
 ### 7.3 多智能体 Git 原子提交与安全删除纪律
 

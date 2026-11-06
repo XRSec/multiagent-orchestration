@@ -1,4 +1,6 @@
 {
   "settingSources": [],
-  "strictMcpConfig": true
+  "strictMcpConfig": true,
+  "enableAnalytics": false,
+  "autoUpdate": false
 }

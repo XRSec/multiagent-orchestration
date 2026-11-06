@@ -11,5 +11,13 @@
     "bot_modeep_scout_04",
     "bot_mo_meta_06"
   ],
+  "single_speaker_mode": true,
+  "max_consecutive_steps": 5,
+  "max_turns_per_round": 10,
+  "max_circles_per_round": 3,
+  "fallback_bot_id": "bot_moadmin_director_03",
+  "reply_mode": "all",
+  "storage_mode": "hybrid",
+  "gateway_url": "ws://127.0.0.1:38080/gateway",
   "created_at": 1793887449260
 }

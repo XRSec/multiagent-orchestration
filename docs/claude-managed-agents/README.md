@@ -45,7 +45,7 @@ Anthropic 的 **Claude Managed Agents（托管智能体）** 是一套服务端�
 ## 2. 五大核心技术支柱解析
 
 ### 2.1 多智能体编排 (Multiagent Orchestration)
-- **文档链接**: [01-multiagent-orchestration.md](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/claude-managed-agents/01-multiagent-orchestration.md)
+- **文档链接**: [01-multiagent-orchestration.md](./01-multiagent-orchestration.md)
 - **核心定位**: 解决单一会话上下文污染与能力瓶颈，通过角色解耦实现复杂工程任务的分治。
 - **三种协作形态**:
   1. **委派给子智能体 (Delegation to Subagents)**: 专为探索性、非确定性分工设计。主智能体向子智能体指派子任务，子智能体在隔离线程中自主交互并向主智能体反馈摘要。
@@ -58,7 +58,7 @@ Anthropic 的 **Claude Managed Agents（托管智能体）** 是一套服务端�
 ---
 
 ### 2.2 会话线程模型 (Session Threads)
-- **文档链接**: [02-session-threads.md](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/claude-managed-agents/02-session-threads.md)
+- **文档链接**: [02-session-threads.md](./02-session-threads.md)
 - **核心定位**: 多智能体上下文边界控制与事件隔离机制。
 - **线程层级**:
   - **主线程 (Primary Thread)**: 用户交互与顶级编排的核心生命线。
@@ -71,7 +71,7 @@ Anthropic 的 **Claude Managed Agents（托管智能体）** 是一套服务端�
 ---
 
 ### 2.3 工作流运行机制 (Workflow Runs)
-- **文档链接**: [03-workflow-runs.md](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/claude-managed-agents/03-workflow-runs.md)
+- **文档链接**: [03-workflow-runs.md](./03-workflow-runs.md)
 - **核心定位**: 工业级长时自动化流程的状态机引擎。
 - **状态流转图**:
   ```text
@@ -88,7 +88,7 @@ Anthropic 的 **Claude Managed Agents（托管智能体）** 是一套服务端�
 ---
 
 ### 2.4 智能体记忆存储 (Agent Memory)
-- **文档链接**: [04-agent-memory.md](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/claude-managed-agents/04-agent-memory.md)
+- **文档链接**: [04-agent-memory.md](./04-agent-memory.md)
 - **核心定位**: 跨会话的持久化知识资产沉淀。
 - **设计特征**:
   - **独立存储生命周期**: 记忆存储（Memory Store）解耦于具体智能体会话，可在多个会话、多个同类智能体之间挂载共享。
@@ -98,7 +98,7 @@ Anthropic 的 **Claude Managed Agents（托管智能体）** 是一套服务端�
 ---
 
 ### 2.5 梦境认知重整 (Dreams)
-- **文档链接**: [05-dreams.md](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/claude-managed-agents/05-dreams.md)
+- **文档链接**: [05-dreams.md](./05-dreams.md)
 - **核心定位**: 借鉴人类睡眠期间海马体到大脑皮层的记忆固化过程，实现离线长程知识提炼与去冗。
 - **运行机理**:
   ```text
@@ -127,20 +127,20 @@ Anthropic 的 **Claude Managed Agents（托管智能体）** 是一套服务端�
 
 | 维度 | Anthropic Claude Managed Agents | 本地多智能体编排体系 (`multiagent-orchestration`) |
 | :--- | :--- | :--- |
-| **执行载体** | 服务端全托管 Managed Agent 容器 | 本地独立进程 (`claude` CLI / Subprocess NDJSON) |
-| **编排核心** | `multiagent_20261001` 编排块 | `nexus-orchestrator-mcp` + `Lead Coordinator` |
-| **智能体定义** | Predefined (YAML/JSON) + Inline | Folder-as-an-Agent (`partners/<id>/`) |
-| **线程沙箱** | Session Threads (`thread_id`) | 独立工作区 `workspace/` + 独立 NDJSON 流 |
-| **动态干预** | API Interrupt / Resume | 双通道实时转向协议 (PreToolUse Hook + Control Interrupt) |
-| **记忆存储** | 云端托管 Memory Store | `MEMORY.md` 索引 + `memories/topics/*.md` 分片 |
-| **认知提炼** | 云端异步 Dreams Pipeline | 阶段性记忆蒸馏 SOP (`nmem-memory-distill` / Standing Order) |
+| **执行载体** | 服务端全托管 Managed Agent 容器 | 本地独立沙箱 (`@anthropic-ai/claude-agent-sdk` + `CLAUDE_CONFIG_DIR` 隔离) |
+| **编排核心** | `multiagent_20261001` 编排块 | `AgentOrchestrator` + `moAdmin` + WebSocket `/gateway` |
+| **智能体定义** | Predefined (YAML/JSON) + Inline | 4-Pack Bot Sandbox (`Customizations/agents/<BotName>/` & `Bots/<BotName>/`) |
+| **线程沙箱** | Session Threads (`thread_id`) | 群聊 `session:<roomId>` 与单聊 `direct:<sessionId>` 物理隔离 |
+| **动态干预** | API Interrupt / Resume | 双通道实时转向协议 (`PreToolUse` Hook + `agent:abort` Interrupt) |
+| **记忆存储** | 云端托管 Memory Store | Dual-SQLite (`orchestrator.db` + `blackboard_ssot.db`) + `GROUP_MEMORY.md` |
+| **认知提炼** | 云端异步 Dreams Pipeline | 4 阶段 Prompt Distill 流水线 (`~/.multiagent-orchestration/state/prompt-distill`) |
 
 ---
 
 ## 4. 目录索引
 
-1. [多智能体编排规范与指南](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/claude-managed-agents/01-multiagent-orchestration.md)
-2. [会话线程模型与生命周期](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/claude-managed-agents/02-session-threads.md)
-3. [动态工作流状态机与运行机制](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/claude-managed-agents/03-workflow-runs.md)
-4. [智能体记忆持久化与并发控制](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/claude-managed-agents/04-agent-memory.md)
-5. [梦境离线知识整合与模式挖掘](file:///Users/xr/IDEA.localized/multiagent-orchestration/docs/claude-managed-agents/05-dreams.md)
+1. [多智能体编排规范与指南](./01-multiagent-orchestration.md)
+2. [会话线程模型与生命周期](./02-session-threads.md)
+3. [动态工作流状态机与运行机制](./03-workflow-runs.md)
+4. [智能体记忆持久化与并发控制](./04-agent-memory.md)
+5. [梦境离线知识整合与模式挖掘](./05-dreams.md)

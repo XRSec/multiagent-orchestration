@@ -29,5 +29,11 @@
     "edit_file",
     "run_command",
     "ast_grep"
-  ]
+  ],
+  "skills": [
+    "script-standards",
+    "agent-first-docs"
+  ],
+  "permissionLevel": "full",
+  "mcpServers": {}
 }

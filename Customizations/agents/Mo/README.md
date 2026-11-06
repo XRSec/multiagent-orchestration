@@ -5,8 +5,8 @@
 
 - **Role**: Meta Orchestration & Bot Generator
 - **Harness**: Claude Code CLI / Agent SDK (`CLAUDE_CONFIG_DIR` isolated)
-- **Primary CWD**: `Bots/`
-- **Write Scope**: `Bots/<NewBot>/ only`
+- **Primary CWD**: `Customizations/`
+- **Write Scope**: `Customizations/skills/, Customizations/agents/<NewBot>/, Bots/<NewBot>/`
 - **Canonical Session ID**: `4f6b9a77-d635-4eb8-df8c-9b3c4d7e6f06`
 
 ## Directory Structure
