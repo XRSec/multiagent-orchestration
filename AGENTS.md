@@ -76,5 +76,6 @@ IMPORTANT: Think and respond in Chinese. Bootstrap environment with `source .env
 
 ## 6. Docs Knowledge Tree (Routing)
 
-1. **Entry Point**: Route every doc lookup through `docs/INDEX.md`; read `AGENTS.md` -> `docs/INDEX.md` -> 1 leaf and stop at the first doc that answers.
+1. **Entry Point**: Doc catalogue and statuses: [docs/README.md](docs/README.md). Agent doc lookups route through [docs/INDEX.md](docs/INDEX.md); the read path and read cap are in [docs/_conventions.md](docs/_conventions.md) [2.1.1].
+3. **Doc Rules**: [docs/standards/documentation-standards.md](docs/standards/documentation-standards.md) binds every doc; `docs/_conventions.md` is its addendum.
 2. **Write-Back**: The change that alters a fact edits the doc stating it, in the same commit.

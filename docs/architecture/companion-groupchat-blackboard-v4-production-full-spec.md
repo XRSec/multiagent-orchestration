@@ -7,6 +7,8 @@ Author: Google Antigravity & Agent Architecture Board
 
 # 基于 Claude Agent SDK 的多伙伴群聊与共享黑板协同架构生产级演进与工程全集规范 (v4.0-PRODUCTION)
 
+> **Doc vs code (2026-11-07)**: Design evidence, not current truth. `BlackboardOrchestrator` is not instantiated by the daemon, so the §2.3 quality ladder and §3.4 stall detection are dormant; test 7 in `test/blackboard-atomic.test.ts` sets counters by hand and does not exercise `handleRejectionPolicy`. Current review rules and code facts: [review](../operating-model/review.md); proposed ladder: [cross-review-v2](../proposals/cross-review-v2.md).
+
 ---
 
 ## 目录 (Table of Contents)

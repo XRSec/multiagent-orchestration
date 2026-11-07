@@ -1,6 +1,6 @@
 ---
 doc_id: MULTIAGENT_ORCHESTRATION_UPDATE_LEDGER
-version: 2.3.0
+version: 2.4.0
 description: Architectural evolution, core milestones, and subsystem status ledger.
 type: CHANGE_LEDGER_AST
 target: LLM_PARSER_ONLY
@@ -39,4 +39,5 @@ locale: en-US
 - [3.8] Added the linkage reference study (PROPOSED). `/boost` is unverified.
 
 ## [4] DOCUMENTATION MILESTONES
-- [4.1] **Docs Routing Tree & Operating Model**: Added `docs/INDEX.md` (routing root), `docs/_conventions.md` (doc format, size limits, write-back) and `docs/operating-model.md` (binding delivery rules, task lifecycle, Mo-Bot role mapping, proof contract), routed from `AGENTS.md` §6 (2026-11-07).
+- [4.1] **Docs Routing Tree & Operating Model**: Added `docs/INDEX.md` (routing root), `docs/_conventions.md` (doc format, size limits, write-back) and `docs/operating-model.md` (binding delivery rules, task lifecycle, Mo-Bot role mapping, proof contract; moved to `docs/operating-model/` by [4.2]), routed from `AGENTS.md` §6 (2026-11-07).
+- [4.2] **Operating-Model Branch, Sessions & Doc Reconciliation**: Moved `docs/operating-model.md` into branch `docs/operating-model/` (delivery-rules, task-lifecycle, review with the REVISE cap, roles, done-and-proof, doc-vs-code); added `docs/sessions.md` (session resume per scope, context carry-over, isolation and loop-unit conflicts as implemented, routed to the owner's session-lifecycle spec) and `docs/proposals/` (cross-review-v2 and its code-changes leaf, session-policy, docs-linking; not binding, items the owner shipped marked superseded); `INDEX.md` routes for `architecture/` (owner session-lifecycle, collaboration-efficiency and linkage docs included), `dev-rules/`, `protocols/`, `reviews/`. Reconciled with the owner's `docs/README.md` (catalogue) and `docs/standards/documentation-standards.md`: `docs/INDEX.md` is the agent router below README, `docs/_conventions.md` is an addendum the standard overrides, our docs carry D1 front matter, byte caps apply to the routing layer only, open conflicts recorded in conventions [2.7.1], README's missing `DOCS_*` entries in doc-vs-code [3.6] (their status stays in front matter); owner docs get only one added doc-vs-code note line each (repository overview, companion v4 spec); `AGENTS.md` §6 links all three (2026-11-07). Verified by `git cat-file -s :<path>` (every INDEX <= 3072 B, every routed leaf <= 8192 B) and a relative-link resolution check over `docs/`, `AGENTS.md` and `UPDATE.md`; doc claims re-checked against code at merge `72eefc0`, not by tests.

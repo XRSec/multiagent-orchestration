@@ -66,6 +66,8 @@ The upper path is the daemon's active composition. The lower path is a separatel
 
 This path has its own state model and database under `data/blackboard_ssot.db (legacy fallback: <projectRoot>/.claude/blackboard_ssot.db)`. It is not the store used by the daemon's `AgentOrchestrator` path. Tests such as `test/blackboard-atomic.test.ts` validate this blackboard subsystem directly, but that does not establish that the web-to-daemon request path uses it.
 
+> **Doc vs code (2026-11-07)**: No code constructs `BlackboardOrchestrator` (`DaemonServer`, `scripts/` and `test/` construct `AgentOrchestrator` only), so this path, including cross-review, is dormant; §3.1's claim that `AgentOrchestrator` ignores `max_consecutive_steps` is stale. See [doc-vs-code](../operating-model/doc-vs-code.md) [2.6].
+
 
 ### 3.3 Web API and Fallback Plane
 

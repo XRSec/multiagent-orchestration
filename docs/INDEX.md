@@ -1,29 +1,40 @@
 ---
-doc_id: DOCS_INDEX
+doc_id: DOCS_ROUTER
+status: CURRENT
 name: docs-index
-version: 1.1.0
-description: Routing root of the docs tree. Load after AGENTS.md to find the single doc that answers the task. Routes only, no facts.
+version: 1.4.0
+last_verified: 2026-11-07
+language: en-US
+description: Agent read-path router below the docs/README.md catalogue. Load after AGENTS.md to find the single doc that answers the task. Routes only.
 type: DOCS_BRANCH_INDEX
 parent_node: ../AGENTS.md
 allowed-tools: []
 target: LLM_PARSER_ONLY
-locale: en-US
-verified: 2026-11-07
-sources: [AGENTS.md, MEMORY.md, docs/_conventions.md]
+sources: [AGENTS.md, MEMORY.md, docs/README.md, docs/_conventions.md]
 ---
 
 # [0] ROOT: DOCS ROUTING INDEX
 
-## [1] ROUTES
-- [1.1] [operating-model](operating-model.md) :: [LOAD_IF: task touches delivery, task orders, roles, gates, review, merge, done criteria or proof]
-- [1.2] [conventions](_conventions.md) :: [LOAD_IF: task writes, moves, splits, folds or deletes a doc]
-- [1.3] [standing-order](axioms/STANDING_ORDER.md) :: [LOAD_IF: task authors a SKILL.md or an agent-facing spec format]
-- [1.4] [architecture-overview](architecture/repository-architecture-overview.md) :: [LOAD_IF: subsystem boundaries of daemon, gateway, orchestration, persistence or web]
-- [1.5] [memory](../MEMORY.md) :: [LOAD_IF: storage layout, SQLite files, bot roster facts]
-- [1.6] [script-standards](dev-rules/script-standards.md) :: [LOAD_IF: task writes or reviews a script]
-- [1.7] [bot-group-orchestration](dev-rules/bot-group-orchestration.md) :: [LOAD_IF: group-chat turn rules]
-- [1.8] [claude-managed-agents](claude-managed-agents/README.md) :: [LOAD_IF: upstream Anthropic platform reference]
+## [1] ROUTES: RULES AND CURRENT TRUTH
+- [1.0] [catalogue](README.md) :: [LOAD_IF: need an owner doc or its status; DOCS_* docs are absent there, their status is in front matter]
+- [1.1] [operating-model](operating-model/INDEX.md) :: [LOAD_IF: delivery, task orders, roles, gates, review, cross-review, arbitration, retry, merge, done criteria, proof or doc-vs-code gaps]
+- [1.2] [sessions](sessions.md) :: [LOAD_IF: whether a bot session is new or resumed, rewind or compaction, context carry-over, step or round limits, config dirs or isolation between bots, rooms and DMs]
+- [1.3] [doc-standards](standards/documentation-standards.md) :: [LOAD_IF: task writes, moves, splits, folds or deletes a doc]
+- [1.6] [conventions](_conventions.md) :: [LOAD_IF: same as doc-standards, plus the read path, routing budgets or which doc owns a fact]
+- [1.4] [memory](../MEMORY.md) :: [LOAD_IF: storage layout, SQLite files, bot roster facts]
+- [1.5] [architecture](architecture/INDEX.md) :: [LOAD_IF: subsystem boundaries of daemon, gateway, orchestration, persistence or web, or a cited design spec]
 
-## [2] UNINDEXED BRANCHES
-- [2.1] **Legacy Directories**: `architecture/`, `dev-rules/`, `protocols/` and `reviews/` have no `INDEX.md`; list the directory and pick by filename. Each gets an `INDEX.md` when a change next touches it ([conventions](_conventions.md) [2.8]).
-- [2.2] **Pre-v4.1 Spec**: `architecture.md` predates the current runtime; read it only when a doc cites it. Read `reviews/` only when a doc cites a dispatch receipt.
+## [2] ROUTES: REFERENCE AND DESIGN
+- [2.1] [standing-order](axioms/STANDING_ORDER.md) :: [LOAD_IF: task authors a SKILL.md or an agent-facing spec format]
+- [2.2] [dev-rules](dev-rules/INDEX.md) :: [LOAD_IF: script standards, group-chat relay rules, runtime driver or stream parser rules]
+- [2.3] [protocols](protocols/INDEX.md) :: [LOAD_IF: agent-to-agent or host wire protocols]
+- [2.4] [proposals](proposals/INDEX.md) :: [LOAD_IF: designing a change to review, sessions or doc routing that awaits an owner ruling]
+- [2.5] [claude-managed-agents](claude-managed-agents/README.md) :: [LOAD_IF: upstream Anthropic platform reference]
+
+## [3] EVIDENCE
+- [3.1] [reviews](reviews/INDEX.md) :: [LOAD_IF: a doc cites a dispatch receipt]
+- [3.2] [legacy-architecture](architecture.md) :: [LOAD_IF: a doc cites the pre-current subprocess pool design]
+- [3.3] [project-plan](../PROJECT.md) :: [LOAD_IF: a doc cites a feature id or milestone]
+- [3.4] [update-ledger](../UPDATE.md) :: [LOAD_IF: a doc cites a ledger entry]
+- [3.5] [test-infra](../TEST_INFRA.md) :: [LOAD_IF: a doc cites the test infrastructure notes]
+- [3.6] [test-ready](../TEST_READY.md) :: [LOAD_IF: a doc cites the test readiness notes]
