@@ -71,3 +71,10 @@ IMPORTANT: Think and respond in Chinese. Bootstrap environment with `source .env
 1. **Visual Flow Order**: Execution status (`ExecutionStatusCard`: thinking process & tool calls) MUST strictly render **ABOVE** the content bubble. Process first, conclusion last.
 2. **Instant Feedback**: When a user submits a message, the UI MUST immediately mount a live `ActiveBotIndicator` (stopwatch, executing badge, phase description) to eliminate quiet waiting black boxes.
 3. **Zero Invalid Date**: All timestamp formatters MUST include client-side fallback to current time, strictly preventing `Invalid Date` from ever leaking into the view.
+
+---
+
+## 6. Docs Knowledge Tree (Routing)
+
+1. **Entry Point**: Route every doc lookup through `docs/INDEX.md`; read `AGENTS.md` -> `docs/INDEX.md` -> 1 leaf and stop at the first doc that answers.
+2. **Write-Back**: The change that alters a fact edits the doc stating it, in the same commit.

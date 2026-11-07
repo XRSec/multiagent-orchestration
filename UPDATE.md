@@ -1,6 +1,6 @@
 ---
 doc_id: MULTIAGENT_ORCHESTRATION_UPDATE_LEDGER
-version: 2.2.0
+version: 2.3.0
 description: Architectural evolution, core milestones, and subsystem status ledger.
 type: CHANGE_LEDGER_AST
 target: LLM_PARSER_ONLY
@@ -33,3 +33,6 @@ locale: en-US
 - [3.2] **Skill Symlink Restoration**: Materialized canonical `SKILL.md` definitions for `agent-first-docs`, `script-standards`, `skill-creator-helper`, `ego-browser`, and `nested-child` inside `Customizations/skills/`, replacing broken `/Users/xr/.agents/skills/*` links.
 - [3.3] **Bot 4-Pack Standardization**: Synchronized `Bots/<Bot>/` and `Customizations/agents/<Bot>/` across all 7 Mo-Bots (`providerId: "cpa"`, `effort: "high"`, `thinkingLevel: "high"`, relative `defaultWorkingDir`, portable `mcpServers`, and aligned `SOUL.md` & `README.md` CWDs and write scopes).
 - [3.4] **Documentation SSOT Alignment**: Corrected legacy references to SSE (`EventSource`), below-bubble `ExecutionStatusCard` placement, `apps/web` workspace path, `<= 600` line budgets, and host `~/.claude` credential inheritance across all repository documentation.
+
+## [4] DOCUMENTATION MILESTONES
+- [4.1] **Docs Routing Tree & Operating Model**: Added `docs/INDEX.md` (routing root), `docs/_conventions.md` (doc format, size limits, write-back) and `docs/operating-model.md` (binding delivery rules, task lifecycle, Mo-Bot role mapping, proof contract), routed from `AGENTS.md` §6 (2026-11-07).
