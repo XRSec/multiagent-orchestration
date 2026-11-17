@@ -2,7 +2,8 @@
 
 > **Target Version**: Claude Code `2.1.325` (Baseline)  
 > **Repository Base Commit**: `9c7dfd6c75`  
-> **Tracking Scope**: 595 customized prompt shards (`piebald-claude-code-system-prompts/system-prompts/`) + 2 `tweakcc` engine patches (`tweakcc/src/`)
+> **Tracking Scope**: 644 core customized prompt shards (595 git-tracked prompt diffs + 49 pre-baseline shards in `piebald-claude-code-system-prompts/system-prompts/`) + 2 `tweakcc` engine patches (`tweakcc/src/`)  
+> **Chinese Companion**: See [`UPGRADE_GUIDE_CN.md`](./UPGRADE_GUIDE_CN.md) for concise Chinese protocol.
 
 ---
 
