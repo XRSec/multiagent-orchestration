@@ -1,6 +1,6 @@
 <!--
 name: "Skill: Claude Test sign-in"
-description: "Claude Test skill that signs the site's dedicated test member in before a run and saves the browser session, so specs needing an account start signed in"
+description: "Pre-run browser authentication skill saving a persistent test-member session for account-dependent specs"
 ccVersion: "2.1.275"
 -->
 ---
@@ -12,14 +12,10 @@ claude-test:
   timeout_s: 60
 ---
 
-This skill signs the site's dedicated test member in before a run, so that specs which need an
-account start signed in. `scripts/sign-in.mjs` signs in and saves the browser session;
-`scripts/check.mjs` says whether a saved session still works. Edit the marked blocks in
-`scripts/` to match your login form.
+<test_signin_skill_protocol>
+Signs in the dedicated test member via `scripts/sign-in.mjs` and validates session persistence via `scripts/check.mjs` (customize marked blocks in `scripts/` to match the login form).
 
-- The account page is at `/account`. <!-- EDIT: where a signed-in member lands -->
-- Specs must not change the account's email address or password, and must not delete the
-  account: every spec in a run starts from the same saved session.
-- If a spec meets the login form anyway, the saved session was lost or has expired: ask Claude
-  to sign in again before the next run (it runs `ct-auth.mjs sign-in`). If that fails too, the
-  specs that need an account are reported as blocked with the reason "sign-in unavailable".
+- **Landing Route**: `/account` `<!-- EDIT: where a signed-in member lands -->`
+- **Account Immutability**: Specs MUST NOT modify the test account's email/password or delete the account (all specs share the saved session).
+- **Session Expiry Recovery**: If a spec encounters the login form, re-run sign-in (`ct-auth.mjs sign-in`) before the next run; if re-auth fails, report account-dependent specs as blocked with `"sign-in unavailable"`.
+</test_signin_skill_protocol>

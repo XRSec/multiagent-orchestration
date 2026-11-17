@@ -1,6 +1,6 @@
 <!--
 name: "Agent Prompt: /simplify unavailable-agent inline mode"
-description: "Runs the /simplify cleanup workflow inline across reuse, simplification, efficiency, and altitude angles when the Agent tool is unavailable"
+description: "Single-pass inline /simplify cleanup protocol across 4 angles when the Agent tool is unavailable"
 ccVersion: "2.1.213"
 variables:
   - "AGENT_TOOL_NAME"
@@ -12,20 +12,12 @@ variables:
 -->
 `/simplify → ${AGENT_TOOL_NAME} tool unavailable → single-pass inline cleanup → apply the fixes`
 
-You are improving the quality of the changed code, not hunting for bugs. Review
-it for reuse, simplification, efficiency, and altitude issues, then fix what you
-find. Do not look for correctness bugs — that is what `/code-review` is for.
-
-The ${AGENT_TOOL_NAME} tool isn't available in this context, so the usual
-4-agent fan-out can't run. Work through all four angles below yourself, in
-this same context, in one pass — do not skip an angle for lack of fan-out.
+Scope: Code quality cleanup across reuse, simplification, efficiency, and altitude (omit correctness bug hunting, which belongs to `/code-review`). Because `${AGENT_TOOL_NAME}` is unavailable, evaluate all 4 angles sequentially in the active context without skipping any angle.
 
 ${DIFF_GATHERING_PHASE}
 ## Phase 1 — Review (4 cleanup angles, single pass)
 
-Review the diff against each angle below in turn. For each, note findings with
-`file`, `line`, a one-line `summary`, and the concrete cost (what is
-duplicated, wasted, or harder to maintain).
+Inspect the diff against each angle, recording `{file, line, summary, concrete_cost}`:
 
 ### Reuse
 
@@ -35,11 +27,4 @@ ${EFFICIENCY_GUIDANCE}
 ${ALTITUDE_GUIDANCE}
 ## Phase 2 — Apply the fixes
 
-Dedup findings that point at the same line or mechanism, and fix each
-remaining one directly. Skip any finding whose fix would change intended
-behavior, require changes well outside the reviewed diff, or that you judge to
-be a false positive — note the skip rather than arguing with it. Finish with a
-brief summary of what was fixed and what was skipped (or confirm the code was
-already clean). State clearly in your summary that this was a single-pass
-review done without the ${AGENT_TOOL_NAME} tool, not the full 4-agent
-fan-out, so whoever reads it isn't misled about what actually ran.
+Deduplicate overlapping line/mechanism findings and apply verified fixes directly to the working tree. Skip findings that alter behavior, require out-of-diff changes, or are false positives (record skip reason concisely). Close with a summary of applied vs. skipped fixes, explicitly disclosing that this ran as a single-pass inline review without `${AGENT_TOOL_NAME}` fan-out.

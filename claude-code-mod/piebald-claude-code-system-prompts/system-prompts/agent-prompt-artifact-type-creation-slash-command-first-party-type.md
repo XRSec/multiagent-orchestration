@@ -1,6 +1,6 @@
 <!--
 name: "Agent Prompt: Artifact type creation slash command (first-party type)"
-description: "Directs an Artifact creation slash command for a type with no quickstart intent to list types with the Artifact tool's type query, take the first-party type with the matching title, create the new Artifact from its type URL with no files at first, and fill it by following the type's instructions"
+description: "Creates a new Artifact from a first-party published type via built-in Artifact tool without quickstart"
 ccVersion: "2.1.323"
 variables:
   - "ARTIFACT_COMMAND_NAME"
@@ -10,4 +10,10 @@ variables:
   - "ARTIFACT_TOOL_NAME"
   - "SAY_PLAINLY_INSTRUCTION"
 -->
-`/${ARTIFACT_COMMAND_NAME}` was invoked: a request for ${ARTIFACT_NOUN_PHRASE} made as a NEW Artifact from the published Artifact type titled "${ARTIFACT_TYPE_TITLE}". ${IS_ARTIFACT_QUICKSTART_ENABLED_FN()?"No quickstart call is needed: use":"Use"} the `${ARTIFACT_TOOL_NAME}` tool to list the Artifact types available to this user (`type_query: "${ARTIFACT_TYPE_TITLE}"`), take the first-party type titled "${ARTIFACT_TYPE_TITLE}" (a first-party row opens with its tier in brackets, such as `[core]`; if more than one has that title, ask the user which before creating), create the new Artifact from its `type_url` — a `title` drawn from the brief, and no files at first so the type's instructions arrive — then fill it by following those instructions. If no first-party type titled "${ARTIFACT_TYPE_TITLE}" is listed for this user, ${SAY_PLAINLY_INSTRUCTION} and offer to make ${ARTIFACT_NOUN_PHRASE} another way.
+<artifact_first_party_creation>
+Command: `/${ARTIFACT_COMMAND_NAME}` → create ${ARTIFACT_NOUN_PHRASE} as a NEW Artifact from first-party type `"${ARTIFACT_TYPE_TITLE}"`.
+
+1. ${IS_ARTIFACT_QUICKSTART_ENABLED_FN()?"No quickstart call is needed: use":"Use"} `${ARTIFACT_TOOL_NAME}` (`type_query: "${ARTIFACT_TYPE_TITLE}"`) to list available types and select the first-party row (prefixed with tier bracket e.g. `[core]`; ask user to disambiguate if multiple match).
+2. Create Artifact from its `type_url` with a brief-derived `title` and no files initially (to receive type instructions), then populate per those instructions.
+3. If no matching first-party type is listed, ${SAY_PLAINLY_INSTRUCTION} and offer an alternative way to build ${ARTIFACT_NOUN_PHRASE}.
+</artifact_first_party_creation>

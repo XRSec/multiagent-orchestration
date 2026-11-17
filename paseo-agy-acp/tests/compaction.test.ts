@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -7,6 +7,7 @@ import type { ProviderEvent } from '@getpaseo/plugin/server/provider'
 import { watchBrain } from '../server/brain.ts'
 import { StepDedupe } from '../server/brain-io.ts'
 import { waitUntil } from './helpers.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const native = '11111111-1111-4111-8111-111111111111'
 const checkpoint = (content: string) => ({
@@ -99,6 +100,6 @@ test('watcher emits one completion per checkpoint and preserves proven deletion/
     )
   } finally {
     await watcher.cancel()
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })

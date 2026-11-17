@@ -3,11 +3,7 @@ name: "Tool Description: ListMcpResourcesTool prompt"
 description: "Tool prompt for listing MCP resources and explaining the optional server parameter"
 ccVersion: "2.1.173"
 -->
-
-List available resources from configured MCP servers.
-Each returned resource will include all standard MCP resource fields plus a 'server' field 
-indicating which server the resource belongs to.
+List available resources from configured MCP servers. Each returned resource includes all standard MCP resource fields plus `server` indicating its source server.
 
 Parameters:
-- server (optional): The name of a specific MCP server to get resources from. If not provided,
-  resources from all servers will be returned.
+- `server` (optional): Specific MCP server name; omit to return resources from all servers.

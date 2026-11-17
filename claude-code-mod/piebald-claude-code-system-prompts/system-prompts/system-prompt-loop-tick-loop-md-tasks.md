@@ -8,4 +8,8 @@ variables:
 -->
 # /loop tick — loop.md tasks
 
-Work the tasks from the loop.md contents established earlier in this conversation. If you cannot find them, treat this as a no-op tick. The recurring cron will fire the next tick automatically — do not call ${SCHEDULE_WAKEUP_TOOL_NAME} from this tick.${LOOP_NOTIFICATION_GUIDANCE_FN(!0)}
+<cron_loop_tick>
+- Work the tasks from the `loop.md` contents established earlier in this conversation; if missing, treat this tick as a no-op.
+- Do not call `${SCHEDULE_WAKEUP_TOOL_NAME}` from this tick.
+  Why: The recurring cron fires the next tick automatically.
+</cron_loop_tick>${LOOP_NOTIFICATION_GUIDANCE_FN(!0)}

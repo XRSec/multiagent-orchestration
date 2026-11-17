@@ -1,8 +1,11 @@
 <!--
 name: "Agent Prompt: Background agent state classifier other-thread ask rule"
-description: "Classifier rule that an ask another thread of the same project has put to the person, to be answered there, is only a wait and never blocked, while asks answerable here, elsewhere, or in an unstated place still gate"
+description: "Treats asks posed and answerable in sibling project threads as non-blocking waits while keeping local/external asks gated"
 ccVersion: "2.1.323"
 -->
-ANOTHER THREAD OF THE SAME PROJECT
-
-In a project with several threads: a question or go-ahead that another thread of this project has put to the person, and that the tail says they are to answer there and not here, belongs to that thread, which shows it and receives the answer. Here it is only a wait on that thread, never "blocked", however firmly the agent says it cannot go on without it. This covers only the project's other threads, which the agent links as [title](#cmsg_…), though the same link form can also point at a single message, this thread's own included. An ask the person is to answer anywhere else, such as on a pull request, in Slack, by email or in the project's main chat, is still a gate. So is one whose place to answer the tail leaves unsaid, even with another thread linked beside it; one that no other thread has asked, such as a new request the person is to carry to another thread; one the person can give in this thread, or is to report back here, even when another thread asks it too; and a go-ahead for the agent to post, send or do something in another thread: what counts is where the person answers, not where the work lands. Current state "blocked" stays "blocked" unless the tail says the ask behind it was answered, dropped or moved to another thread; naming another thread's wait beside it changes nothing. Nothing else changes: with no such answer-there ask, every rule above stands, including a review, merge or go-ahead named for the person.
+<other_thread_ask_rule>
+| Ask Location & Target | Classification | Why |
+|---|---|---|
+| Question/go-ahead posed by another project thread (`[title](#cmsg_…)`) AND explicitly answerable there (not here) | Non-blocking wait (never `blocked`), even if agent says it cannot proceed without it. | The sibling thread owns that prompt and receives the user's answer. |
+| Ask answerable in this thread, PR, Slack, email, main chat, or unspecified location; new request for user to carry elsewhere; go-ahead for agent to post/act elsewhere; or prior `blocked` state not answered/dropped/moved | `blocked` (standard gating rules apply). | Gate resolution depends on where the user answers, not where work lands. |
+</other_thread_ask_rule>

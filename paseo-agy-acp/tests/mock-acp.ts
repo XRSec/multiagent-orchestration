@@ -347,7 +347,40 @@ new AgentSideConnection((client) => {
         throw new Error(`Session not found: ${sessionId}`)
       }
       const text = prompt.map((c) => (c.type === 'text' ? c.text : '')).join('')
+      // Account-switch fixtures: emit the wrapper's stderr contract during a live turn.
+      const switchFixture = text.match(/^agy-switch-(ok|malformed|skipped)/)
+      if (switchFixture?.[1] === 'ok') {
+        process.stderr.write(
+          `[agy-switch] ${JSON.stringify({
+            ok: true,
+            category: 'UNAVAILABLE_CAPACITY',
+            from: 'fixture@example.com',
+            ts: Date.now(),
+          })}\n`,
+        )
+      } else if (switchFixture?.[1] === 'malformed') {
+        process.stderr.write('[agy-switch] not-json\n')
+      } else if (switchFixture?.[1] === 'skipped') {
+        process.stderr.write(
+          `[agy-switch] ${JSON.stringify({
+            ok: false,
+            category: 'QUOTA_EXHAUSTED',
+            skipped: true,
+            reason: 'pool-still-has-quota',
+            from: 'fixture@example.com',
+            ts: Date.now(),
+          })}\n`,
+        )
+      }
+      if (switchFixture) {
+        // The switch notification lands while the turn is still active; then end cleanly
+        // without a permission prompt so the reload is observable at the turn boundary.
+        await new Promise((resolve) => setTimeout(resolve, 10))
+        return { stopReason: 'end_turn' as const }
+      }
       if (process.env.AGY_TEST_LOG_ELICITATION_CAP) log(`prompt:${text}`)
+      if (text.startsWith('switch-probe-'))
+        return { stopReason: 'end_turn' as const }
       if (text === 'hang') {
         // Transport stays alive and no tool is announced, so only the turn-silence clock runs.
         await new Promise(() => {})

@@ -1,31 +1,32 @@
 <!--
 name: "System Prompt: Insights session facets extraction"
-description: "Extracts structured facets (goal categories, satisfaction, friction) from a single Claude Code session transcript"
+description: "Extracts structured facets (goal categories, satisfaction, friction) from a single session transcript"
 ccVersion: "2.1.30"
 -->
-Analyze this Claude Code session and extract structured facets.
+Analyze the session transcript below and extract structured facets.
 
-CRITICAL GUIDELINES:
+<facet_extraction_rules>
+1. **`goal_categories`** — Count ONLY tasks explicitly requested by the user (e.g., `"can you..."`, `"please..."`, `"I need..."`, `"let's..."`).
+   - Exclude the agent's autonomous codebase exploration and any unrequested work initiated on its own.
+   - If the session is very short or only a warmup, use `warmup_minimal` for `goal_category`.
 
-1. **goal_categories**: Count ONLY what the USER explicitly asked for.
-   - DO NOT count Claude's autonomous codebase exploration
-   - DO NOT count work Claude decided to do on its own
-   - ONLY count when user says "can you...", "please...", "I need...", "let's..."
+2. **`user_satisfaction_counts`** — Classify strictly from explicit user signals:
+   | Signal Examples | Category |
+   | :--- | :--- |
+   | `"Yay!"`, `"great!"`, `"perfect!"` | `happy` |
+   | `"thanks"`, `"looks good"`, `"that works"` | `satisfied` |
+   | `"ok, now let's..."` (continuing without complaint) | `likely_satisfied` |
+   | `"that's not right"`, `"try again"` | `dissatisfied` |
+   | `"this is broken"`, `"I give up"` | `frustrated` |
 
-2. **user_satisfaction_counts**: Base ONLY on explicit user signals.
-   - "Yay!", "great!", "perfect!" → happy
-   - "thanks", "looks good", "that works" → satisfied
-   - "ok, now let's..." (continuing without complaint) → likely_satisfied
-   - "that's not right", "try again" → dissatisfied
-   - "this is broken", "I give up" → frustrated
-
-3. **friction_counts**: Be specific about what went wrong.
-   - misunderstood_request: Claude interpreted incorrectly
-   - wrong_approach: Right goal, wrong solution method
-   - buggy_code: Code didn't work correctly
-   - user_rejected_action: User said no/stop to a tool call
-   - excessive_changes: Over-engineered or changed too much
-
-4. If very short or just warmup, use warmup_minimal for goal_category
+3. **`friction_counts`** — Categorize specific failure modes:
+   | Category | Definition |
+   | :--- | :--- |
+   | `misunderstood_request` | Agent interpreted the request incorrectly |
+   | `wrong_approach` | Right goal, wrong solution method |
+   | `buggy_code` | Produced code did not work correctly |
+   | `user_rejected_action` | User rejected or stopped a tool call |
+   | `excessive_changes` | Over-engineered or modified too much |
+</facet_extraction_rules>
 
 SESSION:

@@ -3,6 +3,7 @@ import { execFile } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import { readdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { StringDecoder } from 'node:string_decoder'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -100,6 +101,45 @@ type AcpClient = Client & {
   ) => Promise<Record<string, unknown>>
 }
 
+/** One machine-readable account-switch decision emitted by the wrapper on stderr. */
+export interface AgySwitchEvent {
+  ok: boolean
+  category?: string
+  reason?: string
+  from?: string
+  skipped?: boolean
+  ts?: number
+}
+
+const SWITCH_EVENT_PREFIX = '[agy-switch] '
+
+/** Ownership contract: pass the launch prefix through, stripping model/switch flags. */
+const FORBIDDEN_ARG_FLAGS = new Set(['--model', '--model-name', '-m'])
+const FORBIDDEN_ARG_PATTERN = /^--?(?:switch|account)(?:[-=]|$)/i
+
+export function resolveAcpArgs(launch: ProviderLaunch | undefined): string[] {
+  const source = launch?.args ?? ['acp']
+  const args: string[] = []
+  let stripped = false
+  for (let i = 0; i < source.length; i++) {
+    const arg = source[i]
+    const flag = arg.includes('=') ? arg.slice(0, arg.indexOf('=')) : arg
+    if (FORBIDDEN_ARG_FLAGS.has(flag) || FORBIDDEN_ARG_PATTERN.test(arg)) {
+      stripped = true
+      // Drop the separate value of `--model x` / `-m x`, but never swallow a flag.
+      if (!arg.includes('=') && source[i + 1] && !source[i + 1].startsWith('-'))
+        i++
+      continue
+    }
+    args.push(arg)
+  }
+  if (stripped)
+    console.error(
+      '[paseo-agy-acp] stripped forbidden model/switch flags from the launch args',
+    )
+  return args.length > 0 ? args : ['acp']
+}
+
 /** Own one ACP process, bounded control requests, and shutdown of its tracked process groups. */
 export function connectAcp(
   launch: ProviderLaunch | undefined,
@@ -107,7 +147,10 @@ export function connectAcp(
   env: Readonly<Record<string, string>>,
   client: AcpClient,
   onExit: (error: Error) => void,
-  options?: { requestTimeoutMs?: number },
+  options?: {
+    requestTimeoutMs?: number
+    onSwitch?: (event: AgySwitchEvent) => void
+  },
 ) {
   const cmdName = launch?.command ?? 'agy'
   const requestTimeoutMs = options?.requestTimeoutMs ?? ACP_REQUEST_TIMEOUT_MS
@@ -123,7 +166,7 @@ export function connectAcp(
       () => undefined,
     )
   }
-  const child = spawnProcess(cmdName, launch?.args ?? ['acp'], {
+  const child = spawnProcess(cmdName, resolveAcpArgs(launch), {
     cwd,
     env: { ...(launch?.env ?? process.env), ...env, TMPDIR: processTempDir },
     stdio: 'pipe',
@@ -131,8 +174,29 @@ export function connectAcp(
   })
   let stopping = false
   let stderr = ''
+  let stderrLineRemainder = ''
+  const stderrDecoder = new StringDecoder('utf8')
+  const STDERR_LINE_LIMIT = 64 * 1024
   child.stderr.on('data', (chunk) => {
     stderr = (stderr + chunk).slice(-4096)
+    if (!options?.onSwitch) return
+    stderrLineRemainder += stderrDecoder.write(chunk)
+    const lines = stderrLineRemainder.split(/\r?\n/)
+    stderrLineRemainder = lines.pop() ?? ''
+    if (stderrLineRemainder.length > STDERR_LINE_LIMIT)
+      stderrLineRemainder = stderrLineRemainder.slice(-STDERR_LINE_LIMIT)
+    for (const line of lines) {
+      if (!line.startsWith(SWITCH_EVENT_PREFIX)) continue
+      try {
+        const event: unknown = JSON.parse(
+          line.slice(SWITCH_EVENT_PREFIX.length).trim(),
+        )
+        if (event && typeof event === 'object' && !Array.isArray(event))
+          options.onSwitch(event as AgySwitchEvent)
+      } catch {
+        /* Malformed switch lines are ignored; stderr may interleave arbitrary output. */
+      }
+    }
   })
   const stderrClosed = new Promise<void>((resolve) => {
     child.stderr.once('end', resolve)

@@ -473,3 +473,179 @@ The four mandated junk strings as the only readable content all return `undefine
 | R6-4 | No-`status` DBs still suppress a 17 row when any later 15 row exists. | Open by design (P3) |
 
 Ship: **yes** — every gate FAIL condition is clear; the remaining items are theoretical shapes absent from all 23 real payloads and from the task's mandated probes.
+
+## Gate Round 7 — Wrapper↔Plugin Account-Switch Contract
+
+Independent gate (moci). Subjects: `/Users/xr/.local/bin/agy` (diff vs `agy.bak-20261117`) and `paseo-agy-acp` uncommitted changes (error-inspection/transport/session/mock-acp/reference + new `tests/account-switch-reload.test.ts`). Read-only on both; no edits to wrapper or `server/`.
+
+### Verdict: WARN (no FAIL-level regression; 1 high-severity matcher-breadth finding)
+
+### AC table
+| ID | Claim | Status | Evidence |
+|----|-------|--------|----------|
+| C1 | New `UNAVAILABLE_CAPACITY` (503) category, shouldSwitch:true, via evaluateQuotaSwitch, no 429 change | PASS / WARN | Branch "3b" at agy:232-243 sits AFTER 429 branch (215-230, `return`) so 429 cannot be shadowed; evaluateQuotaSwitch applied in both ACP pre-switch (610-620) and exit path (750-762). WARN: matcher over-broad (below). |
+| C2 | Exactly one `[agy-switch]` JSON line per decision; never throws; no stdout | PASS | emitSwitchEvent try/catch, console.error only (agy:382-397). Grep `console.log|process.stdout|stdout.write` over whole wrapper = none. Each decision is a single if/else-if/else (ACP 621-639) or exit-guard chain terminated by process.exit (758-809). Categories success/skipped/cooldown/no-tools/max-retry/failure all present. |
+| C3 | RETRYABLE_TOKENS == plugin RETRYABLE_ERROR_TOKENS, no invented tokens | PASS | Mechanical extract: both 8-token arrays identical, onlyWrapper=[], onlyPlugin=[]. |
+| C4 | Parser reads only `[agy-switch] `, ignores malformed JSON, keeps 4KB tail | PASS / LOW | transport.ts prefix check + JSON.parse in try/catch; newline remainder buffer handles chunk splits; `stderr.slice(-4096)` unchanged. Low risks: string-remainder UTF-8 across chunk boundary; unterminated final line dropped. |
+| C5 | Reload only at safe points, errors never fail turn, skipped/failed = no reload | PASS | reloadForCredentials at prompt start (session:2448) and turn finally (3172); catch logs and keeps runtime; handleCredentialsSwitch early-returns unless ok===true. doRelaunch and reload both chain on `relaunching` (2099-2108, 1604-1608) → serialized. |
+| C6 | Global epoch: A's switch makes B reload before next prompt | PASS | module-global `credentialsEpoch` (146); per-session `credentialsEpochSeen` compared at prompt start; test `a switch in session A reloads session B` asserts 2 loads before B prompt. |
+| C7 | Ownership enforced in production spawn, no --model/switch args | PASS / WARN | `connectAcp` spawns with `resolveAcpArgs(launch)` (transport:146), the real transport used from `createSession`. No `--model`/switch injection anywhere in server/. WARN: guard is pass-through of `launch.args`, not sanitizing; unit test only covers `resolveAcpArgs(undefined)`. |
+| C8 | `npm run verify` 484/484 exit 0; serial clean; no weakened assertion | PASS | verify exit=0, `ℹ tests 484 / pass 484 / fail 0`; npm test run1 run2 both 484/484 exit 0; `git diff --stat tests/` = mock-acp.ts +33 -0 (additive); new test untracked; no existing assertion altered. |
+
+### Thrash bound trace (persistent 503)
+1. ACP pre-switch: guarded by `state.acpHandledError`, set true *before* acting (agy:599-600) → at most ONE switch attempt per `runOnce` attempt; repeated 503 lines cannot re-trigger.
+2. `switchAccount` (agy:345-380): on-disk lock `agy-switch.lock.d` + shared state file dedupe concurrent processes; same-account within SWITCH_COOLDOWN_MS=15000 returns `{ok:true,skipped:true}` with no keychain write.
+3. Exit/relaunch loop: `switchCount` capped by MAX_SWITCH_RETRIES=5 (770). Every `sw.ok` (including skipped) increments `switchCount` (784-785); `continue`/relaunch happens only after `sw.ok`, so ≤5 relaunches per wrapper process. A skipped switch still consumes budget.
+4. Cross-check: pre-switch does NOT increment switchCount, but re-entry only occurs through the bounded exit loop, and `acpHandledError` is per-`runOnce`, so pre-switch invocations ≤ attempts (≤~6).
+Effective bound: ≤5 post-switch relaunches per wrapper process; real keychain rotations ≤5 and time-gated. No unbounded path found. An unbounded loop would require resetting `acpHandledError` per line AND removing the switchCount cap — not present. Thrash = NOT a blocker.
+
+### Token parity
+Wrapper `RETRYABLE_TOKENS` and plugin `RETRYABLE_ERROR_TOKENS` are byte-identical: `UNAVAILABLE, RESOURCE_EXHAUSTED, \b503\b, \b429\b, rate limit, capacity, high traffic, try again` (8/8). No drift.
+
+### Determinism / flake
+- verify: exit 0, 484/484.
+- npm test serial run1: 484/484 exit 0; run2: 484/484 exit 0.
+- ENOTEMPTY `.../paseo-checkpoints/sessions`: NOT reproduced. New tests use a unique `agy-switch-reload-*` mkdtemp HOME with `config.env={}`; `dataDirectory()` resolves `env.HOME ?? launch.env.HOME` (preflight:104), so each new test gets an isolated appDataDir. Existing revert tests likewise use unique `agy-revert-*` HOMEs. No shared temp dir is introduced. Verdict: PRE-EXISTING (any such parallel flake is not attributable to this change).
+
+### Residual risks (severity-ranked)
+1. HIGH — `UNAVAILABLE_CAPACITY_MATCHER` includes bare `capacity` and `try again`, case-insensitive, applied to every log line (`inspectLogLine` at agy:584 has no pre-filter). A benign line mentioning "capacity" or "try again" would set shouldSwitch:true and, once per run, rotate keychain creds unnecessarily. Impact bounded (1/run) but real false-positive risk; claim "cannot match ordinary ACP traffic" is unproven and likely falsified by substring breadth. Recommend restrict to `/UNAVAILABLE|\b503\b|high traffic/` plus an error-context anchor.
+2. MEDIUM — `resolveAcpArgs` pass-through does not strip `--model`/switch flags from user-supplied `ProviderLaunch.args`; C7 test only asserts the `undefined` case. Production "adds no flags" is correct, but the ownership contract is not adversarially enforced/tested.
+3. LOW — `switchAccount` cooldown is keyed on `fromEmail`; once the account has rotated (`prev.fromEmail !== current`), cooldown is bypassed, so cross-process switching is time-ungated. Unchanged from .bak, amplified now that 503 is switch-worthy; per-process cap still bounds it.
+4. LOW — transport parser: unbounded `stderrLineRemainder` for a never-terminated line; per-chunk `toString('utf8')` can corrupt a multi-byte char split across chunks; a final switch line without trailing newline is dropped (wrapper always emits `\n`, so benign). `onSwitch` call is not individually try/caught (handleCredentialsSwitch cannot throw today).
+5. LOW — `state.credentialsStale` written but never read (dead field).
+6. INFO — a second `[agy-switch]` line is possible only if the ACP child exits independently after a pre-switch (ok:true then exit-path cooldown skip); unreachable for 503 (killInteractive:false) and the second line is ok:false, so no double reload.
+
+### Round 7 re-gate
+
+Narrow re-derivation of the repair delta (current sources, not author claims). **Verdict: FAIL** — one blocking matcher false-positive.
+
+#### 1. Matcher negatives — FAIL
+Replicated the exact arrays: `RETRYABLE_TOKENS` (8) and `CAPACITY_SIGNAL_TOKENS = [UNAVAILABLE, \b503\b, high traffic, No capacity available]`; branch = `RETRYABLE_MATCHER && UNAVAILABLE_CAPACITY_MATCHER` at `agy:238`, after the 429 branch (`215-230`).
+| Probe line | Classification | Expected |
+|---|---|---|
+| `cache capacity: 128` | not-capacity | not-capacity |
+| `try again later` | not-capacity | not-capacity |
+| `rate limit 10/s applied` | not-capacity | not-capacity |
+| `FetchConfig failed` | not-capacity | not-capacity |
+| `the server has spare capacity` | not-capacity | not-capacity |
+| `unavailable in v2` | **UNAVAILABLE_CAPACITY** | not-capacity → FAIL |
+
+Root cause: the bare `UNAVAILABLE` substring (case-insensitive, no word/context anchor) in `CAPACITY_SIGNAL_TOKENS` matches benign prose such as "unavailable in v2". `inspectLogLine` runs on every log line un-filtered and no earlier guard (email/conv/model/FetchConfig/403/429) intercepts this line, so it reaches 3b and sets `shouldSwitch:true`. This is the same class of over-broad-match defect the repair intended to close, just narrowed to one token. Fix: drop `UNAVAILABLE` from `CAPACITY_SIGNAL_TOKENS` (the real line still matches via `\b503\b` + `No capacity available`), or require `UNAVAILABLE` only when co-occurring with `(code 503)`.
+
+#### 2. Matcher positives — PASS
+Branch sits after the 429 branch (429 returns first; cannot be shadowed). All real lines classify:
+- `API error (attempt 1): UNAVAILABLE (code 503): No capacity available for model gemini-3.8-flash-high on the server` → UNAVAILABLE_CAPACITY
+- `upstream 503 high traffic, try again` → UNAVAILABLE_CAPACITY
+- `UNAVAILABLE: No capacity available` → UNAVAILABLE_CAPACITY
+Narrowing did not break the production 503 line (it is matched by 503 + phrase, independent of the bare `UNAVAILABLE` token).
+
+#### 3. resolveAcpArgs adversarial pass — PASS
+| argv in | argv out | notes |
+|---|---|---|
+| `['acp','--log-file','/tmp/--model.log']` | unchanged | path value not over-stripped |
+| `['acp','--model']` | `['acp']` | trailing flag, no value, stripped |
+| `['acp','--account']` | `['acp']` | switch/account pattern |
+| `['acp','--models','x']` | unchanged | plural NOT stripped |
+| `['acp','foo','--model=bar']` | `['acp','foo']` | inline value stripped |
+Extra: `['acp','-m','opus']→['acp']`, `['acp','--model-name','gemini-pro']→['acp']`, `['acp','--switch=on']→['acp']`. No over-strip of legitimate args; no `--model` left. Empty result falls back to `['acp']`.
+
+#### 4. StringDecoder change — PASS
+Faithful replication of the data handler (`StringDecoder('utf8')`, newline split, 64 KiB remainder cap, 4 KiB tail):
+- Multi-byte split: `[agy-switch]` JSON with Chinese `上游容量不足，请稍后重试`, chunk cut 1 byte into `上` → exactly 1 event, reason intact.
+- Boundary at newline with two switch lines across chunks → 2 events, no duplicate, no drop.
+- >64 KiB unterminated junk → remainder capped to 65536 (oldest dropped), subsequent `[agy-switch]` line still parsed. JSON parsing not broken.
+
+#### 5. Determinism — PASS
+`npm run verify` exit 0: tests 485 / pass 485 / fail 0. Serial run1: 485/485 exit 0. Serial run2: 485/485 exit 0.
+Delta reconciliation: 485 − 466 = 19 = `account-switch-reload.test.ts` 6 tests + `error-inspection-attempts.test.ts` 13 tests (`mock-acp.ts` +33 lines is fixture code, 0 `test()` blocks). Matches.
+
+#### 6. Thrash re-trace (narrow matcher, 4 persistent-503 iterations) — PASS
+Matcher narrowing does not touch gating logic; real 503 still matches.
+- Persistent process model: `state.acpHandledError` latched before acting → at most 1 switch for the whole run regardless of 4 repeats (503 has `killInteractive:false`, so the ACP process persists and scope never resets).
+- Exit/relaunch model: `switchCount` capped at `MAX_SWITCH_RETRIES=5`; 4 iterations → ≤4 switches (< cap). No unbounded path.
+Bound holds: `min(iterations, 5)`, and in the persistent case exactly 1.
+
+#### Re-gate blocking finding
+- BLOCKER (check 1): `CAPACITY_SIGNAL_TOKENS` includes bare `UNAVAILABLE`; a benign line `unavailable in v2` classifies as `UNAVAILABLE_CAPACITY` (`shouldSwitch:true`), which can trigger an unnecessary keychain rotation once per run. Repair by removing `UNAVAILABLE` from the capacity-signal set or anchoring it to `(code 503)`. Stripper, decoder, determinism, and thrash repairs all verify clean.
+
+#### Final re-check — PASS
+Single blocker (bare `UNAVAILABLE`) removed. Current `CAPACITY_SIGNAL_TOKENS = [\b503\b, high traffic, No capacity available, Service Unavailable]` (agy:150-155); shared `RETRYABLE_TOKENS` unchanged at 8; branch `RETRYABLE_MATCHER && UNAVAILABLE_CAPACITY_MATCHER` at agy:238.
+
+1. Negatives — all not-capacity: `cache capacity: 128`, `try again later`, `rate limit 10/s applied`, `FetchConfig failed`, `the server has spare capacity`, `unavailable in v2` (former blocker now clean), `model temporarily unavailable`, `available capacity: 99%`.
+2. Positives — all UNAVAILABLE_CAPACITY: `API error (attempt 1): UNAVAILABLE (code 503): No capacity available ...`, `upstream 503 high traffic, try again`, `UNAVAILABLE: No capacity available`.
+3. Ordering — 429 branch (`agy:220-235`) precedes capacity branch (`agy:237-248`) and returns; cannot be shadowed.
+4. Stdout — grep for `console.log|process.stdout|stdout.write` returns none; `AGY_CLI_BIN=/bin/echo agy --version` → `--version`, exit 0 (passthrough intact).
+5. `npm run verify` exit 0: tests 485 / pass 485 / fail 0.
+
+**Verdict: PASS.**
+
+### Round 8 — Wrapper copy and parity guard
+
+Date: 2026-11-17. Tree: `/Users/xr/IDEA.localized/multiagent-orchestration`. Scope: `paseo-agy-acp/tests/wrapper-token-parity.test.ts` vs `tools/agy-wrapper/agy` and `paseo-agy-acp/server/error-inspection.ts`. Commit under test: `b38d4899fb "updates"` (wrapper + provider swept in); working tree carries the merge edit `+2 −8` on the test file.
+
+**Mutation A — set drift (temp copy only).** Removed `'high traffic'` from the wrapper's `RETRYABLE_TOKENS`; wrapper now 7, provider 8. Test FAILS and names the token:
+```
+✖ wrapper token vocabulary matches provider and stays capacity-narrow
+AssertionError [ERR_ASSERTION]: wrapper tokens (7): ["RESOURCE_EXHAUSTED","UNAVAILABLE","\\b429\\b","\\b503\\b","capacity","rate limit","try again"]
+provider tokens (8): ["RESOURCE_EXHAUSTED","UNAVAILABLE","\\b429\\b","\\b503\\b","capacity","high traffic","rate limit","try again"]
+drift wrapper-only: []
+drift provider-only: ["high traffic"]
+```
+→ Drift detected, token named.
+
+**Mutation B — capacity narrowness (temp copy only).** Added bare `'UNAVAILABLE'` to `CAPACITY_SIGNAL_TOKENS`. Test FAILS:
+```
+✖ wrapper token vocabulary matches provider and stays capacity-narrow
+AssertionError: CAPACITY_SIGNAL_TOKENS must not contain bare "UNAVAILABLE"; got ["No capacity available","Service Unavailable","UNAVAILABLE","\\b503\\b","high traffic"]
+```
+→ Capacity guard detects the banned bare token.
+
+**Mutation C — parser vacuity.** Production parser run against the real wrapper emits `PARSED_LEN RETRYABLE_TOKENS=8 CAPACITY_SIGNAL_TOKENS=4` and the test passes. Neither array is empty; the banned-token loop is therefore a real assertion, not a no-op. Known residual parser vector: a double-quoted array would parse as 0 elements (single-quote-only literal regex), but that would break the `deepEqual` on `RETRYABLE_TOKENS` (0 vs 8) and fail the guard, so it cannot silently pass.
+
+**Skip path.** With `tools/agy-wrapper` absent from the temp copy the test reports `﹣ wrapper token vocabulary ... # reference wrapper absent at ...` and `skipped 1 / pass 0 / fail 0`. Full temp suite: `tests 486, pass 485, fail 0, skipped 1`. Reported as skipped, not as a passing assertion.
+
+**Copy fidelity.** `diff <(tail -n +2 ~/.local/bin/agy) <(tail -n +2 tools/agy-wrapper/agy)` → empty. `git diff HEAD -- tools/agy-wrapper/agy` → 0 bytes. Committed blob equals working copy.
+
+**Non-execution.** Only `tests/wrapper-token-parity.test.ts` references `agy-wrapper` (a `readFileSync` path). `package.json files` excludes `tools/`; `verify` = format:check + tsc + `node --test tests/*.test.ts` + `npm pack --dry-run`; tsconfig `include` is `**/*.ts` scoped to `paseo-agy-acp/`; prettier `--check .` is scoped to `paseo-agy-acp/`. Nothing spawns or executes the wrapper.
+
+**Suite.** `cd paseo-agy-acp && npm run verify` → `tests 486, pass 485, fail 1`. Failing: `tests/provider.test.ts:1809 "a different question during a woken continuation gets its own card"` with `ENOTEMPTY: directory not empty, rmdir .../agy-woken-mismatch-K40WoR/.gemini/antigravity-cli/paseo-checkpoints/sessions`. Targeted rerun 3/3 passes; the failure is an intermittent teardown race under full-suite concurrency, unrelated to the parity guard. Literal criterion "suite is red" is nonetheless met.
+
+**Verdict: FAIL.** The parity guard itself is sound (mutations A/B caught, lengths 8/4 non-vacuous, skip and copy fidelity correct, wrapper never executed), but the single mandated `npm run verify` returned exit non-zero with `fail 1`, so the gate is red pending a deterministic re-run.
+
+### Round 9 — Journal drain and teardown race
+
+Gatekeeper: moci (CI sentinel), not the author. Repo: `paseo-agy-acp` @ working tree. Date 2026-11-17.
+
+Verdict: **FAIL**. Two independent grounds: (a) suite not reproducible green; (b) drain necessity unproven — mutation shows zero ENOTEMPTY and a targeted probe shows no journal write after `close()` even with both drains removed.
+
+C1 product-bug claim — not reproduced. `close()` always awaits work after `finishTurnOnce` (observation dispose, transport close, optional artifacts remove), so the fire-and-forget journal write normally settles before close resolves. Probe evidence below.
+
+C2 termination — sound for current call sites, no hard bound. `drainTurnJournals(nativeId)` loops, awaiting each new lane identity not in its `awaited` set; `queue()` replaces `writeLanes[key]` per enqueue, so the loop re-runs for every enqueue that lands during a wait. Termination therefore rests on producer quiescence, not a bound: producers are `finishTurnOnce` (gated by `state.turnFinished` + `state.silenced`, set before first drain), `beginTurnJournal` (single turn executor, gated by `closing`/`silenced` and `state.turn`), `removeTurnJournal` (preflight only), `reconcileRunningTurns` (open only). After `silenced = true` a new turn cannot start (`promptSession` throws on closing, `session.ts:2435/2452`); the one in-flight executor can enqueue at most once and the re-snapshot awaits it. No starvation path, no check-then-return await gap. Risk noted: the exported no-arg form drains every lane, so a future caller invoking it while other sessions are actively writing can loop until they quiesce (no bound). Not a hang today; no caller uses no-arg.
+
+C2 effectiveness — UNPROVEN (this is the check-2 "zero" branch). Mutation in `/tmp/gate9/repo` (both `await drainTurnJournals(state.nativeId)` lines replaced): 4/4 full suites exit 0, 0 ENOTEMPTY, 485 pass / 0 fail / 1 skipped each. Targeted probe (`/tmp/gate9/drainprobe.test.ts`, fs/promises rename/writeFile/rm wrapped + `syncBuiltinESMExports`, prompt `permission-then-hang`, close mid-turn, 500 ms post-close observation): unmutated total=2 journal fs ops, afterClose=0; mutated total=2, afterClose=0. So even without the drain, no journal write lands after close resolves on this path; the drain is not demonstrated necessary, and the ENOTEMPTY teardown race is fully absorbed by `removeDir` retries. `removeDir` (144 sites) is the effective test-level fix.
+
+C3 — correct. `removeTurnJournal` enters `queue(nativeId, ...)`, so the rm runs after every previously enqueued write of that lane; a queued rename cannot be overtaken. Only external caller is `server/preflight.ts:159`, not inside a lane callback, so no self-await deadlock. Re-entrancy would deadlock if ever called from within a queued fn for the same key; no such call exists.
+
+C4 — clean, no semantic drift. 144 added `removeDir(` call sites vs 144 removed `rm(` call sites; per-file add/del counts consistent across all 26 files; changed lines are only import lines and the call substitution. Zero `assert` line deltas; no test removed (test counts match HEAD except pre-existing dirty `wrapper-token-parity.test.ts` 2->1, ignored per instruction). `force`/`recursive` preserved inside `removeDir`; assertions/`{recursive:true}` one-offs (brain 3246/3444, preflight 73/77, revert, session 493, usage 91/283, live-context 1114, turn-terminal-invariant 376) keep the bare `rm` import, which is genuinely still used. `usage.test.ts:362` untouched (diff touches only 99/294/326/372 regions). Spot-checked provider (20), revert (29), usage (4), live-context-rewrite (4), transcript-io-recovery (1), turn-terminal-invariant (10).
+
+C5/helper — `tests/helpers/cleanup.ts`: not matched by `node --test tests/*.test.ts` (top-level `*.test.ts` only); covered by tsconfig `include: ["**/*.ts"]` so `tsc --noEmit` typechecks it; `npm pack --dry-run` shows 33 files with no `tests/` or cleanup entry.
+
+Determinism — real tree, `node --test tests/*.test.ts` x4: run1 FAIL (1 fail, 0 ENOTEMPTY), runs 2-4 PASS 486/486. `npm run verify`: exit 1, format+check pass, test phase fails 1. Failure is `provider.test.ts:37` "open, permission, tool merge, duplicate prompt, cancel and runtime crash" at 5957 ms / 6229 ms — the disclosed 5 s `waitUntil` permission wait, so 2/6 observed failures, not ~1/8. Assessment: pre-existing (test body unchanged; drain adds only ms-scale journal read/write to close, cannot produce a 5 s wait), but it makes the suite non-reproducible green under gate conditions, which is a FAIL criterion on its own.
+
+Residual risks: no bound on drain; unproven necessity; teardown greenness rests on retry masking rather than ordering.
+
+### Round 9 re-gate
+
+Gatekeeper: moci. Narrow re-check of the two prior FAIL grounds. Verdict: **PASS**.
+
+1. Drain removal — `drainTurnJournals` no longer exists anywhere in `server/` or `tests/`; `git diff` for `paseo-agy-acp/server/session.ts` is empty (byte-identical to HEAD); `close()` has no drain await; `removeTurnJournal` retains `queue(nativeId, ...)` (`server/turn-journal.ts:121`), so the preflight rm still serializes behind in-flight writes with no self-await deadlock.
+
+2. Budget change — `tests/helpers.ts` diff is exactly `timeoutMs = 5000` -> `15000` inside `collectProviderEvents.wait`; the loop is still `while (Date.now() < deadline)` with a 10 ms poll, still re-asserts `protocolErrors`, and still terminates with `assert.fail(\`Timed out: ${JSON.stringify(events)}\`)` — same failure shape and same collected-event dump. `git diff` shows zero `h.wait` edits in `tests/provider.test.ts`; grep finds no override of `0`, `undefined` or `Infinity`; all 74 `h.wait(...)` sites resolve to the single default, so none is unbounded or shortened.
+
+3. Boundedness attack — an absent permission cannot hang: each wait returns after at most 15 s with `assert.fail`, and `node --test` imposes no default per-test timeout, so worst case is a 15 s failure per missing event, not an unbounded run. Acceptable.
+
+4. Determinism — real tree, `node --test tests/*.test.ts` x4: run1 486/486 pass; run2 486/486; run3 486/486; run4 486/486; 0 ENOTEMPTY in all four. `npm run verify`: exit 0, 486/486, 0 fail, 0 skipped.
+
+5. Teardown conversion — unchanged from Round 9: 144 added `removeDir(` vs 144 removed `rm(`, identical 27-file diffstat (189 insertions / 171 deletions for `tests/*.test.ts`), `usage.test.ts:362` still untouched, `provider.test.ts` diff still teardown-lines-only. No new semantic drift.
+
+Docs: `docs/reference.md` now states the former `ENOTEMPTY ... /paseo-checkpoints/sessions` failure was a test-teardown race against directory removal, not a product close-ordering defect; this matches the Round 9 mutation and probe evidence. Both prior FAIL grounds are resolved.

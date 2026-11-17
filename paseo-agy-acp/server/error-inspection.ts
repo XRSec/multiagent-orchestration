@@ -45,8 +45,21 @@ const GO_DURATION_TOKEN = /(\d+(?:\.\d+)?)(ns|us|µs|μs|ms|s|m|h)/g
 
 const ERROR_SIGNAL =
   /error|failed|failure|UNAVAILABLE|RESOURCE_EXHAUSTED|capacity|quota|rate limit|\b429\b|\b503\b|high traffic|try again|timeout|timed out|\bEOF\b/gi
-const RETRYABLE_TEXT =
-  /UNAVAILABLE|RESOURCE_EXHAUSTED|\b503\b|\b429\b|rate limit|capacity|high traffic|try again/i
+/**
+ * Canonical retryable upstream-error vocabulary. The `agy` wrapper mirrors this list in
+ * `RETRYABLE_TOKENS`; keep both sides in sync.
+ */
+export const RETRYABLE_ERROR_TOKENS: readonly string[] = [
+  'UNAVAILABLE',
+  'RESOURCE_EXHAUSTED',
+  '\\b503\\b',
+  '\\b429\\b',
+  'rate limit',
+  'capacity',
+  'high traffic',
+  'try again',
+]
+const RETRYABLE_TEXT = new RegExp(RETRYABLE_ERROR_TOKENS.join('|'), 'i')
 const UUID_RUN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const HEX_RUN = /^[0-9a-f]{8,}$/i

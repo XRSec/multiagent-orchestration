@@ -8,13 +8,13 @@ variables:
   - "SUBAGENT_STEERING_MODE_FN"
   - "AGENT_TOOL_NAME"
 -->
-A powerful search tool built on ripgrep
+Content search built on ripgrep.
 
-  Usage:
-  - ALWAYS use ${GREP_TOOL_NAME} for search tasks. NEVER invoke `grep` or `rg` as a ${BASH_TOOL_NAME} command. The ${GREP_TOOL_NAME} tool has been optimized for correct permissions and access.
-  - Supports full regex syntax (e.g., "log.*Error", "function\s+\w+")
-  - Filter files with glob parameter (e.g., "*.js", "**/*.tsx") or type parameter (e.g., "js", "py", "rust")
-  - Output modes: "content" shows matching lines, "files_with_matches" shows only file paths (default), "count" shows match counts
+Usage:
+  - Use ${GREP_TOOL_NAME} for search tasks; do not invoke `grep` or `rg` as a ${BASH_TOOL_NAME} command (${GREP_TOOL_NAME} is optimized for permissions and access).
+  - Supports full regex syntax (e.g., `"log.*Error"`, `"function\s+\w+"`).
+  - Filter files with `glob` (e.g., `"*.js"`, `"**/*.tsx"`) or `type` (e.g., `"js"`, `"py"`, `"rust"`).
+  - `output_mode`: `"content"` (matching lines), `"files_with_matches"` (file paths only, default), or `"count"` (match counts).
 ${SUBAGENT_STEERING_MODE_FN()==="default"?`  - Use ${AGENT_TOOL_NAME} tool (if available) for open-ended searches requiring multiple rounds
-`:""}  - Pattern syntax: Uses ripgrep (not grep) - literal braces need escaping (use `interface\{\}` to find `interface{}` in Go code)
-  - Multiline matching: By default patterns match within single lines only. For cross-line patterns like `struct \{[\s\S]*?field`, use `multiline: true`
+`:""}  - Pattern syntax: ripgrep (not grep) — escape literal braces (e.g., `interface\{\}` to match `interface{}` in Go).
+  - Multiline matching: single-line by default; set `multiline: true` for cross-line patterns (e.g., `struct \{[\s\S]*?field`).

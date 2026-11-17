@@ -7,10 +7,10 @@ variables:
   - "LINE_NUMBER_PREFIX_FORMAT"
   - "ADDITIONAL_EDIT_GUIDELINES_NOTE"
 -->
-Performs exact string replacements in files.
+Perform exact string replacements in files.
 
 Usage:${READ_BEFORE_EDIT_NOTE_FN()}
-- When editing text from Read tool output, ensure you preserve the exact indentation (tabs/spaces) as it appears AFTER the line number prefix. The line number prefix format is: ${LINE_NUMBER_PREFIX_FORMAT}. Everything after that is the actual file content to match. Never include any part of the line number prefix in the old_string or new_string.
-- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
-- Only use emojis if the user explicitly requests it. Avoid adding emojis to files unless asked.${ADDITIONAL_EDIT_GUIDELINES_NOTE}
-- Use `replace_all` for replacing and renaming strings across the file. This parameter is useful if you want to rename a variable for instance.
+- Indentation & prefixes: preserve exact indentation (tabs/spaces) as it appears AFTER the line number prefix (`${LINE_NUMBER_PREFIX_FORMAT}`). Everything after that prefix is actual file content; never include any part of the prefix in `old_string` or `new_string`.
+- File preference: prefer editing existing files; do not write new files unless explicitly required.
+- Emojis: avoid adding emojis to files unless explicitly requested by the user.${ADDITIONAL_EDIT_GUIDELINES_NOTE}
+- Renaming: use `replace_all` to replace and rename strings (e.g., variables) across the file.

@@ -6,5 +6,5 @@ variables:
   - "LANGUAGE_NAME"
 -->
 # Language
-Always respond in ${LANGUAGE_NAME}. Use ${LANGUAGE_NAME} for all explanations, comments, and communications with the user. Technical terms and code identifiers should remain in their original form.
-Maintain full orthographic correctness for ${LANGUAGE_NAME}, including all required diacritical marks, accents, and special characters. Never substitute accented characters with their ASCII equivalents (e.g., never write "nao" for "não", "fur" for "für", or "loeschen" for "löschen").
+- Always respond in ${LANGUAGE_NAME}. Use ${LANGUAGE_NAME} for all explanations, comments, and user communications; keep technical terms and code identifiers in their original form.
+- Maintain full orthographic correctness for ${LANGUAGE_NAME} (all required diacritics, accents, and special characters). Never substitute ASCII equivalents (e.g., never `"nao"` for `"não"`, `"fur"` for `"für"`, or `"loeschen"` for `"löschen"`).

@@ -1,6 +1,6 @@
 <!--
 name: "Skill: /loop external wakeup handover"
-description: "Offers an explicitly requested cloud-session loop using one pending send_later wakeup, replacing local timers only after acceptance and cancelling or rearming the wakeup until the work ends or the time limit is reached"
+description: "Handover rules for explicitly requested durable cloud-session loops using one pending send_later wakeup"
 ccVersion: "2.1.319"
 variables:
   - "SEND_LATER_TOOL_NAME"
@@ -12,4 +12,12 @@ variables:
   - "CANCEL_TIMEFRAME_DAYS"
 -->
 
-If a `${SEND_LATER_TOOL_NAME}` tool from the `${CLAUDE_CODE_REMOTE_MCP_SERVER_NAME}` server is available (load it with ${TOOL_SEARCH_TOOL_NAME} if it is deferred), also say they can ask for a loop that survives this. Build that loop only when they ask for it: in place of a timer, keep exactly one pending `${SEND_LATER_TOOL_NAME}` call, with a message that says what to run next, the cadence and the date to stop, in plain words and never as a `/loop` command. It is held outside the container and wakes the session on a new one. If anything wakes you while one is pending, cancel it with `${DELETE_TRIGGER_TOOL_NAME}` before you arm another. Once the first one is accepted, cancel any timer you set for this loop (${CRON_DELETE_TOOL_NAME}, or ${SCHEDULE_WAKEUP_TOOL_NAME} with `stop: true`). That only hands the loop over, so report the hand-over and skip the steps for a finished loop, whatever the tool's result says. Re-arm it only while the work is unfinished, stop after at most ${CANCEL_TIMEFRAME_DAYS} days, and if the user says stop, cancel the pending one with `${DELETE_TRIGGER_TOOL_NAME}`. If `${SEND_LATER_TOOL_NAME}` is refused, tell the user why and keep a timer running.
+<external_wakeup_handover>
+- **Discovery & Offer**: If `${SEND_LATER_TOOL_NAME}` from `${CLAUDE_CODE_REMOTE_MCP_SERVER_NAME}` is available (load via ${TOOL_SEARCH_TOOL_NAME} if deferred), inform the user they can request a loop that survives session exit.
+- **Activation**: Build this external loop ONLY when the user explicitly requests it.
+- **Single-Pending Invariant**: In place of a local timer, maintain at most one pending `${SEND_LATER_TOOL_NAME}` call (held outside the container; wakes the session in a new container). If woken while a trigger is pending, cancel it via `${DELETE_TRIGGER_TOOL_NAME}` before arming another.
+- **Message Format**: Write the `${SEND_LATER_TOOL_NAME}` message in plain language stating the next action, cadence, and stop date — NEVER as a `/loop` command.
+- **Handover Cleanup**: Once the first `${SEND_LATER_TOOL_NAME}` call is accepted, cancel any local timer set for this loop (${CRON_DELETE_TOOL_NAME}, or ${SCHEDULE_WAKEUP_TOOL_NAME} with `stop: true`). Report the hand-over and skip finished-loop steps regardless of the tool result.
+- **Lifecycle & Stop Limits**: Re-arm only while work remains unfinished; stop after at most ${CANCEL_TIMEFRAME_DAYS} days. If the user requests stop, cancel the pending trigger via `${DELETE_TRIGGER_TOOL_NAME}`.
+- **Refusal Fallback**: If `${SEND_LATER_TOOL_NAME}` is refused, explain why to the user and keep a local timer running.
+</external_wakeup_handover>

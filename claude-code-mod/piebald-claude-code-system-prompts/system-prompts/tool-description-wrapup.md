@@ -3,10 +3,9 @@ name: "Tool Description: WrapUp"
 description: "Requires a recap and any pending user decision through WrapUp before the closing reply, explains when to call or skip it, and defines the next-step box's question-and-action behavior"
 ccVersion: "2.1.317"
 -->
-Call this before you write your closing message: it fills the next-step box that the app draws under that message, with a two-or-three-sentence recap and, when this turn leaves the user a decision to make or a step to take, one question and buttons that answer it. Without the call the app has nothing to draw.
+Call once before your closing reply to populate the app's next-step box (a 2–3 sentence `recap`, plus one `ask` and action buttons when a user decision or next step is pending).
 
-Call it once in EVERY turn in which you changed files, ran commands or completed multi-step work, and in every turn that you are about to end with a question, a choice or a go-ahead that you need from the user, even one in which you stopped to ask before doing any work: when this turn's work is done, and before you tell the user the outcome. Otherwise skip it: short answers, pure conversation, a brief read-and-explain turn. A turn that ends in another tool's question to the user, such as a plan's approval, needs no call.
-
-The box opens only for a question that comes with answers, so send actions with ask. A turn with nothing pending sends the recap alone, and the app then draws no box. Write recap, ask and labels in the language the user writes in.
-
-Your closing message is ordinary text right after this call, the last thing you say this turn: your answer to the user in full, which the recap never replaces. Write none of it before this call, where it can reach the user cut to a short summary.
+- **When to call**: Every turn where you changed files, ran commands, or completed multi-step work, and every turn ending with a question, choice, or go-ahead request (including turns pausing to ask before acting).
+- **When to skip**: Short answers, pure conversation, brief read-and-explain turns, or turns ending in another tool's user prompt (e.g., plan approval).
+- **Fields & language**: The box opens only for questions with answers — pass `actions` with `ask` (when nothing is pending, send `recap` alone and no box is drawn). Write `recap`, `ask`, and labels in the user's language.
+- **Reply ordering**: Write your full closing reply as plain text *after* this call (`recap` never replaces it); writing it before this call risks truncation to a short summary.

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,7 @@ import type { ProviderEvent } from '@getpaseo/plugin/server/provider'
 import { formatErrorMessage } from '../server/common.ts'
 import { SessionManager } from '../server/session.ts'
 import { AgyUsageSource } from '../server/usage.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const nativeId = '11111111-1111-4111-8111-111111111111'
 
@@ -30,7 +31,7 @@ async function fixture(extraEnv: Record<string, string> = {}) {
     manager,
     async close() {
       await manager.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     },
   }
 }

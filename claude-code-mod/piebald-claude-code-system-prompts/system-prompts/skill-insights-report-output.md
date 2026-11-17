@@ -1,6 +1,6 @@
 <!--
 name: "Skill: /insights report output"
-description: "Formats and displays the insights usage report results after the user runs the /insights slash command"
+description: "Formats and displays /insights usage report results verbatim"
 ccVersion: "2.1.326"
 variables:
   - "INSIGHTS_DATA"
@@ -12,19 +12,23 @@ variables:
   - "LEFT_OUT_LINE"
   - "RECOMMENDATION_TIP_LINE"
 -->
-The user just ran /insights to generate a usage report analyzing their Claude Code sessions.
+The user ran `/insights` to generate a session usage report.
 
-Here is the full insights data:
+<insights_data>
 ${INSIGHTS_DATA}
+</insights_data>
 
+<report_artifacts>
 Report URL: ${REPORT_URL}
 HTML file: ${HTML_FILE_PATH}${FACETS_DIRECTORY===void 0?"":`
 Facets directory: ${FACETS_DIRECTORY}`}
+</report_artifacts>
 
-At-a-glance summary (for your context only — the user has not seen any output yet):
+<at_a_glance_context note="for agent context only; user has not seen any output yet">
 ${REPORT_HEADER}${AT_A_GLANCE_SUMMARY}
+</at_a_glance_context>
 
-Respond with exactly the following, and nothing else. Do not add, omit, or reword any line:
+Respond with the exact template below and nothing else (MUST NOT add, omit, or reword any line):
 
 Your shareable insights report is ready:
 ${REPORT_URL}

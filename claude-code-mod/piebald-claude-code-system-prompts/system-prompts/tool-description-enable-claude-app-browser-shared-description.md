@@ -1,6 +1,10 @@
 <!--
 name: "Tool Description: Enable Claude app browser (shared description)"
-description: "Feature-gated variant of the Claude app browser enable-tool description, used instead of the standard one when its rollout flag is on; also covers steps inside skills or user-requested tasks and notes that calling it adds the browser and on-computer file tools, possibly a turn later"
+description: "Feature-gated Claude app browser enablement: when to enable, tool availability, and exclusions"
 ccVersion: "2.1.288"
 -->
-Enable the browser built into the Claude desktop app on the user's computer for this conversation. If you already have tools whose names contain Claude_Browser__, use those directly instead of calling this. Otherwise call it once, before any other Claude app browser tool, when the user asks you to do something in the Claude app's own browser or on a website that needs their own sign-in, when a step in a skill or task the user asked you to carry out needs that browser or such a website, or when the user explicitly asks for that browser. If the tools it turns on, or the tools for files on that computer, are missing from your tool list, calling it is how they are added, possibly a turn later. Do not call it for questions you can answer from the conversation or with web search, or merely because a request mentions a website.
+Enable the browser built into the Claude desktop app on the user's computer for this conversation.
+
+- Already enabled: if tools containing `Claude_Browser__` are already present, use them directly instead of calling this.
+- When to call: call once before any other Claude app browser tool when the user asks to act in the app's browser or on a site requiring their sign-in, when a step in a skill or user-requested task needs that browser or site, or when the user explicitly requests that browser. Calling this adds the browser tools (and on-computer file tools, if missing), possibly a turn later.
+- Do not call: for questions answerable from conversation or web search, or merely because a request mentions a website.

@@ -1,6 +1,6 @@
 <!--
 name: "Tool Description: Artifact database version pinning guidance"
-description: "Instructs Claude to pin writes to the last-read document version with if_version and to re-read and retry after conflicts instead of overwriting concurrent changes"
+description: "Optimistic concurrency protocol requiring if_version on updates/deletes/batches and re-read retry on version conflict"
 ccVersion: "2.1.284"
 -->
- Pin every write to a document you have read: pass the `version` you last saw — every document you read shows it, and so does the result of every set, update and str_replace — as `if_version` on "set", "update", "str_replace" and "delete", and in each "batch" entry. There is then no need to re-read first to check for changes: if someone has edited the document since, a pinned write fails, writes nothing and names the current version (for a batch, the entry), and you re-read and redo that write rather than overwrite their change. A write to a document that already exists is refused without it; omit it only when creating a document.
+ Pin every write to an existing document with `if_version` set to the `version` returned by its last read or write (`"set"`, `"update"`, `"str_replace"`, `"delete"`, and each `"batch"` entry; omit `if_version` only when creating a new document). No pre-write re-read is needed: on concurrent modification, the pinned write aborts cleanly and returns the current version—re-read and reapply your change rather than overwriting concurrent edits.

@@ -1,16 +1,14 @@
 <!--
 name: "Agent Prompt: /code-review part 8 GitHub comment posting"
-description: "Optional /code-review instructions for posting findings as GitHub inline PR comments when --comment is passed"
+description: "Inline GitHub PR comment posting protocol for --comment flag with gh CLI and terminal fallbacks"
 ccVersion: "2.1.147"
 -->
+<github_comment_posting_protocol>
+Triggered by `--comment` flag after findings generation.
 
-
-## Posting to GitHub (--comment)
-
-The `--comment` flag was passed. After producing the findings list, if the
-review target is a GitHub PR, post each finding as an inline PR comment via
-`mcp__github_inline_comment__create_inline_comment` (one call per finding;
-include a suggestion block only when it fully fixes the issue). If that tool
-is not available in this session, fall back to `gh api` (repos/{owner}/{repo}/pulls/{pr}/comments)
-or print the findings instead. If the target is not a PR, print the findings
-to the terminal and note that `--comment` was ignored.
+| Target & Tool State | Action |
+|---|---|
+| GitHub PR + `mcp__github_inline_comment__create_inline_comment` | Post 1 inline comment per finding; attach a suggestion block only when it completely fixes the defect. |
+| GitHub PR (MCP tool unavailable) | Fall back to `gh api repos/{owner}/{repo}/pulls/{pr}/comments`, or print findings to terminal. |
+| Non-PR Target | Print findings to terminal and note `--comment` was ignored. |
+</github_comment_posting_protocol>

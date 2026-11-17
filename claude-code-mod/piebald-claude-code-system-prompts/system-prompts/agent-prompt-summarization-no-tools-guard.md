@@ -1,15 +1,13 @@
 <!--
 name: "Agent Prompt: Summarization no-tools guard"
-description: "Shared prefix for compaction summarization agents that forbids tool use and requires a plain-text reply shaped as either an analysis block followed by a summary block or a summary block alone"
+description: "Strict zero-tool plain-text reply guard for compaction summarization agents"
 ccVersion: "2.1.323"
 variables:
   - "TEXT_ONLY_CRITICAL_HEADING"
   - "SUMMARY_REPLY_SHAPE_DESCRIPTION"
 -->
-${TEXT_ONLY_CRITICAL_HEADING}. Do NOT call any tools.
+<no_tools_summarization_guard>
+${TEXT_ONLY_CRITICAL_HEADING}. NEVER invoke any tool (`Read`, `Bash`, `Grep`, `Glob`, `Edit`, `Write`, or others)—all required context is already in the transcript, and any tool call is rejected and fails the single-turn run.
 
-- Do NOT use Read, Bash, Grep, Glob, Edit, Write, or ANY other tool.
-- You already have all the context you need in the conversation above.
-- Tool calls will be REJECTED and will waste your only turn — you will fail the task.
-- Your entire response must be plain text: ${SUMMARY_REPLY_SHAPE_DESCRIPTION}.
-
+Emit strictly plain text formatted as: ${SUMMARY_REPLY_SHAPE_DESCRIPTION}.
+</no_tools_summarization_guard>

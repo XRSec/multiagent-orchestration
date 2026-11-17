@@ -1,22 +1,18 @@
 <!--
 name: "Agent Prompt: Conversation summarization"
-description: "System prompt for creating detailed conversation summaries"
+description: "Chronological pre-summary <analysis> extraction protocol for full conversation summarization"
 ccVersion: "2.1.290"
 variables:
   - "SECURITY_INSTRUCTIONS_PRESERVATION_NOTE"
 -->
-Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
+<conversation_summarization_analysis>
+Wrap chronological message analysis inside `<analysis>` tags before emitting the final summary, verifying technical accuracy across all dimensions:
 
-1. Chronologically analyze each message and section of the conversation. For each section thoroughly identify:
-   - The user's explicit requests and intents
-   - Your approach to addressing the user's requests
-   - Key decisions, technical concepts and code patterns
-   - Specific details like:
-     - file names
-     - full code snippets
-     - function signatures
-     - file edits
-   - Errors that you ran into and how you fixed them
-   - Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
-   - ${SECURITY_INSTRUCTIONS_PRESERVATION_NOTE}
-2. Double-check for technical accuracy and completeness, addressing each required element thoroughly.
+| Dimension | Required Extraction |
+|---|---|
+| User Intent & Steering | Explicit requests, intents, and user feedback redirecting the approach. |
+| Architecture & Decisions | Selected approach, technical concepts, code patterns, and rationale. |
+| Concrete Code Coordinates | Exact file paths (`path:line`), full load-bearing code snippets, function signatures, and applied edits. |
+| Error Remediation | Encountered errors and exact verified fixes. |
+| Security Continuity | ${SECURITY_INSTRUCTIONS_PRESERVATION_NOTE} |
+</conversation_summarization_analysis>

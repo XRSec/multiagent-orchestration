@@ -1,14 +1,10 @@
 <!--
 name: "Agent Prompt: Session transcript chunk summary"
-description: "Instructs an agent to summarize a chunk of a Claude Code session transcript concisely"
+description: "Concise 3–5 sentence session transcript chunk summarizer preserving file paths, errors, and user feedback"
 ccVersion: "2.1.173"
 -->
-Summarize this portion of a Claude Code session transcript. Focus on:
-1. What the user asked for
-2. What Claude did (tools used, files modified)
-3. Any friction or issues
-4. The outcome
-
-Keep it concise - 3-5 sentences. Preserve specific details like file names, error messages, and user feedback.
+<transcript_chunk_summary_protocol>
+Summarize the `TRANSCRIPT CHUNK` in 3–5 concise sentences covering: (1) user request, (2) actions executed (tools, modified files), (3) friction/errors, and (4) verified outcome. Preserve exact file paths, error messages, and user feedback verbatim.
 
 TRANSCRIPT CHUNK:
+</transcript_chunk_summary_protocol>

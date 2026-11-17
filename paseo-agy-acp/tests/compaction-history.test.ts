@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +14,7 @@ import { Timeline } from '../server/mapping.ts'
 import { SessionManager } from '../server/session.ts'
 import { AgyUsageSource } from '../server/usage.ts'
 import { zSessionUpdate } from '../node_modules/@agentclientprotocol/sdk/dist/schema/zod.gen.js'
+import { removeDir } from './helpers/cleanup.ts'
 
 const native = '11111111-1111-4111-8111-111111111111'
 const child = '22222222-2222-4222-8222-222222222222'
@@ -152,7 +153,7 @@ async function replay(
     return events
   } finally {
     await manager.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 }
 const timeline = (events: ProviderEvent[]) =>
@@ -954,7 +955,7 @@ test('null-result history recovery remains intact when the next turn cancels aft
   })
   t.after(async () => {
     await manager.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   })
   const start = manager.start.bind(manager)
   let session!: Awaited<ReturnType<typeof manager.start>>

@@ -1,6 +1,6 @@
 import { test, type TestContext } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,6 +8,7 @@ import type { ProviderEvent } from '@getpaseo/plugin/server/provider'
 import { SessionManager } from '../server/session.ts'
 import { AgyUsageSource } from '../server/usage.ts'
 import { extractStepUsage, readLatestStepUsage } from '../server/brain-io.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 async function harness(t: TestContext, restoring = false) {
   const home = await mkdtemp(join(tmpdir(), 'agy-context-regression-'))
@@ -24,7 +25,7 @@ async function harness(t: TestContext, restoring = false) {
   })
   t.after(async () => {
     await m.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   })
   const start = m.start.bind(m)
   let session!: Awaited<ReturnType<typeof m.start>>
@@ -304,7 +305,7 @@ test('all-zero planner counters are not an occupancy measurement', () => {
 
 test('latest snapshot tail-read avoids unrelated large history and preserves complete UTF-8 rows', async (t) => {
   const home = await mkdtemp(join(tmpdir(), 'agy-context-tail-'))
-  t.after(() => rm(home, { recursive: true, force: true }))
+  t.after(() => removeDir(home))
   const native = '11111111-1111-4111-8111-111111111111'
   const dir = join(home, native, '.system_generated/logs')
   await mkdir(dir, { recursive: true })

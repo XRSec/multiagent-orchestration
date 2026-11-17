@@ -1,6 +1,6 @@
 <!--
 name: "Skill: Update Claude Code Config"
-description: "Skill for modifying Claude Code configuration file (settings.json)"
+description: "Modifies configuration via settings.json files (hooks, permissions, env, MCP, plugins)"
 ccVersion: "2.1.282"
 variables:
   - "SETTINGS_FILE_LOCATION_PROMPT"
@@ -9,64 +9,50 @@ variables:
 -->
 # Update Config Skill
 
-Modify Claude Code configuration by updating settings.json files.
+Modify configuration by updating `settings.json` files.
 
-## When Hooks Are Required (Not Memory)
+## Hooks vs. Memory
 
-If the user wants something to happen automatically in response to an EVENT, they need a **hook** configured in settings.json. Memory/preferences cannot trigger automated actions.
+Event-driven automation requires a **hook** in `settings.json`; memory/preferences cannot trigger automated actions.
 
-**These require hooks:**
-- "Before compacting, ask me what to preserve" → PreCompact hook
-- "After writing files, run prettier" → PostToolUse hook with Write|Edit matcher
-- "When I run bash commands, log them" → PreToolUse hook with Bash matcher
-- "Always run tests after code changes" → PostToolUse hook
+| User Intent | Required Hook |
+|---|---|
+| "Before compacting, ask me what to preserve" | `PreCompact` |
+| "After writing files, run prettier" | `PostToolUse` (`Write\|Edit` matcher) |
+| "When I run bash commands, log them" | `PreToolUse` (`Bash` matcher) |
+| "Always run tests after code changes" | `PostToolUse` |
 
-**Hook events:** PreToolUse, PostToolUse, PreCompact, PostCompact, Stop, Notification, SessionStart
+Supported hook events: `PreToolUse`, `PostToolUse`, `PreCompact`, `PostCompact`, `Stop`, `Notification`, `SessionStart`.
 
-## CRITICAL: Read Before Write
+## Core Rules
 
-**Always read the existing settings file before making changes.** Merge new settings with existing ones - never replace the entire file.
+- **Read before write (CRITICAL):** ALWAYS read the target settings file first and merge changes; NEVER replace the entire file.
+- **Clarify ambiguity:** Use `AskUserQuestion` when scope (`user`/`project`/`local`), array behavior (append vs. replace), or specific option values are unclear.
 
-## CRITICAL: Use AskUserQuestion for Ambiguity
+## `/config` Command vs. Direct Edit
 
-When the user's request is ambiguous, use AskUserQuestion to clarify:
-- Which settings file to modify (user/project/local)
-- Whether to add to existing arrays or replace them
-- Specific values when multiple options exist
-
-## Decision: /config command vs Direct Edit
-
-**Suggest the `/config` slash command** for these simple settings:
-- `theme`, `editorMode`, `verbose`, `model`
-- `language`, `alwaysThinkingEnabled`
-- `permissions.defaultMode`
-
-**Edit settings.json directly** for:
-- Hooks (PreToolUse, PostToolUse, etc.)
-- Complex permission rules (allow/deny arrays)
-- Environment variables
-- MCP server configuration
-- Plugin configuration
+| Method | Use For |
+|---|---|
+| Suggest `/config` | Simple settings: `theme`, `editorMode`, `verbose`, `model`, `language`, `alwaysThinkingEnabled`, `permissions.defaultMode` |
+| Edit `settings.json` directly | Hooks, complex permission rules (`allow`/`deny`), `env` variables, MCP server config, plugin config |
 
 ## Workflow
 
-1. **Clarify intent** - Ask if the request is ambiguous
-2. **Read existing file** - Use Read tool on the target settings file
-3. **Merge carefully** - Preserve existing settings, especially arrays
-4. **Edit file** - Use Edit tool (if file doesn't exist, ask user to create it first)
-5. **Confirm** - Tell user what was changed
+1. Clarify ambiguous intent.
+2. Read the target settings file with `Read`.
+3. Merge new settings with existing entries (preserve existing arrays).
+4. Apply changes with `Edit` (if the file does not exist, ask the user before creating it).
+5. Confirm what changed.
 
-## Merging Arrays (Important!)
+## Merging Arrays
 
-When adding to permission arrays or hook arrays, **merge with existing**, don't replace:
+Append to `permissions` or `hooks` arrays rather than overwriting them:
 
-**WRONG** (replaces existing permissions):
 ```json
+// WRONG (overwrites existing)
 { "permissions": { "allow": ["Bash(npm *)"] } }
-```
 
-**RIGHT** (preserves existing + adds new):
-```json
+// RIGHT (preserves existing + adds new)
 {
   "permissions": {
     "allow": [
@@ -84,16 +70,13 @@ ${HOOKS_CONFIGURATION_PROMPT}
 
 ${CONSTRUCTING_HOOK_PROMPT_FN()}
 
-## Example Workflows
+## Examples
 
 ### Adding a Hook
-
-User: "Format my code after Claude writes it"
-
-1. **Clarify**: Which formatter? (prettier, gofmt, etc.)
-2. **Read**: `.claude/settings.json` (or create if missing)
-3. **Merge**: Add to existing hooks, don't replace
-4. **Result**:
+User: `"Format my code after you write it"`
+1. Clarify formatter (`prettier`, `gofmt`, etc.).
+2. Read `.claude/settings.json` (or create if missing).
+3. Merge into existing hooks:
 ```json
 {
   "hooks": {
@@ -109,37 +92,22 @@ User: "Format my code after Claude writes it"
 ```
 
 ### Adding Permissions
-
-User: "Allow npm commands without prompting"
-
-1. **Read**: Existing permissions
-2. **Merge**: Add `Bash(npm *)` to allow array
-3. **Result**: Combined with existing allows
+User: `"Allow npm commands without prompting"`
+1. Read existing permissions.
+2. Merge `Bash(npm *)` into `permissions.allow`.
 
 ### Environment Variables
+User: `"Set DEBUG=true"`
+1. Confirm scope (global user vs. project).
+2. Read target file and merge `{ "env": { "DEBUG": "true" } }`.
 
-User: "Set DEBUG=true"
+## Common Mistakes & Hook Troubleshooting
 
-1. **Decide**: User settings (global) or project settings?
-2. **Read**: Target file
-3. **Merge**: Add to env object
-```json
-{ "env": { "DEBUG": "true" } }
-```
-
-## Common Mistakes to Avoid
-
-1. **Replacing instead of merging** - Always preserve existing settings
-2. **Wrong file** - Ask user if scope is unclear
-3. **Invalid JSON** - Validate syntax after changes
-4. **Forgetting to read first** - Always read before write
-
-## Troubleshooting Hooks
-
-If a hook isn't running:
-1. **Check the settings file** - Read ~/.claude/settings.json or .claude/settings.json
-2. **Verify JSON syntax** - Invalid JSON silently fails
-3. **Check the matcher** - Does it match the tool name? (e.g., "Bash", "Write", "Edit")
-4. **Check hook type** - Is it "command", "prompt", or "agent"?
-5. **Test the command** - Run the hook command manually to see if it works
-6. **Use --debug** - Run `claude --debug` to see hook execution logs
+- **Avoid:** replacing instead of merging, editing the wrong scope file, leaving invalid JSON (silently disables settings), skipping `Read` before write.
+- **If a hook does not run:**
+  1. Read `~/.claude/settings.json` or `.claude/settings.json`.
+  2. Validate JSON syntax.
+  3. Verify `matcher` matches the tool name (`Bash`, `Write`, `Edit`, etc.).
+  4. Verify hook `type` (`command`, `prompt`, or `agent`).
+  5. Test the hook command manually.
+  6. Run `claude --debug` to inspect hook execution logs.

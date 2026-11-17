@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -9,6 +9,7 @@ import {
   readLatestStepUsage,
 } from '../server/brain-io.ts'
 import { promptUsage } from '../server/mapping.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 test('latest usage respects the turn boundary, incomplete rows and cache-only counters', async () => {
   const root = await mkdtemp(join(tmpdir(), 'agy-usage-reader-'))
@@ -67,13 +68,13 @@ test('latest usage respects the turn boundary, incomplete rows and cache-only co
       undefined,
     )
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
 test('tail snapshots accept complete JSON without LF but skip torn records and UTF-8', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'agy-usage-eof-'))
-  t.after(() => rm(root, { recursive: true, force: true }))
+  t.after(() => removeDir(root))
   const id = '11111111-1111-4111-8111-111111111111'
   const dir = join(root, id, '.system_generated/logs')
   await mkdir(dir, { recursive: true })

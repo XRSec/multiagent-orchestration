@@ -74,7 +74,7 @@ import {
   revertSession,
   type RevertScope,
 } from './revert.ts'
-import { connectAcp } from './transport.ts'
+import { connectAcp, type AgySwitchEvent } from './transport.ts'
 import {
   beginTurnJournal,
   finishTurnJournal,
@@ -139,6 +139,11 @@ interface SessionOptions {
 
 const SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions'
 const TIER_CACHE_LIMIT = 100
+/**
+ * Keychain-global credentials generation. A wrapper account switch bumps this once; every
+ * session compares its last-seen value and reloads before its next prompt.
+ */
+let credentialsEpoch = 0
 
 /**
  * A member counts as progress only if its payload cannot be empty of work. Optional or
@@ -635,6 +640,7 @@ async function createSession(
   })
   let notificationLane = Promise.resolve()
   let relaunching = Promise.resolve()
+  let credentialsEpochSeen = credentialsEpoch
   const editDiffTracker = new EditDiffTracker()
   const nativeWindowSizes = new Map<string | undefined, number>()
   let usage: ProviderUsage = {}
@@ -1416,6 +1422,11 @@ async function createSession(
         error: { message: error.message },
       })
   }
+  /** A wrapper switch only bumps the global epoch; the reload happens at the next safe point. */
+  function handleCredentialsSwitch(event: AgySwitchEvent) {
+    if (event.ok !== true) return
+    credentialsEpoch += 1
+  }
   const rawAgent = config?.providerOptions?.agent
   const agent =
     typeof rawAgent === 'string' && rawAgent.trim()
@@ -1432,6 +1443,7 @@ async function createSession(
         if (transport !== currentTransport || retiring.has(transport)) return
         onExit(error)
       },
+      { onSwitch: handleCredentialsSwitch },
     )
     transports.add(transport)
     void transport.stopped.then(() => transports.delete(transport))
@@ -1554,6 +1566,44 @@ async function createSession(
         state.loading = false
         state.replay = true
       }
+    }
+    /**
+     * Reload credentials changed by a wrapper account switch. Serialized with relaunches,
+     * never fails the turn: a reload error is logged and the current runtime is kept.
+     */
+    async function reloadForCredentials(): Promise<void> {
+      const targetEpoch = credentialsEpoch
+      if (
+        targetEpoch === credentialsEpochSeen ||
+        state.closing ||
+        state.failed ||
+        !state.nativeId
+      )
+        return
+      const previousMetadata = state.metadata
+      const perform = async (): Promise<void> => {
+        try {
+          const reloaded = await reloadSessionSilently({
+            targetNativeId: state.nativeId,
+            previousMetadata,
+            skipPermissions: state.skipPermissions,
+            replayMode: false,
+          })
+          if (reloaded.aborted) return
+          credentialsEpochSeen = targetEpoch
+        } catch (error) {
+          console.error(
+            '[paseo-agy-acp] account switch reload failed; keeping the current runtime:',
+            error,
+          )
+        }
+      }
+      const run = relaunching.then(perform, perform)
+      relaunching = run.then(
+        () => undefined,
+        () => undefined,
+      )
+      await run
     }
     async function doRelaunch(
       skipPermissions: boolean,
@@ -2053,6 +2103,7 @@ async function createSession(
         )
         return run
       },
+      reloadForCredentials,
       close(): Promise<void> {
         if (closing) return closing
         state.closing = true
@@ -2390,6 +2441,11 @@ async function promptSession(
       session.initialized.agentCapabilities?.promptCapabilities?.image,
     )
   }
+  // Safe point: pick up a credentials switch observed since the previous prompt.
+  await session.reloadForCredentials()
+  if (session.state.closing) throw new Error('Session is closing')
+  if (session.state.failed)
+    throw new Error('ACP runtime has exited; reopen the session')
   const blocks: ContentBlock[] =
     p.input.type === 'command'
       ? [
@@ -3109,6 +3165,8 @@ async function promptSession(
     stopWatchdog()
     await disposeTurnWork()
     resetTurnState()
+    // Safe point: a switch observed during this turn reloads before the next prompt.
+    await session.reloadForCredentials()
   }
 }
 

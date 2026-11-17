@@ -1,6 +1,11 @@
 <!--
 name: "Agent Prompt: Plugin eval pilot trust requirement"
-description: "Requires explicit user trust for a plugin directory before piloting its eval cases with --trust-plugin and otherwise limits work to writing case files"
+description: "Gates --trust-plugin pilot execution on explicit user consent while still authoring case files"
 ccVersion: "2.1.269"
 -->
-TRUST: this plugin directory is not yet trusted for `claude plugin eval` runs, and a pilot run started from this session cannot stop to ask. Before the first pilot run, tell the user plainly that piloting loads the plugin (its skills, hooks and MCP servers) and runs its eval suite on this machine as them, and ask whether they trust this plugin directory for that. Only on an explicit yes add `--trust-plugin` to the pilot commands below; on a no, or no answer, still write the case files but do not pilot them (say so in your summary). Never add `--trust-plugin` on your own judgement.
+<plugin_eval_trust_gate>
+TRUST: This plugin directory is untrusted for `claude plugin eval` pilot runs. Before running the first pilot, inform the user that piloting loads the plugin (skills, hooks, MCP servers) and executes its eval suite locally as them, and request explicit trust confirmation.
+
+- **Explicit Yes**: Append `--trust-plugin` to pilot commands.
+- **No / Unanswered**: Write the case files only, omit `--trust-plugin` and pilot runs, and state the skip in your summary. NEVER infer or self-authorize `--trust-plugin`.
+</plugin_eval_trust_gate>

@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -34,6 +34,7 @@ import { Timeline } from '../server/mapping.ts'
 import { connectAcp } from '../server/transport.ts'
 import { SessionManager } from '../server/session.ts'
 import { AgyUsageSource } from '../server/usage.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 test('P0 #1: parseGoDurationMs and parseUpstreamErrorPayload extract quota resetAt and retryable', () => {
   assert.equal(parseGoDurationMs('5s'), 5000)
@@ -129,7 +130,7 @@ test('P0 #1: inspectConversationError reads step_type=17 read-only and handles m
     writeFileSync(join(convDir, 'corrupt.db'), 'not-a-sqlite-db')
     assert.equal(inspectConversationError(home, 'corrupt'), undefined)
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -240,7 +241,7 @@ new AgentSideConnection((client) => ({
     assert.ok(!logText.includes('load\n'))
   } finally {
     await manager.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -380,7 +381,7 @@ test('P1 #4: boundToolCallPayload caps large fields and EditDiffTracker synthesi
     )
     assert.ok(synthesizeUnifiedDiff('a.txt', '1\n2', '1\n3').includes('+3'))
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    await removeDir(dir)
   }
 })
 
@@ -421,7 +422,7 @@ setInterval(() => {}, 1000)
     assert.equal(existsSync(assignedTmp), false)
   } finally {
     await conn.close().catch(() => undefined)
-    await rm(dir, { recursive: true, force: true })
+    await removeDir(dir)
   }
 })
 
@@ -487,6 +488,6 @@ new AgentSideConnection(() => ({
     )
   } finally {
     await manager.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })

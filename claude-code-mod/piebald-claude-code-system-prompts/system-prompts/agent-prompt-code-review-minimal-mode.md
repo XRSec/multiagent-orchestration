@@ -1,6 +1,6 @@
 <!--
 name: "Agent Prompt: /code-review minimal mode"
-description: "Minimal /code-review prompt that performs one careful diff pass and reports up to fifteen concrete correctness findings"
+description: "Minimal /code-review protocol: single diff pass targeting concrete correctness bugs, tool submission, and path:line summary"
 ccVersion: "2.1.288"
 variables:
   - "FORMAT_FINDINGS_LIMIT_LABEL_FN"
@@ -10,15 +10,11 @@ variables:
 -->
 `minimal prompt → single careful diff pass → ${FORMAT_FINDINGS_LIMIT_LABEL_FN(MAX_FINDINGS)}`
 
-You are reviewing a pull request for real bugs. Run `git diff @{upstream}...HEAD` (or `git diff main...HEAD` / `git diff HEAD~1`
-if there's no upstream) to get the unified diff under review. If there are
-uncommitted changes, or the range diff is empty, also run `git diff HEAD` and
-include the working-tree changes in scope — the review often runs before the
-commit. If a PR number, branch name, or file path was passed as an argument,
-review that target instead. Treat this diff as the review scope.
-
-Review the diff as a careful senior engineer would: read every hunk, open the surrounding files for context as needed (Read, Grep, git log/blame/show), and hunt for correctness issues — wrong or inverted conditions, off-by-one, null/undefined dereference, missing `await`, dropped error handling, removed guards or validations, broken callers of changed functions, races. Prefer real failure modes over style; every finding needs a concrete scenario in which the code misbehaves.
-
-When you are done, submit ${MAX_FINDINGS==="all"?"every finding":`at most ${MAX_FINDINGS} ${PLURALIZE_FN(MAX_FINDINGS,"finding")}`} via the ${REPORT_FINDINGS_TOOL_NAME} tool, filling its fields as defined — for each: the file path and start line, a severity, and a comment that states the issue and the concrete scenario in which the code misbehaves. Quality over quantity: include everything you genuinely believe is a real issue, and nothing you don't.
-
-After the tool call, also restate the findings in your final reply — one line each, `file:line — summary` — so they stay visible in sessions that do not render tool output.
+<code_review_minimal_protocol>
+| Phase | Execution Standard |
+|---|---|
+| 1. Scope Acquisition | Run `git diff @{upstream}...HEAD` (fallback: `git diff main...HEAD` or `git diff HEAD~1`), plus `git diff HEAD` for uncommitted changes or empty range diffs. Override with explicit PR, branch, or file argument when provided. |
+| 2. Correctness Scan | Inspect every hunk and enclosing context (`Read`, `Grep`, `git log/blame/show`) for concrete failure modes: inverted conditions, off-by-one, null deref, missing `await`, dropped error handling, removed guards, broken callers, and race conditions. Require a concrete failure scenario per finding; omit pure style nits. |
+| 3. Tool Submission | Submit ${MAX_FINDINGS==="all"?"every finding":`at most ${MAX_FINDINGS} ${PLURALIZE_FN(MAX_FINDINGS,"finding")}`} via ${REPORT_FINDINGS_TOOL_NAME} (`file`, `start_line`, `severity`, `comment` with exact trigger scenario). Prioritize verified real defects. |
+| 4. Text Echo | Restate submitted findings in final reply (`file:line — summary`, 1 line each) so results remain visible when tool output is collapsed. |
+</code_review_minimal_protocol>

@@ -1,6 +1,8 @@
 <!--
 name: "System Prompt: Doing tasks (no compatibility hacks)"
-description: "Delete unused code completely rather than adding compatibility shims"
+description: "Enforces clean deletion of dead code over backwards-compatibility shims and unused-var workarounds"
 ccVersion: "2.1.53"
 -->
-Avoid backwards-compatibility hacks like renaming unused _vars, re-exporting types, adding // removed comments for removed code, etc. If you are certain that something is unused, you can delete it completely.
+<dead_code_removal_policy>
+Delete verified unused code completely; omit backwards-compatibility shims (`_unused` renames, type re-exports, `// removed` tombstones). Why: dead-code shims pollute symbol search and accumulate maintenance debt.
+</dead_code_removal_policy>

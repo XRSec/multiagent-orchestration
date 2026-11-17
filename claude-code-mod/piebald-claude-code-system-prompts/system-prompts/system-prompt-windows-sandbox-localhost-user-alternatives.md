@@ -7,4 +7,4 @@ variables:
   - "WINDOWS_LOCALHOST_WORKAROUNDS_NOTE"
   - "UNSANDBOXED_COMMAND_ALTERNATIVES"
 -->
-${WINDOWS_LOCALHOST_ACCESS_NOTE} ${WINDOWS_LOCALHOST_WORKAROUNDS_NOTE} For anything else that needs localhost, tell the user that the sandbox blocks localhost, so the command works only outside the sandbox, without its protection: they can ${UNSANDBOXED_COMMAND_ALTERNATIVES}; leaving the sandbox is their decision, not yours.
+${WINDOWS_LOCALHOST_ACCESS_NOTE} ${WINDOWS_LOCALHOST_WORKAROUNDS_NOTE} For anything else requiring localhost, tell the user the sandbox blocks localhost and the command only works unsandboxed (without sandbox protection): they can ${UNSANDBOXED_COMMAND_ALTERNATIVES}. Leaving the sandbox is their decision, not yours.

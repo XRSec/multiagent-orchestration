@@ -1,25 +1,18 @@
 <!--
 name: "Skill: Run library SDK example"
-description: "Example file for the Run app skill showing how to document building, testing, and smoke-checking a library or SDK at its public package boundary"
+description: "Example for the Run app skill: document building, testing, and smoke-checking a library or SDK at its public boundary"
 ccVersion: "2.1.246"
 -->
 # Example: Library / SDK
 
-Libraries don't have a "run" step in the process sense - there's no
-server to start, no CLI to invoke. For libraries, the run skill is about:
-
-1. **Building** the library from source
+Libraries have no server or CLI process to run. Keep the skill brief and focus on:
+1. **Building** from source
 2. **Running the test suite**
-3. **A minimal working example** that exercises the library and proves
-   it's installed correctly
+3. **A minimal smoke-test** exercising the public API
 
-Keep it brief. The template's Build and Test sections do most of the work.
+## Smoke-test examples
 
-## The smoke-test example
-
-The main library-specific addition is a tiny program (or REPL snippet)
-that imports the library and does one real thing. This is how an agent
-confirms "yes, the library is usable":
+Include a minimal snippet or program that imports the library and performs one real operation:
 
 > ## Verify
 >
@@ -32,7 +25,7 @@ confirms "yes, the library is usable":
 > # -> pong
 > ```
 
-Or for a compiled language:
+Compiled language example:
 
 > ```bash
 > cat > /tmp/smoke.go <<GO
@@ -83,11 +76,8 @@ Or for a compiled language:
 > # -> dist/mylib-2.1.0-py3-none-any.whl
 > ```
 
-## Things to consider documenting
+## Checklist
 
-- **Development mode vs installed mode.** `pip install -e .` vs
-  `pip install .` - if behavior differs, say which to use for what.
-- **Optional dependencies.** `[dev]`, `[test]`, `[docs]` extras and when
-  each is needed.
-- **Generated code.** If there's a codegen step (protobuf, OpenAPI clients),
-  document it - it's almost always missing from READMEs.
+- **Dev vs installed mode**: Note any behavioral difference between `pip install -e .` and `pip install .`.
+- **Optional dependencies**: Document extras (`[dev]`, `[test]`, `[docs]`) and when each is required.
+- **Generated code**: Document codegen steps (e.g., protobuf, OpenAPI clients) since READMEs often omit them.

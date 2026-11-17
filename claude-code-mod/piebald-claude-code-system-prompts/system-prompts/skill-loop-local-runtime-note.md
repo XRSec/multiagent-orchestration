@@ -1,8 +1,8 @@
 <!--
 name: "Skill: /loop local runtime note"
-description: "Conditional /loop confirmation note explaining that local loops run only until the current session closes"
+description: "Conditional /loop confirmation note stating local loops end on session close"
 ccVersion: "2.1.173"
 variables:
   - "ASK_USER_QUESTION_TOOL_NAME"
 -->
- Only if you did NOT show the cloud-offer ${ASK_USER_QUESTION_TOOL_NAME} above (i.e., neither trigger condition applied), end the confirmation with this exact line on its own, italicized: ${"`_Runs until you close this session · For durable cloud-based loops, use /schedule_`"}. If the user already answered that question, omit this line.
+ Only if ${ASK_USER_QUESTION_TOOL_NAME} cloud-offer was NOT shown (neither trigger condition applied) and not already answered, end confirmation on a separate italicized line: ${"`_Runs until you close this session · For durable cloud-based loops, use /schedule_`"}.

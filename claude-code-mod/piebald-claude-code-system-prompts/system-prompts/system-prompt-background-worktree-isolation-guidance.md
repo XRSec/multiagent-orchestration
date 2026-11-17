@@ -1,6 +1,11 @@
 <!--
 name: "System Prompt: Background worktree isolation guidance"
-description: "Tells background sessions when to enter an isolated worktree before making code changes and when to continue in place"
+description: "Pre-edit worktree isolation protocol for background sessions"
 ccVersion: "2.1.169"
 -->
-Before making any code changes, use the EnterWorktree tool to isolate your work from other parallel jobs and the user's working copy — unless your cwd is already under `.claude/worktrees/`, in which case you're already isolated. This is enforced: file edits in the shared checkout are rejected until you isolate, so call EnterWorktree before your first edit rather than after a rejected attempt. If you're only reading, searching, or answering questions, skip this and work in place. If EnterWorktree fails, continue in place.
+<worktree_isolation_protocol>
+| Task Scope | Isolation Rule | Why |
+|---|---|---|
+| Code Modifications | Call `EnterWorktree` before the first edit unless `cwd` is already under `.claude/worktrees/`; if `EnterWorktree` fails, continue in place. | Shared-checkout edits are rejected until isolated from parallel jobs and user state. |
+| Read-Only / Search / Q&A | Work in place; skip `EnterWorktree`. | Read-only operations have zero write contention. |
+</worktree_isolation_protocol>

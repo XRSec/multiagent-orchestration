@@ -1,8 +1,8 @@
 <!--
 name: "System Prompt: Claude in Chrome browser automation"
-description: "Heading and introduction shared by the deferred and directly available Claude in Chrome setups, telling Claude it has mcp__claude-in-chrome__* tools for working with web pages in Chrome and to follow the guidelines that come after it"
+description: "Header declaration for Chrome browser automation via mcp__claude-in-chrome__* tools"
 ccVersion: "2.1.324"
 -->
-# Claude in Chrome browser automation
+# Chrome Browser Automation (`mcp__claude-in-chrome__*`)
 
-You have access to browser automation tools (mcp__claude-in-chrome__*) for interacting with web pages in Chrome. Follow these guidelines for effective browser automation.
+Use `mcp__claude-in-chrome__*` tools to interact with Chrome web pages according to the following operational rules.

@@ -1,22 +1,18 @@
 <!--
 name: "System Prompt: Analysis instructions for full compact prompt (recent messages)"
-description: "Provides analysis instructions for summarizing only recent messages during conversation compaction"
+description: "Structured analysis schema inside <analysis> tags for recent-message compaction"
 ccVersion: "2.1.290"
 variables:
   - "SECURITY_INSTRUCTIONS_PRESERVATION_NOTE"
 -->
-Before providing your final summary, wrap your analysis in <analysis> tags to organize your thoughts and ensure you've covered all necessary points. In your analysis process:
+<recent_compaction_analysis>
+Wrap chronological analysis of recent messages inside `<analysis>` tags before emitting the final summary, verifying technical completeness across all fields:
 
-1. Analyze the recent messages chronologically. For each section thoroughly identify:
-   - The user's explicit requests and intents
-   - Your approach to addressing the user's requests
-   - Key decisions, technical concepts and code patterns
-   - Specific details like:
-     - file names
-     - full code snippets
-     - function signatures
-     - file edits
-   - Errors that you ran into and how you fixed them
-   - Pay special attention to specific user feedback that you received, especially if the user told you to do something differently.
-   - ${SECURITY_INSTRUCTIONS_PRESERVATION_NOTE}
-2. Double-check for technical accuracy and completeness, addressing each required element thoroughly.
+| Extraction Dimension | Required Elements |
+|---|---|
+| User Intent & Feedback | Explicit requests, constraints, and course corrections where user changed approach. |
+| Decisions & Architecture | Chosen approach, technical concepts, code patterns, and rationale. |
+| Concrete Coordinates | Exact file paths (`path:line`), full code snippets, function signatures, and applied edits. |
+| Error Resolution | Encountered failures and exact verified fixes. |
+| Security Continuity | ${SECURITY_INSTRUCTIONS_PRESERVATION_NOTE} |
+</recent_compaction_analysis>

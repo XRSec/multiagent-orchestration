@@ -1,6 +1,8 @@
 <!--
 name: "Tool Description: Artifact responsive page contract"
-description: "Requires Artifact pages to fit phone widths with preserved side gutters, wrapping layouts, bounded media, and horizontal scrolling confined to oversized tables, diagrams, and code blocks"
+description: "Mobile-first responsive layout contract: safe-area gutters, wrapping flex/grid, bounded media, and scoped horizontal scroll"
 ccVersion: "2.1.299"
 -->
-**Responsive**: The page must also work at phone width (about 400px), and the page body must never scroll horizontally. Keep a side gutter of at least 16px at every width, written `padding-left: max(16px, env(safe-area-inset-left, 0px))` and `padding-right: max(16px, env(safe-area-inset-right, 0px))` so that it also clears a system bar at the phone's side: set it once on `body` or one outer wrapper (where colored bands span the width, on each band's inner wrapper), and give that element its vertical padding with `padding-block`, never a `padding` shorthand that zeroes the sides. Use relative units. Let flex and grid rows wrap or stack to one column when narrow, and give any flex or grid child that holds running text, code or a table `min-width: 0`, so long content wraps or scrolls inside it instead of pushing the page wider. Put `max-width: 100%` on images and on any `aspect-ratio` box, and give nothing a `min-width` wider than the screen. Only tables, diagrams and code blocks may be wider, each inside its own `overflow-x: auto` container.
+**Responsive**: Must render at phone width (`~400px`) with zero horizontal body scroll:
+- **Safe-Area Gutters**: Set `padding-left: max(16px, env(safe-area-inset-left, 0px))` and `padding-right: max(16px, env(safe-area-inset-right, 0px))` on `body` or outer/band wrappers using `padding-block` for vertical spacing (never `padding` shorthand zeroing sides).
+- **Wrapping & Overflow**: Use relative units; wrap/stack flex and grid rows on narrow viewports with `min-width: 0` on text/code/table children. Constrain images and `aspect-ratio` boxes to `max-width: 100%` (no `min-width` exceeding viewport); wrap wide tables, diagrams, and code blocks individually in `overflow-x: auto`.

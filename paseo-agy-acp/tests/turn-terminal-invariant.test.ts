@@ -21,6 +21,7 @@ import {
   beginTurnJournal,
   reconcileRunningTurns,
 } from '../server/turn-journal.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 function manager(
   home: string,
@@ -124,7 +125,7 @@ test(
       assert.match(terminal.error?.message ?? '', /no progress/)
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -149,7 +150,7 @@ test(
       assert.match(terminal.error?.message ?? '', /without a stop reason/)
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -187,7 +188,7 @@ test(
       )
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -218,7 +219,7 @@ test(
       assert.equal(terminal.state, 'failed')
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -271,7 +272,7 @@ test(
       )
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -316,7 +317,7 @@ test(
       assert.match(terminal.error?.message ?? '', /no progress/)
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -396,7 +397,7 @@ test(
       assert.equal(tool.item.status, 'failed')
     } finally {
       handle()
-      await rm(root, { recursive: true, force: true })
+      await removeDir(root)
     }
   },
 )
@@ -450,7 +451,7 @@ test(
       assert.match(terminal.error?.message ?? '', /no progress/)
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -474,7 +475,7 @@ test(
       assert.equal(terminal.state, 'completed')
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -499,7 +500,7 @@ test(
       assert.equal(terminal.state, 'completed')
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )

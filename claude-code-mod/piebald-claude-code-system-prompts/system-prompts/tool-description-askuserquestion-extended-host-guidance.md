@@ -1,12 +1,12 @@
 <!--
 name: "Tool Description: AskUserQuestion extended host guidance"
-description: "Guides hosts with extended AskUserQuestion support on question ordering, text and number inputs, multi-select defaults, optional labels, and follow-up question requests"
+description: "Extended AskUserQuestion rules: ordering, text/number kinds, multiSelect defaults, optional labels, and follow-up loops"
 ccVersion: "2.1.260"
 -->
 
-Extended questions (this host renders them):
-- Put the most important question first.
-- Omit "kind" for an ordinary choice question. Use "kind": "text" for an open-ended question (a text box, no options) and "kind": "number" with "min"/"max" (optionally "step", "defaultValue", "unit") for a quantity. Prefer choices whenever the likely answers can be listed.
-- Set multiSelect: true on choice questions unless the options are mutually exclusive (people answering are often still exploring).
-- Optional "title" is one short line above the questions; optional per-question "description" is one helper line. Option descriptions are optional here too: add one only when the label alone would be ambiguous.
-- Do not add "Other" or "Skip" options: the user can always type their own answer or leave a question unanswered. The user can also ask you for more questions; when the result says so, call this tool again with follow-up questions before doing the task.
+Extended questions (rendered by this host):
+- **Ordering**: Put the most important question first.
+- **Question `kind`**: Omit `kind` for choice questions (prefer choices when likely answers can be listed). Use `"kind": "text"` for open-ended text boxes (no options), and `"kind": "number"` with `"min"`/`"max"` (optional `"step"`, `"defaultValue"`, `"unit"`) for quantities.
+- **`multiSelect`**: Set `multiSelect: true` on choice questions unless options are mutually exclusive (users are often still exploring).
+- **Labels**: Optional `title` (one short line above questions), optional per-question `description` (one helper line), and optional option `description` (add only when the label alone is ambiguous).
+- **No filler options**: Omit `"Other"` or `"Skip"` options — users can always enter custom text or skip. If the result requests more questions, call this tool again with follow-ups before executing the task.

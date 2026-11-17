@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, mkdir, writeFile, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, mkdir, writeFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +10,7 @@ import { record } from '../server/common.ts'
 import { dataDirectory } from '../server/preflight.ts'
 import { createProvider } from '../server/provider.ts'
 import { collectProviderEvents } from './helpers.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 async function harness(env: Record<string, string> = {}) {
   const usage = new AgyUsageSource()
@@ -181,7 +182,7 @@ test('open, permission, tool merge, duplicate prompt, cancel and runtime crash',
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -262,7 +263,7 @@ test('catalog requests share a probe, close it, and skip unchanged opening confi
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -347,7 +348,7 @@ test('catalog discovery survives an ACP close error', async () => {
     assert.ok(!h.events.some((e) => e.type === 'request.failed'))
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -440,7 +441,7 @@ test('interrupt before transcript baseline resolves never sends the native promp
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -477,7 +478,7 @@ test('delayed commands precede readiness on both new and restored sessions; tier
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -550,7 +551,7 @@ test('close removes only new unprompted session artifacts and retains imported s
     assert.equal(await readFile(log, 'utf8'), 'new\nclose\n')
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -595,7 +596,7 @@ test('missing transcript leaves context unknown and prompted sessions remain res
     assert.equal(await readFile(log, 'utf8'), 'new\n')
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -621,7 +622,7 @@ test('failed probes cannot replace remembered usage launches with missing worksp
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -678,7 +679,7 @@ test('stale buffered/live notifications and permissions cannot cross native sess
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -800,7 +801,7 @@ test('cancel is sticky and uses fast path without relaunching after a completed 
     assert.equal(await readFile(log, 'utf8'), 'load\ncancel\n')
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -838,7 +839,7 @@ test('forwards systemPrompt via _meta.antigravity.systemPrompt.append on new and
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -960,7 +961,7 @@ test('full-access mode launches with --dangerously-skip-permissions, auto-approv
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1066,7 +1067,7 @@ test('background task wakeup settles before completing turn and deduplicates nex
     })
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1172,7 +1173,7 @@ test('Incident B: in-RPC high-priority continuation is emitted once and does not
     })
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1337,7 +1338,7 @@ test('toolPolicy MCP preapprovals, allow_once default, deny interrupt, chooser q
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1471,7 +1472,7 @@ test('recursive multi-level subagents link depth-2 grandchild under child sessio
     assert.equal(ephOpened.title, 'Ephemeral Task')
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1589,7 +1590,7 @@ test('messages recover only owned children and never create root, self or unknow
     assert.equal(h.events.filter((e) => e.type === 'session.closed').length, 4)
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1652,7 +1653,7 @@ async function questionSession(name: string) {
     h.events.filter((e) => e.type === 'session.permission').length
   const close = async () => {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
   return {
     h,
@@ -1953,7 +1954,7 @@ test(
       if (oldMarker === undefined) delete process.env.AGY_TEST_MARKER
       else process.env.AGY_TEST_MARKER = oldMarker
       await provider.close()
-      await rm(root, { recursive: true, force: true })
+      await removeDir(root)
     }
   },
 )
@@ -2054,6 +2055,6 @@ test('denied permission marks stranded tool card canceled and concurrent close c
     assert.equal(toolItem.item.error, null)
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })

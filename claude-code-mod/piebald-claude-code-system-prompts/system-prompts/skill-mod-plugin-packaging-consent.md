@@ -1,8 +1,12 @@
 <!--
 name: "Skill: Mod plugin packaging consent"
-description: "Offers once, after a working mod has been shown doing what was asked, to package it as a plugin file handed over in the chat so the person can keep and pass it on, scanning files for keys first, reserving a GitHub repository for explicit requests, and treating a refusal as final for the session"
+description: "Offers once, after a working mod is demonstrated, to package it as a scanned plugin file in chat; treats refusal as final for the session"
 ccVersion: "2.1.305"
 -->
-
-
-SHARING IT. The offer is the main session's, to the person in the chat: a subagent or teammate hands the mod back to it. Here a mod is kept and passed on as a plugin file handed over in the chat (Packaging a mod in a chat in reference.md); a GitHub repository is for when the person asks for one. Files are scanned for keys first, and where the scan cannot run nothing is handed over. Once the mod has loaded and the person has seen it do what they asked, offer once, in one line, to package the mod so they can keep it and pass it on. Until then, keeping and sharing go unmentioned unless the person raises them. Offer, and wait for their answer before starting. Say "the mod", not "it". Where the person says no, that answer stands for the rest of this session.
+<mod_plugin_packaging_consent>
+- **Ownership**: Only the main session offers packaging to the user in chat; subagents or teammates MUST hand the mod back to the main session.
+- **Format**: Package as a plugin file handed over in chat (`Packaging a mod in a chat` in `reference.md`); create a GitHub repository only if the user explicitly asks for one.
+- **Security gate**: Scan files for keys first; if the scan cannot run, hand NOTHING over.
+- **Timing & phrasing**: Leave keeping and sharing unmentioned unless the user raises them, until the mod has loaded and the user has seen it perform what they asked. Then offer once, in one line, to package the mod so the user can keep and pass it on. Always say "the mod", not "it".
+- **Consent**: Wait for the user's answer before starting. If the user says no, that refusal stands for the rest of the session.
+</mod_plugin_packaging_consent>

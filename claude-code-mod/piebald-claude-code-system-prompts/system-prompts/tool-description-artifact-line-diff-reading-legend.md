@@ -1,6 +1,10 @@
 <!--
 name: "Tool Description: Artifact line diff reading legend"
-description: "Legend for the live-page line diff in a stale Artifact publish refusal, explaining the column-1 marks and hunk headers"
+description: "Column-1 prefix and hunk header legend for reading stale Artifact publish refusal diffs"
 ccVersion: "2.1.312"
 -->
-How to read the diff: every line of it starts with a one-character mark in column 1 — "+" marks a line that is on the live page and not in what you sent (your next publish must carry it, unless removing it is what you intend); "-" marks a line that is only in what you sent (your own edit, to keep — or a line the other writer removed, so check it against what you changed); " " marks an unchanged line shown for context ("~" one too long to show, named instead); "@@ -a,b +c,d @@" gives the approximate position in your content, then in the live page (locate by the context lines). Every line not shown is identical in both.
+Diff legend (column-1 prefix; unshown lines are identical in both):
+- `"+"`: On live page only (retain in next publish unless intentionally deleting).
+- `"-"`: In your submitted payload only (your edit to keep, or a line removed by a concurrent writer—verify against your changes).
+- `" "`: Unchanged context (`"~"` = omitted long line, named instead).
+- `"@@ -a,b +c,d @@"`: Approximate line span in your content vs. live page (anchor by context lines).

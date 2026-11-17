@@ -1,6 +1,13 @@
 <!--
 name: "Skill: Claude API sign-in guidance"
-description: "Claude API skill section preferring user-run ant browser sign-in over a new API key, requiring a real verification call, and explaining stored tokens and fallback API billing"
+description: "Guides browser-based ant auth login over API keys, explains Console billing/fallback behavior, and mandates live verification"
 ccVersion: "2.1.326"
 -->
-**If it has none, offer the `ant` sign-in first and an API key second** (no browser on this machine: read that bullet first). `ant auth login` opens a browser tab where the user signs in to the Claude Console and picks a workspace; API usage is billed to the Console organization, never to a claude.ai plan. It saves tokens under `~/.config/anthropic/`, creates no API key and adds no credits. In Claude Code, ask the user to type `! ant auth login` at the prompt (`!` runs it outside the sandbox), or to run it in a terminal of their own; don't run it yourself unless they ask. Tell them first that this needs a Console account, separate from claude.ai (if they have none, that tab lets them create one), to approve in the tab and to paste nothing here: the link it prints and its `paste the code here` work only in a terminal of their own. Tell them too that Claude Code keeps its own `/login`; if that stops working, Claude Code can switch to this sign-in without asking, which sends the conversation so far to the Console organization and bills that organization. Don't leave that part out. Then tell them to run `/login` before they go on if Claude Code warns that its own login is about to expire or has ended. Then make one real call (`ant models list` is free, or run their code) before you say it works: `ant auth status` sends no request. If you were told not to send requests or use the network, make no call: say it is untested and give them `ant models list`.
+<api_signin_guidance>
+Offer `ant` sign-in first and an API key second (if no browser exists on this machine, follow the headless rule first).
+
+| Step | Operational Rule |
+|---|---|
+| 1. Explain & Instruct | Inform the user that `ant auth login` opens a browser tab for a **Console** account (separate from `claude.ai`, creates/selects workspace, bills Console org, saves tokens to `~/.config/anthropic/` without creating keys/credits). Instruct them to run `! ant auth login` (or in their own terminal—never run it unasked), approve in-tab, and paste nothing here. Also disclose that if `/login` stops working, Claude Code may fall back to this sign-in without asking (billing the Console org for the conversation); instruct them to run `/login` first if expiry is warned. |
+| 2. Verify Live | Run one real request (`ant models list` is free, or run their code) before claiming success (`ant auth status` sends no request). If network/requests are disallowed, state untested and provide `ant models list`. |
+</api_signin_guidance>

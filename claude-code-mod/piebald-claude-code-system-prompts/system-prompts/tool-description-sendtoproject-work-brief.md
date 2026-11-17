@@ -1,14 +1,28 @@
 <!--
 name: "Tool Description: SendToProject work brief"
-description: "Describes sending an approved session brief to a new or existing Claude Project, saving it to memory and posting a setup card without starting threads"
+description: "Send an approved session brief to a new or existing claude.ai/code Project, saving memory and setup card"
 ccVersion: "2.1.314"
 -->
-A Claude Project is a cloud workspace on claude.ai/code: it has a coordinator and threads that do the work. This tool is how a session’s work gets there. It is the last step of /send-to-project and works only in the turn where the user ran that command themselves: anywhere else it refuses, so when the user wants this and has not run the command, tell them to run /send-to-project. In that turn, read the folder’s context first with `${"SendToProjectContext"}`, then call this tool as soon as you have drafted the brief. Its confirmation pane is where the user reads the brief and decides, so do not paste it into the conversation or ask for a go-ahead before calling. That would make them review it twice.
+Send a session work brief to a Project (a `claude.ai/code` cloud workspace with a coordinator and worker threads).
 
-What it does. The tool first shows the user its own confirmation pane, with the brief you pass and every step spelled out, and it does nothing unless they choose Yes. Then:
-- Without `project_id` it creates a personal project named `project_name`, with the brief’s icon, color and instructions. If `attach_git_remote` is true it also adds this folder’s GitHub origin as the project’s repository, which it reads from git itself. There is deliberately no way to pass a URL, and the brief carries no repositories.
-- With `project_id` it uses that existing project; nothing is created, no repository is added, and the project keeps its name, appearance and instructions.
-- Either way it saves the brief, rendered as markdown, to project memory as ${"project-imported-context.md"} (with a line in MEMORY.md), posts it as the project’s setup card, and tells the project this session’s Remote Control id, so its coordinator can read the session when it needs detail. It starts no thread: the setup card lists the brief’s threads and the user starts each one there. It needs Remote Control on for this session and refuses without it.
-Creating or looking up the project is the only step that can fail the whole call; a later step that fails comes back as a note next to the project link, so relay the notes to the user.
+<when_to_use>
+- Final step of `/send-to-project`; works ONLY in the turn where the user ran `/send-to-project` (refuses anywhere else—tell the user to run `/send-to-project` first).
+- In that turn, read folder context first with `${"SendToProjectContext"}`, then call this tool as soon as the brief is drafted.
+- Requires Remote Control enabled for this session (refuses without it).
+- Do not paste the brief into the conversation or ask for a go-ahead before calling (avoids double review).
+</when_to_use>
 
-The inputs. `proposal` is the brief in the shape /send-to-project describes (the same object the coordinator’s propose_project_setup takes), with nothing in it you would not want stored or posted: no secrets, tokens or credentials, and identifiers copied exactly from where you read them. The pane shows the user this object as you pass it, so pass the finished brief, never a draft with placeholders. If the user declines the pane, nothing was created or sent: when the rejection carries what they want changed, revise and call again with the whole revised brief; on a bare decline, stop (once they have said what they want, they run /send-to-project again). After a call that went through, do not call again in this run. That would create a second project or post the setup card twice. `project_id` is for a run that sends to an existing project: pass the id the command gave you unchanged, keep `project_name` as a plain label, leave `proposal.name`, `proposal.icon`, `proposal.color` and `proposal.instructions` out, and set `attach_git_remote` to false.
+<behavior>
+Shows a confirmation pane spelling out every step and the brief; does nothing unless the user chooses Yes:
+- Without `project_id`: creates a personal project named `project_name` with the brief's icon, color, and instructions; if `attach_git_remote` is true, attaches this folder's GitHub `origin` (read from git directly; no URL parameter exists and the brief carries no repos).
+- With `project_id`: uses that existing project (creates nothing, adds no repo, keeps existing name/appearance/instructions).
+- Saves the brief as markdown in project memory (`${"project-imported-context.md"}` + `MEMORY.md` entry), posts it as the project's setup card, and shares this session's Remote Control ID so the coordinator can read the session. Starts no threads (the user starts them from the setup card).
+- Only project creation/lookup fails the whole call; later step failures appear as notes next to the project link—relay them to the user.
+</behavior>
+
+<inputs>
+- `proposal`: brief matching `/send-to-project` schema (same as coordinator's `propose_project_setup`). MUST contain NO secrets, tokens, or credentials; copy identifiers verbatim; pass finished brief, never placeholders.
+- Existing project (`project_id`): pass command's `project_id` unchanged, keep `project_name` as a plain label, omit `proposal.name`/`proposal.icon`/`proposal.color`/`proposal.instructions`, and set `attach_git_remote: false`.
+- If user declines the pane: nothing was created/sent. Revise and retry with the full brief if they specified changes; stop on a bare decline (user will re-run `/send-to-project`).
+- Never call again in the same run after a call succeeds (would duplicate project or setup card).
+</inputs>

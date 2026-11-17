@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -15,6 +15,7 @@ import {
 import { settleBrainTurn, watchBrain } from '../server/brain.ts'
 import { SubagentRegistry } from '../server/subagents.ts'
 import { waitUntil } from './helpers.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const parent = '11111111-1111-4111-8111-111111111111'
 const child = '22222222-2222-4222-8222-222222222222'
@@ -75,7 +76,7 @@ async function makeTempRoot() {
       ).run(stepIdx, stepType, status, blob)
       db.close()
     },
-    close: () => rm(appDataDir, { recursive: true, force: true }),
+    close: () => removeDir(appDataDir),
   }
 }
 

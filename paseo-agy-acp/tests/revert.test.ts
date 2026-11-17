@@ -48,6 +48,7 @@ import {
   waitUntil,
   writeBrainTranscript,
 } from './helpers.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const execFileAsync = promisify(execFile)
 
@@ -594,7 +595,7 @@ test('capabilities include revert scopes and reject invalid, active-turn, and co
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -963,7 +964,7 @@ test('conversation revert branches all 7 SQLite tables, Brain chunks/messages, s
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1058,7 +1059,7 @@ test('conversation revert uses session/resume when advertised and accepts subseq
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1282,7 +1283,7 @@ test('Git revert restores edits/deletions/symlinks/directories/unborn nested rep
     assert.equal(cachedDiff.trim(), 'staged.txt')
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1356,7 +1357,7 @@ test('Unborn root Git repo (0 commits) checkpoints and reverts files cleanly', a
     await assert.rejects(lstat(join(repoDir, 'added.txt')))
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1544,7 +1545,7 @@ test('Non-Git workspace fails closed on file and both revert without mutating fi
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1697,7 +1698,7 @@ test('Mid-session git init refuses file rollback for pre-Git turn while restorin
     await assert.rejects(lstat(join(workDir, 'git-turn-added.txt')))
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1834,7 +1835,7 @@ test('Failed conversation revert activation rolls back metadata, closes aborted 
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1899,7 +1900,7 @@ test('forkSessionCheckpoints retains intermediate checkpoints before cutoff and 
     assert.deepEqual(await readdir(sessionsDir), [])
     await assert.rejects(lstat(join(appDataDir, 'paseo-checkpoints', 'blobs')))
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1942,7 +1943,7 @@ test('restoreGitTree rejects reverting across a directory replaced by an externa
       'keep-secret',
     )
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -2210,7 +2211,7 @@ test('Failed non-USER_INPUT and zero-row turns revert files and prune error step
     assert.deepEqual(stepIndices3, [0, 1])
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -2335,7 +2336,7 @@ test('Revert refuses atomically before touching workspace files when runtime sup
     ])
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -2486,7 +2487,7 @@ test('config.persist === false revert omits session.persistence and cleans previ
     assert.deepEqual(sumRows, [])
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -2540,7 +2541,7 @@ test('Git checkpoints restore 0o444 read-only files, 0o755 executable permission
     assert.equal(await readFile(outsideVictim, 'utf8'), 'keep-outside')
   } finally {
     await chmod(join(repoDir, 'readonly.txt'), 0o644).catch(() => undefined)
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -2668,7 +2669,7 @@ test('Revert preserves fullAccess across streamed plan config_option_update and 
     await assert.rejects(lstat(join(workDir, 'new-file.txt')))
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 
   const home2 = await mkdtemp(join(tmpdir(), 'agy-revert-both-failcfg-'))
@@ -2799,7 +2800,7 @@ test('Revert preserves fullAccess across streamed plan config_option_update and 
     assert.deepEqual(await readdir(join(appDataDir2, 'brain')), [origNativeId])
   } finally {
     await h2.provider.close()
-    await rm(home2, { recursive: true, force: true })
+    await removeDir(home2)
   }
 })
 
@@ -2913,7 +2914,7 @@ test('Imported persisted session opened with config.persist === false preserves 
     }
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -2985,7 +2986,7 @@ test('Unborn nested Git repo checkpoint captures and restores under non-English 
     )
   } finally {
     restoreLocaleEnv.forEach((fn) => fn())
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -3109,7 +3110,7 @@ test('Chained forkAgyConversationStorage preserves consumed background-task wake
       { 'msg-wakeup-0': true },
     )
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -3237,7 +3238,7 @@ test('Conversation revert falling back to fresh session resets lastKnownStepInde
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -3365,7 +3366,7 @@ test('Git checkpoint preserves verbatim CRLF, clean-filtered, force-tracked igno
       'forced-v1\n',
     )
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -3510,7 +3511,7 @@ test('Native-forked session replay aligns child revert tokens to suffix steps, p
     assert.equal(revZero.cutoffStepIndex, 0)
     assert.equal(revZero.lastRetainedStepIndex, -1)
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -3595,7 +3596,7 @@ test('session.interrupt rejects while session.revert is in flight without aborti
     )
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -3700,7 +3701,7 @@ test('Git revert prunes empty parent dirs, removes new committed nested repos wh
       'forced-v1\n',
     )
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -3833,7 +3834,7 @@ test('session.close racing mid-reload session.revert on a persist: false session
     }
   } finally {
     await h.provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -3951,7 +3952,7 @@ test('restoreSessionFileCheckpoint aligns .gitignore before capture so ignored f
       '*\n',
     )
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -4176,7 +4177,7 @@ test('forkAgyConversationStorage and readSubagents preserve spawnCallId and inbo
       },
     ])
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -4248,7 +4249,7 @@ test('persisted clientMessageIds survive replay, fork cutoff, and cleanup even w
     await removeSessionCheckpoints(root, oldNativeId)
     assert.equal((await readSessionClientMessages(root, oldNativeId)).size, 0)
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
@@ -4318,6 +4319,6 @@ test('revertSession degrades to a fresh session and still restores files when st
     assert.equal(res.lastRetainedStepIndex, -1)
     assert.equal(await readFile(join(repo, 'app.txt'), 'utf8'), 'v1\n')
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })

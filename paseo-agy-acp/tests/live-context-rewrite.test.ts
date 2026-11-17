@@ -4,7 +4,6 @@ import {
   mkdtemp,
   mkdir,
   writeFile,
-  rm,
   appendFile,
   readFile,
 } from 'node:fs/promises'
@@ -23,6 +22,7 @@ import {
 } from '../server/brain-observer.ts'
 import { settleBrainTurn } from '../server/brain.ts'
 import { BrainTranscriptProjector } from '../server/brain-projector.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -104,7 +104,7 @@ async function harness(t: TestContext) {
   const path = join(logsDir, 'transcript_full.jsonl')
   t.after(async () => {
     await manager.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   })
   return {
     home,
@@ -262,7 +262,7 @@ test('continuation rewrite retains its ACP identity boundary and preceding foreg
   const logsDir = join(root, nativeId, '.system_generated/logs')
   await mkdir(logsDir, { recursive: true })
   const path = join(logsDir, 'transcript_full.jsonl')
-  t.after(() => rm(root, { recursive: true, force: true }))
+  t.after(() => removeDir(root))
 
   const items: ProviderTimelineItem[] = []
   const acpToolCallIds = ['acp-ask-1']
@@ -385,7 +385,7 @@ test('split continuation rewrite preserves live output and wakeup accounting', a
   const logsDir = join(root, nativeId, '.system_generated/logs')
   await mkdir(logsDir, { recursive: true })
   const path = join(logsDir, 'transcript_full.jsonl')
-  t.after(() => rm(root, { recursive: true, force: true }))
+  t.after(() => removeDir(root))
 
   const items: ProviderTimelineItem[] = []
   let continuationActive = false
@@ -487,7 +487,7 @@ test('historical message deltas delivered after attach do not stall a completed 
   await mkdir(logsDir, { recursive: true })
   await mkdir(messagesDir, { recursive: true })
   const path = join(logsDir, 'transcript_full.jsonl')
-  t.after(() => rm(root, { recursive: true, force: true }))
+  t.after(() => removeDir(root))
 
   await writeFile(
     join(messagesDir, 'msg-hist-1.json'),
@@ -766,7 +766,7 @@ test(
     t.after(async () => {
       controller.abort()
       await obs.dispose()
-      await rm(root, { recursive: true, force: true })
+      await removeDir(root)
     })
     await writeFile(
       path,

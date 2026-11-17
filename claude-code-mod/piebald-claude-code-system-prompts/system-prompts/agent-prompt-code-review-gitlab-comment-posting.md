@@ -1,22 +1,18 @@
 <!--
 name: "Agent Prompt: /code-review GitLab comment posting"
-description: "Directs code review findings to a general GitLab merge request note when the comment flag is enabled"
+description: "GitLab merge request note posting protocol for --comment flag with glab CLI and terminal fallbacks"
 ccVersion: "2.1.257"
 variables:
   - "GITLAB_MR_IID"
   - "GLAB_MR_NOTE_OPTIONS"
   - "GITLAB_REPOSITORY_REFERENCE"
 -->
+<gitlab_comment_posting_protocol>
+Triggered by `--comment` flag after findings generation.
 
-
-## Posting to GitLab (--comment)
-
-The `--comment` flag was passed. After producing the findings list, if the
-review target is a GitLab merge request, post the findings as one general MR
-note via `${`glab mr note${GITLAB_MR_IID?` ${GITLAB_MR_IID}`:""}${GLAB_MR_NOTE_OPTIONS} -m "<body>"`}`${GITLAB_REPOSITORY_REFERENCE?"":" from inside that project's checkout"}
-(every finding with its file:line, the issue, and the suggested fix). glab has no single verb for line-anchored
-comments; those require `glab api projects/:id/merge_requests/:iid/discussions`,
-so post the general note unless the user asks for inline threads. If glab is
-not available in this session, print the findings instead. If the target is
-not an MR, print the findings to the terminal and note that `--comment` was
-ignored.
+| Target & Tool State | Action |
+|---|---|
+| GitLab MR + `glab` available | Post findings as one general MR note via `${`glab mr note${GITLAB_MR_IID?` ${GITLAB_MR_IID}`:""}${GLAB_MR_NOTE_OPTIONS} -m "<body>"`}`${GITLAB_REPOSITORY_REFERENCE?"":" from inside that project's checkout"} (include `file:line`, issue, and fix per finding). Use `glab api projects/:id/merge_requests/:iid/discussions` only when inline threads are explicitly requested. |
+| GitLab MR (`glab` unavailable) | Print findings to terminal. |
+| Non-MR Target | Print findings to terminal and note `--comment` was ignored. |
+</gitlab_comment_posting_protocol>

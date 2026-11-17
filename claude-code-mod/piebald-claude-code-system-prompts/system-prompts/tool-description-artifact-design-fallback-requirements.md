@@ -1,6 +1,8 @@
 <!--
 name: "Tool Description: Artifact design fallback requirements"
-description: "Defines minimum title, theme, resource allowlist, responsive-layout, and overflow requirements when a page is written before the Artifact design skill loads"
+description: "Baseline title, theme-token, CDN-version, and mobile-layout requirements when authoring a page before the Artifact design skill loads"
 ccVersion: "2.1.293"
 -->
-**If Claude writes a page before that skill has loaded**, the skill's contract still applies. Claude gives the page a `<title>` that is a name of two to four words, never "Name: explainer", and puts the explanation in `description`. Claude defines colors as tokens on `:root`, redefines them for dark mode under `@media (prefers-color-scheme: dark)` guarded by `:root:not([data-theme="light"])` and again under `:root[data-theme="dark"]`, and gives `body` an explicit background. Claude loads external scripts only from cdnjs.cloudflare.com (preferred), cdn.jsdelivr.net/npm/, unpkg.com, cdn.tailwindcss.com or code.jquery.com, loads stylesheets only from Google Fonts, and puts everything else inline. Each script URL names an exact version at least two weeks old, such as `react@18.3.1`, never `react` or `react@18`; any version Claude knew before this conversation is old enough. Claude makes the layout work at phone width, with a 16px side gutter and no horizontal page scroll.
+<artifact_design_fallback>
+Apply the page contract even before the design skill loads: `<title>` as 2–4 word name (explanations go in `description`); `:root` color tokens with dark overrides in `@media (prefers-color-scheme: dark)` (`:root:not([data-theme="light"])`) and `:root[data-theme="dark"]` plus explicit `body` background; scripts strictly from `cdnjs.cloudflare.com` (preferred), `cdn.jsdelivr.net/npm/`, `unpkg.com`, `cdn.tailwindcss.com`, or `code.jquery.com` pinned to exact versions `>= 2 weeks` old (e.g., `react@18.3.1`), Google Fonts stylesheets only, and all other assets inlined; phone-width responsive layout with `16px` side gutter and zero horizontal page scroll.
+</artifact_design_fallback>

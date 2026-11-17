@@ -1,6 +1,10 @@
 <!--
 name: "Tool Description: Enable Claude in Chrome (shared description)"
-description: "Feature-gated variant of the Claude in Chrome enable-tool description, used instead of the standard one when its rollout flag is on; also covers steps inside skills or user-requested tasks and notes that calling it adds the Chrome and on-computer file tools, possibly a turn later"
+description: "Feature-gated Claude in Chrome enablement: when to enable, tool availability, and exclusions"
 ccVersion: "2.1.288"
 -->
-Enable Claude in Chrome, the Claude extension in the Chrome browser on the user's own computer, for this conversation. If you already have tools whose names contain claude-in-chrome__ or Claude_in_Chrome__, use those directly instead of calling this. Otherwise call it once, before any other Claude in Chrome tool, when the user asks you to do something in their browser or on a website that needs their own sign-in, when a step in a skill or task the user asked you to carry out needs their browser or such a website, or when the user explicitly asks for Claude in Chrome. If the tools it turns on, or the tools for files on that computer, are missing from your tool list, calling it is how they are added, possibly a turn later. Do not call it for questions you can answer from the conversation or with web search, or merely because a request mentions a website.
+Enable Claude in Chrome (the Chrome browser extension on the user's computer) for this conversation.
+
+- Already enabled: if tools containing `claude-in-chrome__` or `Claude_in_Chrome__` are already present, use them directly instead of calling this.
+- When to call: call once before any other Claude in Chrome tool when the user asks to act in their browser or on a site requiring their sign-in, when a step in a skill or user-requested task needs their browser or such a site, or when the user explicitly requests Claude in Chrome. Calling this adds the Chrome tools (and on-computer file tools, if missing), possibly a turn later.
+- Do not call: for questions answerable from conversation or web search, or merely because a request mentions a website.

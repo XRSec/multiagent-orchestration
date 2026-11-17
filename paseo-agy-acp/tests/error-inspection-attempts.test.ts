@@ -8,7 +8,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs'
-import { readFile, rm } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -25,6 +25,7 @@ import {
 } from '../server/error-inspection.ts'
 import { SessionManager } from '../server/session.ts'
 import { AgyUsageSource } from '../server/usage.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const UUID = '46471cc4-9c71-4913-8159-c6812504aecb'
 const CAPACITY =
@@ -224,7 +225,7 @@ test('attempt row followed by a terminal planner response is not a terminal fail
       undefined,
     )
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -252,7 +253,7 @@ test('next user input closes the turn window; a later terminal response is outsi
     assert.equal(inspected?.stepIndex, 1)
     assert.match(inspected?.message ?? '', /No capacity available/)
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -274,7 +275,7 @@ test('UUID-only blob yields the generic fallback, never an identifier', async ()
       undefined,
     )
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -303,7 +304,7 @@ test('503 and EOF text blobs are human readable and retryable', async () => {
     assert.match(eof?.message ?? '', /streamGenerateContent/)
     assert.equal(eof?.retryable, false)
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -334,7 +335,7 @@ test('full real agy blobs sanitize to the clean human sentence with no framing d
     assert.equal(inspected?.message, CAPACITY)
     assert.equal(inspected?.retryable, true)
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -366,7 +367,7 @@ test('localized error text survives sanitization byte-for-byte', async () => {
     assert.equal(inspected?.message, german)
     assert.equal(inspected?.retryable, true)
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -387,7 +388,7 @@ test('a run dominated by replacement chars is rejected and falls back', async ()
     const inspected = inspectConversationError(home, 'binary-run', 0)
     assert.equal(inspected?.message, 'Upstream provider error (step_type=17)')
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -472,7 +473,7 @@ test('a dataset without a status column still reports the step_type=17 failure',
       undefined,
     )
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -517,7 +518,7 @@ test(
       )
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -596,7 +597,7 @@ test(
       )
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -642,7 +643,7 @@ test(
       assert.equal(terminals(events).length, 1)
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )

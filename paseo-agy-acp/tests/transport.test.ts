@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { spawn } from 'node:child_process'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { connectAcp } from '../server/transport.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 for (const shutdown of ['graceful', 'stubborn']) {
   test(
@@ -88,7 +89,7 @@ for (const shutdown of ['graceful', 'stubborn']) {
             if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
           }
         }
-        await rm(home, { recursive: true, force: true })
+        await removeDir(home)
       }
     },
   )
@@ -139,7 +140,7 @@ test(
           if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
         }
       }
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -219,6 +220,6 @@ test('transport surfaces stderr on immediate startup failure and notifies onExit
       await hung.close()
     }
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })

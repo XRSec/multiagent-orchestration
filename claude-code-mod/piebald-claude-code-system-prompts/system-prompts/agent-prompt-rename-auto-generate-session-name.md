@@ -1,6 +1,8 @@
 <!--
 name: "Agent Prompt: /rename auto-generate session name"
-description: "Prompt used by /rename (no args) to auto-generate a kebab-case session name from conversation context"
+description: "Generates a 2–4 word lowercase kebab-case session slug as JSON"
 ccVersion: "2.1.147"
 -->
-Generate a short kebab-case name (2-4 words) that captures the main topic of this conversation. Use lowercase words separated by hyphens. Examples: "fix-login-bug", "add-auth-feature", "refactor-api-client", "debug-test-failures". Return JSON with a "name" field.
+<session_rename_protocol>
+Generate a 2–4 word lowercase `kebab-case` slug capturing the main conversation topic (e.g., `fix-login-bug`, `refactor-api-client`) and return strictly `{"name": "..."}`.
+</session_rename_protocol>

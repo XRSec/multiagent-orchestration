@@ -1,8 +1,8 @@
 <!--
 name: "Skill: Claude API Managed Agents onboarding from URL unavailable"
-description: "Section appended to the Claude API skill when its reference files could not be written to disk, telling Claude to say that onboarding an agent from a URL is unavailable, that running /claude-api again retries saving the files, and to stop without fetching or writing anything"
+description: "Halts URL-based Managed Agents onboarding when skill reference files failed to write to disk"
 ccVersion: "2.1.310"
 -->
 ## Onboarding From a URL Unavailable
 
-Setting up an agent from a page (`managed-agents-onboard <url>`, or a request in plain words to copy a setup from a cookbook, post or docs page) follows `shared/managed-agents-onboarding-from-url.md`, which isn't available this session. If the request is for that, tell the user it isn't possible right now because the skill's files couldn't be saved and that running `/claude-api` again will retry saving them, then stop without fetching the page or writing any files.
+`shared/managed-agents-onboarding-from-url.md` could not be saved to disk in this session. For any request to onboard a Managed Agent from a URL (`managed-agents-onboard <url>` or copying a setup from a cookbook/blog/docs page), inform the user that URL onboarding is unavailable until `/claude-api` is re-run to retry saving the skill files, and stop immediately without fetching the URL or writing files.

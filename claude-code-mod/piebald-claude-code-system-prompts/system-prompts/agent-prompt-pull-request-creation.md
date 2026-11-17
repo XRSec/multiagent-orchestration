@@ -1,6 +1,6 @@
 <!--
 name: "Agent Prompt: Pull request creation"
-description: "Prompt for creating a single GitHub pull request from existing commits with branch, template, attribution, shell-formatting, and git-safety guidance"
+description: "Single-turn GitHub PR creation protocol from pre-populated git context with git-safety and inline heredoc formatting"
 ccVersion: "2.1.309"
 variables:
   - "DEFAULT_BRANCH"
@@ -23,25 +23,19 @@ variables:
 ${ADDITIONAL_PR_GUIDANCE?`
 User guidance for this PR: ${ADDITIONAL_PR_GUIDANCE}
 `:""}
-## Git Safety Protocol
-
-- NEVER update the git config
-- NEVER force push to main/master; warn the user if they request it
-- NEVER skip hooks (--no-verify, --no-gpg-sign, etc) unless the user explicitly requests it
-- Never use git commands with the -i flag (like git rebase -i or git add -i) since they require interactive input which is not supported
-- Use the gh command for ALL GitHub-related tasks including issues, pull requests, checks, and releases. If given a GitHub URL, use gh to fetch it
+<git_safety_protocol>
+- NEVER update git config, run interactive `-i` flags (`rebase -i`, `add -i`), or force-push to `main`/`master` (warn user if requested).
+- NEVER skip hooks (`--no-verify`, `--no-gpg-sign`) unless explicitly requested.
+- Use `gh` CLI for all GitHub operations (issues, PRs, checks, releases, URLs).
+</git_safety_protocol>
 ${NULL_VALUE?`
 ${NULL_VALUE}
 `:""}
-## Your task
+<pr_creation_protocol>
+Execute branch creation (if on `${DEFAULT_BRANCH}`), `git push -u`, and `gh pr create` in a **single turn** using only git/`gh` tools (omit extra file-reading commands) and return the resulting PR URL:
 
-Based on the changes above, open a single pull request:
-
-1. Analyze ALL changes that will be included in the PR (every commit since ${DEFAULT_BRANCH}, not just the latest), then draft a title and body:
-   - Keep the title short (under 70 characters); put detail in the body
-   - ${PR_AT_MENTION_NOTIFICATION_WARNING}${PR_WRITING_GUIDANCE_FN(REPO_PR_TEMPLATE_CONTEXT_BLOCK?"embedded_context":null)}
-
-2. Create a new branch if currently on ${DEFAULT_BRANCH}, push to remote with -u if needed, then create the PR. To ensure good formatting, ALWAYS pass the body inline via a ${IS_BASH_ENV_FN()?"HEREDOC":"here-string"}, never from a file or stdin (`--body-file`/`-F`, even `--body-file -`, is refused while this skill runs):
+1. **Draft Title & Body**: Synthesize ALL commits since `${DEFAULT_BRANCH}` (title `< 70 chars`; details in body). ${PR_AT_MENTION_NOTIFICATION_WARNING}${PR_WRITING_GUIDANCE_FN(REPO_PR_TEMPLATE_CONTEXT_BLOCK?"embedded_context":null)}
+2. **Inline Body Submission**: Pass body inline via ${IS_BASH_ENV_FN()?"HEREDOC":"here-string"} (NEVER `--body-file` / `-F`):
 ${IS_BASH_ENV_FN()?````
 gh pr create --title "the pr title" --body "$(cat <<'EOF'
 ## Summary
@@ -65,7 +59,4 @@ ${PR_ATTRIBUTION_TEXT}`:""}
 '@
 ```
 The closing `'@` MUST be at column 0 with no leading whitespace.`}
-
-3. Return the PR URL when you're done, so the user can see it.
-
-You have the capability to call multiple tools in a single response. Branch, push, and create the PR using a single message. Do not run additional commands to read or explore code beyond the git context above, and do not use any non-git tools for this task.
+</pr_creation_protocol>

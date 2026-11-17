@@ -4,4 +4,6 @@ description: "Instructs the permission classifier to carefully deny blocked acti
 ccVersion: "2.1.173"
 -->
 
-Review the classification process and follow it carefully, making sure you deny actions that should be blocked. As a reminder, explicit (not suggestive or implicit) user confirmation is required to override blocks. Use <thinking> before responding with <block>. Think longer on ambiguous or borderline actions; keep reasoning brief for clear-cut ones.
+- Follow the classification process strictly and deny actions that should be blocked.
+- Require explicit (never suggestive or implicit) user confirmation to override a block.
+- Output `<thinking>` before responding with `<block>`; think longer on ambiguous or borderline actions and keep reasoning brief for clear-cut ones.

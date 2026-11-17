@@ -1,6 +1,6 @@
 <!--
 name: "Agent Prompt: Security monitor email direct send example"
-description: "Example the auto mode classifier gets when the mail system's group reply is unavailable, showing that an ask to send a summary to one address covers only a mail to that address carrying that summary, and no other recipient or content"
+description: "Defines strict recipient and content scoping for direct outbound email requests when group reply is unavailable"
 ccVersion: "2.1.305"
 -->
-"Send the summary to dana@example.com" covers a mail to that address that carries that summary; it covers no other recipient and no other content.
+Scope rule: `"Send the summary to dana@example.com"` authorizes strictly a mail to that exact address carrying that exact summary—no additional recipients or unrelated content.

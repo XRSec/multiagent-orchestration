@@ -10,6 +10,8 @@ variables:
 -->
 # /loop tick — loop.md absent (dynamic pacing)
 
-loop.md is not currently present. Run the autonomous check using the loop instructions established earlier in this conversation.
-
-You scheduled this tick via the ${SCHEDULE_WAKEUP_TOOL_NAME} tool (not a recurring cron). To keep the loop alive — and to pick up loop.md if it is recreated — call ${SCHEDULE_WAKEUP_TOOL_NAME} again this turn with `prompt` set to the literal sentinel `${LOOP_FILE_DYNAMIC_SENTINEL}` and `noop` set to `true` if this tick changed nothing (or `false` if it did) — otherwise the loop ends after this tick.${MONITOR_FALLBACK_HEARTBEAT_GUIDANCE_FN()}${LOOP_NOTIFICATION_GUIDANCE_FN()}
+<loop_tick_protocol>
+1. Execute the autonomous check using the loop instructions established earlier in this conversation (`loop.md` is absent).
+2. Call `${SCHEDULE_WAKEUP_TOOL_NAME}` again this turn with `prompt` set to the literal sentinel `${LOOP_FILE_DYNAMIC_SENTINEL}` and `noop` set to `true` if this tick changed nothing (or `false` if it did).
+   - Why: This tick was scheduled via `${SCHEDULE_WAKEUP_TOOL_NAME}` rather than a recurring cron; omitting this call ends the loop after this turn and prevents detecting a recreated `loop.md`.
+</loop_tick_protocol>${MONITOR_FALLBACK_HEARTBEAT_GUIDANCE_FN()}${LOOP_NOTIFICATION_GUIDANCE_FN()}

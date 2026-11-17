@@ -1,6 +1,6 @@
 <!--
 name: "Skill: /stuck (background-daemon diagnostics)"
-description: "The background-daemon troubleshooting section of the /stuck skill"
+description: "Background-daemon troubleshooting section of the /stuck skill"
 ccVersion: "2.1.235"
 variables:
   - "DAEMON_LOCK_CONTENT"
@@ -12,7 +12,7 @@ variables:
 -->
 ## Daemon
 
-The background daemon manages `& <prompt>` jobs and `claude agents`. If the issue involves background sessions, look here.
+Check here if the issue involves `& <prompt>` background jobs or `claude agents` managed by the background daemon.
 
 ### daemon.lock
 ```json
@@ -27,6 +27,6 @@ ${DAEMON_STATUS_CONTENT??"(missing)"}
 ### Daemon log (`${DAEMON_LOG_PATH}`)
 ${DAEMON_LOG_SNIPPET}
 
-Other daemon state on disk (Read if relevant — roster contains user prompts and env vars):
+### Other daemon state on disk (Read if relevant; roster contains user prompts and env vars)
 - `${WORKER_ROSTER_PATH_FN()}` — live worker roster
 - `${DAEMON_STATE_DIR_FN()}/<short>/state.json` — per-job state

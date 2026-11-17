@@ -17,6 +17,7 @@ import {
   providerStatus,
   removeSessionArtifacts,
 } from '../server/preflight.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const id = '11111111-1111-4111-8111-111111111111'
 
@@ -93,7 +94,7 @@ test('catalog cleanup removes only its closed session and refuses symlinks', asy
       'keep-external',
     )
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
@@ -127,7 +128,7 @@ test('providerStatus accepts version >= 1.5.3 and caches result', async () => {
     })
     assert.equal(cachedStatus.available, true)
   } finally {
-    await rm(tmp, { recursive: true, force: true })
+    await removeDir(tmp)
   }
 })
 
@@ -144,7 +145,7 @@ test('providerStatus rejects version < 1.5.3', async () => {
     assert.equal(status.available, false)
     assert.match(status.diagnostic ?? '', /too old; requires >=1.5.3/)
   } finally {
-    await rm(tmp, { recursive: true, force: true })
+    await removeDir(tmp)
   }
 })
 
@@ -161,7 +162,7 @@ test('providerStatus reports diagnostic when version cannot be parsed', async ()
     assert.equal(status.available, false)
     assert.match(status.diagnostic ?? '', /Could not determine agy version/)
   } finally {
-    await rm(tmp, { recursive: true, force: true })
+    await removeDir(tmp)
   }
 })
 
@@ -192,6 +193,6 @@ test('providerStatus rejects 1.5.3 pre-release builds and dataDirectory ignores 
       '/tmp/home-test/.gemini/antigravity-cli',
     )
   } finally {
-    await rm(tmp, { recursive: true, force: true })
+    await removeDir(tmp)
   }
 })

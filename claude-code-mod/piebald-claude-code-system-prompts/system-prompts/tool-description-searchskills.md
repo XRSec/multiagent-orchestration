@@ -1,12 +1,15 @@
 <!--
 name: "Tool Description: SearchSkills"
-description: "Describes the SearchSkills tool for finding relevant claude.ai skills by keyword and suggesting add cards when results fit"
+description: "Search user's claude.ai skills by keyword and render add cards when relevant"
 ccVersion: "2.1.221"
 -->
-Search the user's claude.ai skills by keyword. Call this when a skill (a reference document or instruction set the user has uploaded or enabled) might help complete the task.
+Search the user's claude.ai skills by keyword when an uploaded or enabled skill (reference doc or instruction set) could help complete the task.
 
 Examples:
-- "follow the team's PR guidelines" → keywords ["pr", "review", "guidelines"]
-- "export this as a slide deck" → keywords ["pptx", "slides", "presentation"]
+- "follow the team's PR guidelines" → `["pr", "review", "guidelines"]`
+- "export this as a slide deck" → `["pptx", "slides", "presentation"]`
 
-Returns a ranked list with id, name, description, and whether the skill is enabled. When results fit and SuggestSkills is among your tools, call it to render the add card; otherwise relay the relevant results in text instead. If nothing relevant, proceed without mentioning that you searched.
+Result handling:
+- Returns a ranked list (`id`, `name`, `description`, `enabled`).
+- If results fit and `SuggestSkills` is available, call it to render the add card; otherwise relay relevant matches in text.
+- If nothing is relevant, proceed without mentioning the search.

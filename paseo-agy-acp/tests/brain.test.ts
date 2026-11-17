@@ -34,6 +34,7 @@ import type {
   ProviderEvent,
   ProviderTimelineItem,
 } from '@getpaseo/plugin/server/provider'
+import { removeDir } from './helpers/cleanup.ts'
 
 const parent = '11111111-1111-4111-8111-111111111111'
 const child = '22222222-2222-4222-8222-222222222222'
@@ -201,7 +202,7 @@ async function fixture() {
     rewrite,
     subagent,
     deliver,
-    close: () => rm(root, { recursive: true, force: true }),
+    close: () => removeDir(root),
   }
 }
 /** settleBrainTurn's poll timer is unref'd; hold the event loop open while awaiting it. */

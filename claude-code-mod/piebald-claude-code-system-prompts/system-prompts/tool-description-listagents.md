@@ -1,8 +1,14 @@
 <!--
 name: "Tool Description: ListAgents"
-description: "Describes the ListAgents tool, which lists agents you can message — in-process subagents, teammates, other local and cloud Claude sessions, and remote bridge sessions"
+description: "Lists agents and local/cloud/remote sessions available for SendMessage"
 ccVersion: "2.1.239"
 variables:
   - "SEND_MESSAGE_TOOL_NAME"
 -->
-Lists agents you can ${SEND_MESSAGE_TOOL_NAME} to — in-process subagents you spawned, the teammates on your team, other local Claude sessions on this machine, your Claude sessions running in the cloud (when this session has cloud access; a cloud session receives your message but cannot message any session back yet — do not ask it to reply, read its answer in its own transcript), and (when Remote Control is connected here) your account's other sessions — Remote Control sessions on other machines and cloud sessions, each row labeled by kind. Names are the address: send with `${SEND_MESSAGE_TOOL_NAME}({to: "<name>", message: "..."})`, copying the name exactly as a row prints it. Append a row's ` [ref]` only when the bare name is not enough — two rows share it, or an error asks you to disambiguate.
+List agents you can ${SEND_MESSAGE_TOOL_NAME} to (each row labeled by kind):
+- In-process subagents you spawned and teammates on your team
+- Other local sessions on this machine
+- Cloud sessions (when cloud access is available; receives messages but cannot message back — do not ask it to reply, read its answer in its own transcript)
+- Remote Control sessions on other machines and cloud sessions (when Remote Control is connected)
+
+Addressing: send with `${SEND_MESSAGE_TOOL_NAME}({to: "<name>", message: "..."})`, copying the exact name from the row. Append ` [ref]` only when a bare name is ambiguous (duplicate names or disambiguation error).

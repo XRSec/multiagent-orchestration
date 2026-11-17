@@ -1,6 +1,6 @@
 <!--
 name: "Agent Prompt: /code-review part 3 extra-high and maximum effort modes"
-description: "Extra-high and maximum-effort /code-review prompt that runs five finder angles, one-vote verification, a gap sweep, and capped JSON findings"
+description: "Recall-optimized extra-high/max /code-review protocol: 10 parallel angles, 1-vote verification, gap sweep, and capped output"
 ccVersion: "2.1.288"
 variables:
   - "EFFORT_LEVEL"
@@ -17,23 +17,17 @@ variables:
 -->
 `${EFFORT_LEVEL} effort → 5+5 angles × 8 candidates → 1-vote verify → sweep → ${FORMAT_FINDINGS_LIMIT_LABEL_FN(MAX_FINDINGS)}`
 
-You are reviewing for **recall** at ${EFFORT_LEVEL==="max"?"maximum":"extra-high"} effort: catch every real bug. At
-this level, catching real bugs matters more than avoiding false positives — a
-missed bug ships. Err on the side of surfacing.
+Mode: Recall-biased review at ${EFFORT_LEVEL==="max"?"maximum":"extra-high"} effort—prioritize catching every real defect over suppressing false positives.
 
 ${DIFF_GATHERING_PHASE}
-## Phase 1 — Find candidates (5 correctness angles + 3 cleanup angles + 1 altitude angle + 1 conventions angle, up to 8 each)
+## Phase 1 — Find candidates (5 correctness + 3 cleanup + 1 altitude + 1 conventions, up to 8 each)
 
-Run **10 independent finder angles** via the ${AGENT_TOOL_NAME} tool. Each
-surfaces **up to 8 candidate findings**. Do NOT let one angle's conclusions
-suppress another's — if two angles flag the same line for different reasons,
-record both. ${AGENT_UNAVAILABLE_INSTRUCTIONS}
+Dispatch **10 independent finder angles** in parallel via ${AGENT_TOOL_NAME} (`<= 8` candidates each). Preserve overlapping line flags from distinct angles independently. ${AGENT_UNAVAILABLE_INSTRUCTIONS}
 
 ${EXTENDED_FINDER_ANGLES_BLOCK}
 ${CLEANUP_AND_ALTITUDE_CANDIDATES_NOTE}
 ${THREE_STATE_VERIFY_PHASE}
-This is recall mode — a single non-REFUTED vote carries the finding. Do NOT
-drop on uncertainty.
+Recall Invariant: Retain any finding with a single non-`REFUTED` vote; do NOT drop on uncertainty.
 
 ${GAP_SWEEP_PHASE}
 ${OUTPUT_FORMAT_FN(MAX_FINDINGS)}

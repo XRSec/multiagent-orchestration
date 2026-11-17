@@ -1,10 +1,16 @@
 <!--
 name: "Skill: /send-to-project message preload description"
-description: "Preloads the user-only command's project-message behavior, typed or drafted message selection and approval requirement"
+description: "Preloads project-message behavior, typed/drafted message selection, and approval requirement"
 ccVersion: "2.1.318"
 variables:
   - "SEND_TO_PROJECT_TOOL_NAME"
 -->
 # Send a message to a Claude Project
 
-Asks which project the message goes to (a new one, or one of the user’s own) and posts one message there as the user with the ${SEND_TO_PROJECT_TOOL_NAME} tool, whose confirmation pane shows the message for approval before anything is created or sent. The message is what the user types after the project. With none typed, Claude drafts at most three sentences from the conversation above; in a terminal session with no conversation yet, the command asks the user for the message in place instead. The project also gets this session’s Remote Control id, so it can read the session when it needs detail. Needs Remote Control on for the session, and offers to turn it on when it is off. With a project first in the arguments (its name in double quotes, its id or its link), the project is named up front.
+- Prompts for the target project (new or existing user project) and posts one message as the user via `${SEND_TO_PROJECT_TOOL_NAME}`.
+- **Approval**: The tool's confirmation pane displays the message for user approval before anything is created or sent.
+- **Message selection**:
+  - Uses text typed after the project argument.
+  - If none typed, drafts at most three sentences from the current conversation (in an empty terminal session, asks the user in place).
+- **Session link**: Passes this session's Remote Control ID so the project can read it for detail; requires Remote Control enabled (offers to enable if off).
+- **Shortcut**: Passing a project first in the arguments (double-quoted name, ID, or link) pre-selects it.

@@ -1,6 +1,6 @@
 <!--
 name: "Skill: Run app"
-description: "Skill for launching and driving the current project's app through its real runtime surface using project-specific run skills or fallback patterns"
+description: "Launch and drive the project app through its real runtime surface using project run skills or fallback patterns"
 ccVersion: "2.1.246"
 -->
 ---
@@ -8,18 +8,11 @@ name: run
 description: Launch and drive this project's app to see a change working. Use when asked to run, start, or screenshot the app, or to confirm a change works in the real app (not just tests). First looks for a project skill that already covers launching the app; otherwise falls back to built-in patterns per project type (CLI, server, TUI, Electron, browser-driven, library).
 ---
 
-**Running means launching the actual app and interacting with it** -
-not the test suite, not an `import` of an internal function and a
-`console.log`. The app as a user (human or programmatic) would meet
-it: the CLI at its command, the server at its socket, the GUI at its
-window.
+**Running means launching and interacting with the actual app** (CLI command, server socket, GUI window) — not running tests or importing internal functions.
 
-## First: does a project skill already cover this?
+## 1. Check for a project run skill
 
-A project skill that launches this app is the repo's verified path -
-its author already cold-started from a Linux container and committed
-what worked: the exact `apt-get` line, the env vars, the patches, the
-driver. Use it instead of rediscovering.
+Repo run skills capture verified cold-start setup (`apt-get`, env vars, patches, driver). Discover them first:
 
 ```bash
 d=$PWD; while :; do
@@ -29,19 +22,14 @@ d=$PWD; while :; do
 done
 ```
 
-- **One describes launching/driving this app** -> read that SKILL.md
-  and follow it verbatim. Don't paraphrase; don't skip the patches.
-- **Mega-repo, several plausible, no clear match** -> ask the user
-  which unit to run.
-- **Stale** (fails on mechanics unrelated to your task) -> tell the
-  user; offer to refresh it via `/run-skill-generator`.
-- **Nothing about running** -> fall back to the patterns below.
+- **Match found**: Read its `SKILL.md` and follow it verbatim (do not paraphrase or skip patches).
+- **Multiple matches (mega-repo)**: Ask the user which unit to run.
+- **Stale skill** (fails on setup unrelated to your change): Inform the user and offer to refresh it via `/run-skill-generator`.
+- **No match**: Use the fallback patterns below.
 
-## Otherwise: match the shape, use the pattern
+## 2. Fallback patterns by project type
 
-Pick the row closest to your project. Each example walks through
-launch + first interaction; ignore any trailing "write the skill"
-section - you're using the recipe, not authoring one.
+Follow the closest launch + first-interaction recipe; ignore any trailing "write the skill" section.
 
 | Project type | Handle | Example |
 |---|---|---|
@@ -52,25 +40,15 @@ section - you're using the recipe, not authoring one.
 | Browser-driven | dev server + `chromium-cli` script | [examples/playwright.md](examples/playwright.md) |
 | Library / SDK | import-and-call smoke script at the package boundary | [examples/library.md](examples/library.md) |
 
-If nothing fits, start from the closest match and adapt. For a web
-app, [examples/playwright.md](examples/playwright.md) - drive it with
-`chromium-cli`, no custom driver needed. For a desktop app,
-[examples/electron.md](examples/electron.md) - it has the `_electron`
-REPL driver skeleton and the tmux wrapping.
+Adapt the closest pattern if none fits exactly: use [examples/playwright.md](examples/playwright.md) (`chromium-cli`, no custom driver) for web apps and [examples/electron.md](examples/electron.md) (`_electron` REPL + tmux) for desktop apps.
 
-## Drive it, don't just launch it
+## 3. Drive and verify
 
-Launching with no interaction proves the entrypoint resolves. That's
-not running the app - it's typechecking with extra steps. Drive it to
-a point where a user would see something:
+Do not stop at launching the entrypoint; verify user-visible behavior:
 
-- CLI -> type a representative command, check the exit code and output.
-- Server -> hit the route the diff touches with `curl`, read the body.
-- TUI -> `send-keys` a navigation, `capture-pane` the result.
-- GUI -> click the button, screenshot the window. **Look at the
-  screenshot.** A blank frame is a failure to launch.
+- **CLI**: Run a representative command; inspect exit code and output.
+- **Server**: Request the affected route with `curl`; read the response body.
+- **TUI**: Send navigation keys via `send-keys`; inspect `capture-pane`.
+- **GUI**: Trigger an interaction and screenshot the window. Inspect the screenshot; a blank frame is a launch failure.
 
-If the fallback pattern didn't work out of the box - you had to
-install packages, set env vars, patch config, or write a driver -
-recommend `/run-skill-generator` in your report so that work gets
-captured as a project skill. If it just worked, don't.
+If fallback setup required installing packages, setting env vars, patching config, or writing a driver, recommend `/run-skill-generator` in your report so the setup is saved as a project skill; otherwise omit it.

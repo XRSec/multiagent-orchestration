@@ -1,28 +1,20 @@
 <!--
 name: "Skill: Run TUI interactive terminal app example"
-description: "Example file for the Run app skill showing how to drive an interactive terminal app with tmux, readiness polling, pane capture, key references, and cleanup"
+description: "Example for the Run app skill: drive an interactive terminal app with tmux, readiness polling, pane capture, key references, and cleanup"
 ccVersion: "2.1.246"
 -->
 # Example: TUI / interactive terminal app
 
-Interactive terminal apps (text editors, REPLs, curses-based UIs) can't
-be driven directly by an agent's bash tool - they take over the terminal.
-The skill must show how to wrap them in `tmux` so the agent can send
-input, capture output, and take screenshots.
+Interactive terminal apps (editors, REPLs, curses UIs) take over the terminal and cannot be driven directly by a bash tool. Wrap them in `tmux` as the primary agent workflow.
 
 ## The tmux pattern
 
-This is the standard approach:
+1. Start the TUI inside a detached `tmux` session.
+2. Send keystrokes with `tmux send-keys`.
+3. Read screen contents with `tmux capture-pane`.
+4. Clean up with `tmux kill-session`.
 
-1. Start the TUI inside a detached tmux session
-2. Send keystrokes with `tmux send-keys`
-3. Read screen contents with `tmux capture-pane`
-4. Clean up with `tmux kill-session`
-
-The skill's `SKILL.md` should present this as the primary way to drive
-the app. A small `driver.sh` that wraps the launch+attach sequence can
-live in the skill directory, but for most TUIs the raw tmux commands in
-the skill body are enough.
+Raw `tmux` commands in the skill body are usually sufficient; extract a `driver.sh` in the skill directory only if launch/attach or polling gets repetitive.
 
 ## Example snippet
 
@@ -72,25 +64,17 @@ the skill body are enough.
 > | `s` | Settings |
 > | `q` | Quit |
 
-## Details worth documenting
+## Checklist
 
-- **Terminal size.** Some TUIs break or hide content at small widths.
-  Specify a known-good size in the `tmux new-session -x -y` args.
-- **Startup time.** Poll for a ready marker (`until tmux capture-pane | grep -q X`)
-  rather than a fixed `sleep N` - returns the instant the app is up, and fails
-  usefully when it never does. Say what string means ready.
-- **Keybinding reference.** A table of the main keys. This is the "API"
-  of a TUI - an agent needs it to drive the app.
-- **Exit cleanly.** Show the quit keystroke *and* `tmux kill-session` as
-  a fallback.
-- **Color/unicode quirks.** If `capture-pane` output is hard to read,
-  note flags that help (`-e` for escape sequences, `-J` to join wrapped
-  lines).
+- **Terminal size**: Specify known-good dimensions in `tmux new-session -x -y`.
+- **Startup marker**: Poll (`until tmux capture-pane | grep -q X`) rather than fixed `sleep N`; state the exact ready string.
+- **Keybinding reference**: Provide a table of primary keys as the TUI's "API".
+- **Clean exit**: Document both the quit keystroke and `tmux kill-session` fallback.
+- **Color/unicode quirks**: Note helpful `capture-pane` flags (`-e` for escape sequences, `-J` to join wrapped lines) if output is hard to read.
 
-## Also document the direct invocation
+## Direct invocation (humans)
 
-For a human running the app interactively, tmux is overkill. Include
-the one-liner too:
+Also include the direct one-liner for interactive human use:
 
 > ## Run (direct, for humans)
 >

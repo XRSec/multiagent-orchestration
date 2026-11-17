@@ -1,6 +1,7 @@
 <!--
 name: "Tool Description: REPL script and shell timeouts"
-description: "Explains the synchronous script lifetime, the shorter timeout needed for long shell commands and how timed-out commands may continue as background tasks"
+description: "Explains the 600s synchronous script limit, shorter shell command timeouts, and background task continuation"
 ccVersion: "2.1.318"
 -->
-A script is stopped 600000 ms after it starts, counting the time spent waiting on permission prompts, and a command still running then is stopped too and its output is lost. So give a long command a timeout that ends well before that. At its own timeout a command moves to the background and keeps running (one that starts with sleep is stopped instead, and so is every command if background tasks are disabled): the await resolves without throwing, with exitCode null, and running names the task and the file its output streams to, so read that file instead of running the command again.
+- Script limit: a script is stopped `600000 ms` after start (including permission-prompt wait time); any still-running command is killed and its output is lost. Give long commands an explicit timeout well below `600000 ms`.
+- Command timeout: when a command hits its own timeout, it moves to the background (`await` resolves without throwing, `exitCode: null`, `running` names the task and output file)—read that file instead of re-running. Commands starting with `sleep` (and all commands when background tasks are disabled) are stopped instead.

@@ -1,162 +1,48 @@
 <!--
 name: "System Prompt: Hooks Configuration"
-description: "Documents hook structure, events, types, input/output fields, and examples for the Claude Code configuration skill"
+description: "Reference schema for lifecycle hooks: event matrix, command/prompt/agent hook types, and stdin/stdout JSON contracts"
 ccVersion: "2.1.77"
 -->
-## Hooks Configuration
-
-Hooks run commands at specific points in Claude Code's lifecycle.
-
-### Hook Structure
+<hooks_configuration_spec>
+<hook_schema>
 ```json
 {
   "hooks": {
-    "EVENT_NAME": [
-      {
-        "matcher": "ToolName|OtherTool",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "your-command-here",
-            "timeout": 60,
-            "statusMessage": "Running..."
-          }
-        ]
-      }
-    ]
-  }
-}
-```
-
-### Hook Events
-
-| Event | Matcher | Purpose |
-|-------|---------|---------|
-| PermissionRequest | Tool name | Run before permission prompt |
-| PreToolUse | Tool name | Run before tool, can block |
-| PostToolUse | Tool name | Run after successful tool |
-| PostToolUseFailure | Tool name | Run after tool fails |
-| Notification | Notification type | Run on notifications |
-| Stop | - | Run when Claude stops (including clear, resume, compact) |
-| PreCompact | "manual"/"auto" | Before compaction |
-| PostCompact | "manual"/"auto" | After compaction (receives summary) |
-| UserPromptSubmit | - | When user submits |
-| SessionStart | - | When session starts |
-
-**Common tool matchers:** `Bash`, `Write`, `Edit`, `Read`, `Glob`, `Grep`
-
-### Hook Types
-
-**1. Command Hook** - Runs a shell command:
-```json
-{ "type": "command", "command": "prettier --write $FILE", "timeout": 30 }
-```
-
-**2. Prompt Hook** - Evaluates a condition with LLM:
-```json
-{ "type": "prompt", "prompt": "Is this safe? $ARGUMENTS" }
-```
-Only available for tool events: PreToolUse, PostToolUse, PermissionRequest.
-
-**3. Agent Hook** - Runs an agent with tools:
-```json
-{ "type": "agent", "prompt": "Verify tests pass: $ARGUMENTS" }
-```
-Only available for tool events: PreToolUse, PostToolUse, PermissionRequest.
-
-### Hook Input (stdin JSON)
-```json
-{
-  "session_id": "abc123",
-  "tool_name": "Write",
-  "tool_input": { "file_path": "/path/to/file.txt", "content": "..." },
-  "tool_response": { "success": true }  // PostToolUse only
-}
-```
-
-### Hook JSON Output
-
-Hooks can return JSON to control behavior:
-
-```json
-{
-  "systemMessage": "Warning shown to user in UI",
-  "continue": false,
-  "stopReason": "Message shown when blocking",
-  "suppressOutput": false,
-  "decision": "block",
-  "reason": "Explanation for decision",
-  "hookSpecificOutput": {
-    "hookEventName": "PostToolUse",
-    "additionalContext": "Context injected back to model"
-  }
-}
-```
-
-**Fields:**
-- `systemMessage` - Display a message to the user (all hooks)
-- `continue` - Set to `false` to block/stop (default: true)
-- `stopReason` - Message shown when `continue` is false
-- `suppressOutput` - Hide stdout from transcript (default: false)
-- `decision` - "block" for PostToolUse/Stop/UserPromptSubmit hooks (deprecated for PreToolUse, use hookSpecificOutput.permissionDecision instead)
-- `reason` - Explanation for decision
-- `hookSpecificOutput` - Event-specific output (must include `hookEventName`):
-  - `additionalContext` - Text injected into model context
-  - `permissionDecision` - "allow", "deny", or "ask" (PreToolUse only)
-  - `permissionDecisionReason` - Reason for the permission decision (PreToolUse only)
-  - `updatedInput` - Modified tool input (PreToolUse only)
-
-### Common Patterns
-
-**Auto-format after writes:**
-```json
-{
-  "hooks": {
-    "PostToolUse": [{
-      "matcher": "Write|Edit",
-      "hooks": [{
-        "type": "command",
-        "command": "jq -r '.tool_response.filePath // .tool_input.file_path' | { read -r f; prettier --write \"$f\"; } 2>/dev/null || true"
-      }]
+    "EVENT_NAME": [{
+      "matcher": "Bash|Write|Edit|Read|Glob|Grep",
+      "hooks": [{ "type": "command|prompt|agent", "command": "...", "prompt": "... $ARGUMENTS", "timeout": 60, "statusMessage": "..." }]
     }]
   }
 }
 ```
+</hook_schema>
 
-**Log all bash commands:**
-```json
-{
-  "hooks": {
-    "PreToolUse": [{
-      "matcher": "Bash",
-      "hooks": [{
-        "type": "command",
-        "command": "jq -r '.tool_input.command' >> ~/.claude/bash-log.txt"
-      }]
-    }]
-  }
-}
-```
+<hook_events>
+| Event | Matcher | Trigger Point |
+|---|---|---|
+| `PermissionRequest` | Tool name | Before permission prompt |
+| `PreToolUse` / `PostToolUse` / `PostToolUseFailure` | Tool name | Before tool (can block) / after success / after failure |
+| `Notification` | Notification type | On notification dispatch |
+| `Stop` | `-` | On agent stop (clear, resume, compact) |
+| `PreCompact` / `PostCompact` | `"manual"` / `"auto"` | Before / after compaction (receives summary) |
+| `UserPromptSubmit` / `SessionStart` | `-` | On prompt submit / session start |
+</hook_events>
 
-**Stop hook that displays message to user:**
+<hook_types>
+| Type | Config | Supported Events |
+|---|---|---|
+| `command` | `{"type":"command","command":"...","timeout":30}` | All events |
+| `prompt` | `{"type":"prompt","prompt":"... $ARGUMENTS"}` | `PreToolUse`, `PostToolUse`, `PermissionRequest` |
+| `agent` | `{"type":"agent","prompt":"... $ARGUMENTS"}` | `PreToolUse`, `PostToolUse`, `PermissionRequest` |
+</hook_types>
 
-Command must output JSON with `systemMessage` field:
-```bash
-# Example command that outputs: {"systemMessage": "Session complete!"}
-echo '{"systemMessage": "Session complete!"}'
-```
+<io_contract>
+Stdin JSON: `{"session_id":"...","tool_name":"Write","tool_input":{"file_path":"...","content":"..."},"tool_response":{"success":true}}` (`tool_response` in `PostToolUse` only).
 
-**Run tests after code changes:**
-```json
-{
-  "hooks": {
-    "PostToolUse": [{
-      "matcher": "Write|Edit",
-      "hooks": [{
-        "type": "command",
-        "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | grep -E '\\.(ts|js)$' && npm test || true"
-      }]
-    }]
-  }
-}
-```
+Stdout JSON controls:
+- `systemMessage` (all): display message to user.
+- `continue` (`false` blocks/stops; default `true`), `stopReason`, `suppressOutput`, `reason`.
+- `decision`: `"block"` for `PostToolUse`/`Stop`/`UserPromptSubmit` (for `PreToolUse`, use `hookSpecificOutput.permissionDecision` instead).
+- `hookSpecificOutput` (must include `hookEventName`): `additionalContext`, `permissionDecision` (`"allow"|"deny"|"ask"`, `PreToolUse` only), `permissionDecisionReason`, `updatedInput` (`PreToolUse` only).
+</io_contract>
+</hooks_configuration_spec>

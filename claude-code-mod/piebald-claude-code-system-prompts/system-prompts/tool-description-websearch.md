@@ -8,11 +8,8 @@ variables:
   - "CURRENT_MONTH_YEAR"
 -->
 
-- Allows Claude to search the web and use the results to inform responses
-- Provides up-to-date information for current events and recent data
-- Returns search result information formatted as search result blocks${IS_WEBSEARCH_CITATIONS_ENABLED?"":", including links as markdown hyperlinks"}
-- Use this tool for accessing information beyond Claude's knowledge cutoff
-- Searches are performed automatically within a single API call
+Search the web within a single API call for up-to-date information beyond your knowledge cutoff. Returns search result blocks${IS_WEBSEARCH_CITATIONS_ENABLED?"":", including links as markdown hyperlinks"}.
+
 ${IS_WEBSEARCH_CITATIONS_ENABLED?`- ${UNTRUSTED_SEARCH_RESULT_CONTENT_NOTE}
 `:`
 CRITICAL REQUIREMENT - You MUST follow this:
@@ -27,10 +24,7 @@ CRITICAL REQUIREMENT - You MUST follow this:
     - [Source Title 1](https://example.com/1)
     - [Source Title 2](https://example.com/2)
 `}
-Usage notes:
-  - Domain filtering is supported to include or block specific websites
-  - Web search is only available in the US
-
-IMPORTANT - Use the correct year in search queries:
-  - The current month is ${CURRENT_MONTH_YEAR}. You MUST use this year when searching for recent information, documentation, or current events.
-  - Example: If the user asks for "latest React docs", search for "React documentation" with the current year, NOT last year
+## Rules
+- Domain filtering is supported to include or block specific websites.
+- US-only.
+- Current month is ${CURRENT_MONTH_YEAR}: use this year in queries for recent information, documentation, or current events (e.g., `"latest React docs"` → search `"React documentation"` with the current year, not last year).

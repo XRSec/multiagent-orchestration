@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -23,6 +23,7 @@ import {
   type InboxState,
 } from '../server/brain-io.ts'
 import { Timeline } from '../server/mapping.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const id = '11111111-1111-4111-8111-111111111111'
 const inbox: InboxState = {
@@ -582,7 +583,7 @@ test('initial transcript reads anchor timestamp-less retry warnings to file mtim
     )
   } finally {
     handle?.()
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
@@ -646,7 +647,7 @@ test('BrainTurnObservation pre-attach buffering preserves mtimeMs across multi-t
     assert.match(settled.error ?? '', /attempt 1/)
   } finally {
     await observation?.dispose()
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
@@ -770,7 +771,7 @@ test('settleChildren handles ENOENT -> appeared and torn initial reads without p
     )
   } finally {
     handle?.()
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
@@ -903,7 +904,7 @@ test('BrainTurnObservation pre-attach buffering tracks observedAt per step witho
   } finally {
     await obs1?.dispose()
     await obs2?.dispose()
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
@@ -1011,7 +1012,7 @@ test('BrainTurnObservation preserves retry observedAt across pre-attach empty O_
   } finally {
     await obs1?.dispose()
     await obs2?.dispose()
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
@@ -1140,6 +1141,6 @@ test('watchBrain fails stalled child sessions and resumes if new rows arrive lat
   } finally {
     handle?.()
     staleHandle?.()
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })

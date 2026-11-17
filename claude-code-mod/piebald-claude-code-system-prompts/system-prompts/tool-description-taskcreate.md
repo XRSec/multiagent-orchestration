@@ -8,31 +8,19 @@ variables:
   - "ACTIVE_FORM_FIELD_GUIDANCE"
   - "CONDITIONAL_TASK_NOTES"
 -->
-Use this tool to create a structured task list for your current coding session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user.
-It also helps the user understand the progress of the task and overall progress of their requests.
+Create a structured task list for the current coding session to track progress and organize multi-step work.
 
-## When to Use This Tool
+## When to Use
 
-Use this tool proactively in these scenarios:
+- Complex multi-step tasks (3+ distinct steps or actions)
+- Non-trivial tasks requiring planning or multiple operations${CONDITIONAL_TEAMMATES_NOTE}
+- Plan mode: create a task list to track work
+- User explicitly requests a todo list or provides multiple tasks (numbered/comma-separated)
+- New instructions received: capture requirements immediately; mark `in_progress` before starting and `completed` when done (adding discovered follow-ups)
 
-- Complex multi-step tasks - When a task requires 3 or more distinct steps or actions
-- Non-trivial and complex tasks - Tasks that require careful planning or multiple operations${CONDITIONAL_TEAMMATES_NOTE}
-- Plan mode - When using plan mode, create a task list to track the work
-- User explicitly requests todo list - When the user directly asks you to use the todo list
-- User provides multiple tasks - When users provide a list of things to be done (numbered or comma-separated)
-- After receiving new instructions - Immediately capture user requirements as tasks
-- When you start working on a task - Mark it as in_progress BEFORE beginning work
-- After completing a task - Mark it as completed and add any new follow-up tasks discovered during implementation
+## When NOT to Use
 
-## When NOT to Use This Tool
-
-Skip using this tool when:
-- There is only a single, straightforward task
-- The task is trivial and tracking it provides no organizational benefit
-- The task can be completed in less than 3 trivial steps
-- The task is purely conversational or informational
-
-NOTE that you should not use this tool if there is only one trivial task to do. In this case you are better off just doing the task directly.
+Skip for single straightforward tasks, trivial work (<3 steps), or purely conversational/informational requests — execute directly instead.
 
 ## Task Fields
 

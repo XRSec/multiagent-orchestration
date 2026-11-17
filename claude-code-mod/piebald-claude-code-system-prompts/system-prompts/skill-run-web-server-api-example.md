@@ -1,86 +1,58 @@
 <!--
 name: "Skill: Run web server API example"
-description: "Example file for the Run app skill showing how to document a server or API lifecycle with background launch, readiness checks, curl verification, and shutdown"
+description: "Example for the Run app skill: server/API lifecycle with background launch, readiness polling, curl verification, and shutdown"
 ccVersion: "2.1.246"
 -->
 # Example: Web server / API
 
-The distinguishing concern for servers is **lifecycle**: an agent needs to
-start the server in the background, verify it's up, interact with it, then
-cleanly shut it down. A foreground `npm start` that blocks the shell is
-useless to an agent.
+Server skills center on **lifecycle**: start in the background, verify readiness, interact, and shut down cleanly. Never document a blocking foreground `npm start` as the agent run command.
 
-## Structure to follow
+## Structure
 
-A good server run skill has:
+1. **Prerequisites & setup**
+2. **Run** (background launch)
+3. **Verify** (`curl` health/smoke check)
+4. **Stop** (clean shutdown)
 
-1. **Prerequisites & setup** - same as any project.
-2. **Run** - the background-launch pattern (below), not a blocking command.
-3. **Verify** - a `curl` or similar that confirms the server is actually up.
-4. **Stop** - how to cleanly terminate the background process.
-
-If the background-launch + readiness-poll + smoke-curl sequence is more
-than a couple of lines, put it in a `smoke.sh` inside the skill directory
-and have `SKILL.md` say "run the smoke script." One command, exit code
-tells you if the server is healthy.
+If launch + poll + smoke-curl exceeds a few lines, extract it into `smoke.sh` in the skill directory and have `SKILL.md` invoke it.
 
 ## Background-launch pattern
 
-Don't write:
+- **Anti-pattern** (blocks the shell):
+  ```bash
+  npm start
+  ```
+- **Launch and poll**:
+  ```bash
+  npm start &> /tmp/server.log &
+  SERVER_PID=$!
 
-> ```bash
-> npm start
-> ```
+  # Wait for the server to come up (adjust timeout/port as needed)
+  for i in {1..30}; do
+    curl -sf http://localhost:3000/health > /dev/null && break
+    sleep 1
+  done
+  ```
+- **Verify**:
+  ```bash
+  curl http://localhost:3000/health
+  # -> {"status":"ok"}
+  ```
+- **Stop** (`$!` is only the npm wrapper, which does not forward `SIGTERM`, so kill the port listener; avoid broad `pkill -f "<pattern>"` like `pkill -f "next|vite|node"` which can kill your own agent session):
+  ```bash
+  kill $SERVER_PID
+  lsof -ti:3000 -sTCP:LISTEN | xargs -r kill
+  ```
 
-That blocks. Instead, show how to launch in the background, wait for
-readiness, and find the PID later:
+## Checklist
 
-> ```bash
-> npm start &> /tmp/server.log &
-> SERVER_PID=$!
->
-> # Wait for the server to come up (adjust timeout/port as needed)
-> for i in {1..30}; do
->   curl -sf http://localhost:3000/health > /dev/null && break
->   sleep 1
-> done
-> ```
-
-Then the verification step:
-
-> ```bash
-> curl http://localhost:3000/health
-> # -> {"status":"ok"}
-> ```
-
-And stopping:
-
-> ```bash
-> kill $SERVER_PID
-> # $! is the npm wrapper's PID and npm doesn't forward SIGTERM to the
-> # server it spawned - killing the port's listener is what reliably frees it:
-> lsof -ti:3000 -sTCP:LISTEN | xargs -r kill
-> ```
-
-Prefer the captured PID or the port over `pkill -f "<pattern>"`. Broad
-patterns like `pkill -f "next|vite|node"` match the agent's own command
-line and can kill the session that ran them.
-
-## Details worth documenting
-
-- **Which port.** Make it explicit and say how to override it (`PORT=4000 npm start`).
-- **What "ready" looks like.** A specific log line or a health endpoint to hit.
-- **Required env vars.** Database URL, API keys, etc. - with a template `.env`
-  if the list is long.
-- **Hot reload vs production mode.** If they differ meaningfully, say which
-  to use and when.
-- **Dependent services.** If the server needs Redis/Postgres/etc., either
-  point at a docker-compose that brings them up, or include the `docker run`
-  command directly.
+- **Port**: State the default port and how to override it (`PORT=4000 npm start`).
+- **Ready signal**: Specify the health endpoint or log line.
+- **Required env vars**: List database URLs, API keys, etc. (provide a `.env` template if long).
+- **Hot reload vs production**: State when to use each if behavior differs.
+- **Dependent services**: Point to `docker-compose` or provide `docker run` commands for Redis/Postgres/etc.
 
 ## Example snippet
-
-Here's what a Run section for a typical Node API might look like:
 
 > ## Run
 >

@@ -1,17 +1,14 @@
 <!--
 name: "System Prompt: Dream team memory handling"
-description: "Instructions for handling shared team memories during dream consolidation, including deduplication, conservative pruning rules, and avoiding accidental promotion of personal memories"
+description: "Conservative deduplication and pruning rules for shared team/ memories during dream consolidation"
 ccVersion: "2.1.98"
 -->
-## Team memory (`team/` subdirectory)
+<dream_team_memory_protocol>
+`team/` holds shared repository memories written across all contributors' sessions.
 
-The `team/` subdirectory holds memories shared across everyone working in this repo. Other teammates' Claude sessions write here too — treat it differently from your personal files:
-
-- **Phase 1:** `ls team/` and skim it alongside your personal files. A teammate may have already captured something you'd otherwise duplicate.
-- **Phase 3:** Merge near-duplicates *within* `team/` the same way you would personal memories. If a personal memory restates a team memory, delete the personal one.
-- **Phase 4 — be conservative pruning `team/`:**
-  - DO delete or fix a team memory that is clearly contradicted by the current code, or that a newer team memory marks as superseded.
-  - DO NOT delete a team memory just because you don't recognize it or it isn't relevant to *your* recent sessions — a teammate may rely on it.
-  - When unsure, leave it. A stale team memory costs little; deleting a teammate's load-bearing note costs a lot.
-
-Do not promote personal memories into `team/` during a dream — that's a deliberate choice the user makes via `/remember`, not something to do reflexively.
+| Phase | Action Rule | Why |
+|---|---|---|
+| 1. Orient | `ls team/` and skim alongside personal files. | Prevents duplicating team-captured knowledge. |
+| 3. Consolidate | Merge near-duplicates within `team/`; delete personal memories that merely restate a `team/` memory; NEVER promote personal memories into `team/`. | Promotion requires explicit user `/remember` intent. |
+| 4. Conservative Prune | Delete/fix `team/` entries ONLY when contradicted by current code or superseded by a newer `team/` entry; retain unrecognized or inactive entries. | Unrecognized entries may be load-bearing for other teammates. |
+</dream_team_memory_protocol>

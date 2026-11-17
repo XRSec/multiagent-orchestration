@@ -1,30 +1,25 @@
 <!--
 name: "Agent Prompt: CLAUDE.md creation"
-description: "Instructs the /init command to analyze a codebase and create or improve a CLAUDE.md file"
+description: "Repository analysis and CLAUDE.md authoring protocol focusing on concrete build/test commands and cross-file architecture"
 ccVersion: "2.1.235"
 variables:
   - "IS_IMPORT_ENABLED_FN"
   - "IMPORT_OFFER_NOTE"
 -->
-Please analyze this codebase and create a CLAUDE.md file, which will be given to future instances of Claude Code to operate in this repository.
+<claude_md_authoring_protocol>
+Analyze the codebase to create or refine `CLAUDE.md` (if one exists, propose targeted improvements).
 
-What to add:
-1. Commands that will be commonly used, such as how to build, lint, and run tests. Include the necessary commands to develop in this codebase, such as how to run a single test.
-2. High-level code architecture and structure so that future instances can be productive more quickly. Focus on the "big picture" architecture that requires reading multiple files to understand.
+| Section / Rule | Specification | Why |
+|---|---|---|
+| 1. Core Commands | Document concrete build, lint, test, and single-test execution commands. | Enables immediate verification without guessing CLI flags. |
+| 2. Big-Picture Architecture | Synthesize cross-file architectural structure that requires multi-file reading to understand; omit easily discoverable file trees. | Accelerates cold-start orientation without duplicating `ls`. |
+| 3. Existing Rules & Docs | Incorporate key rules from `README.md`, `.cursor/rules/`, `.cursorrules`, and `.github/copilot-instructions.md`.${IS_IMPORT_ENABLED_FN()?` If OpenAI Codex (\`~/.codex/config.toml\` or \`./.codex/\`) or Gemini CLI (\`~/.gemini/settings.json\`, \`./.gemini/\`, or \`GEMINI.md\`) configs exist, ${IMPORT_OFFER_NOTE}`:""} | Consolidates existing repository conventions. |
+| 4. Anti-Bloat Invariant | Omit generic advice ("write unit tests", "never commit secrets"), repetition, or fabricated sections ("Tips for Development") absent from source files. | Keeps root context high-signal and token-lean. |
 
-Usage notes:
-- If there's already a CLAUDE.md, suggest improvements to it.
-- When you make the initial CLAUDE.md, do not repeat yourself and do not include obvious instructions like "Provide helpful error messages to users", "Write unit tests for all new utilities", "Never include sensitive information (API keys, tokens) in code or commits".
-- Avoid listing every component or file structure that can be easily discovered.
-- Don't include generic development practices.
-- If there are Cursor rules (in .cursor/rules/ or .cursorrules) or Copilot rules (in .github/copilot-instructions.md), make sure to include the important parts.
-- If there is a README.md, make sure to include the important parts.${IS_IMPORT_ENABLED_FN()?`
-- If you find an OpenAI Codex config (~/.codex/config.toml or ./.codex/) or a Gemini CLI config (~/.gemini/settings.json or ./.gemini/ or a GEMINI.md), ${IMPORT_OFFER_NOTE}`:""}
-- Do not make up information such as "Common Development Tasks", "Tips for Development", "Support and Documentation" unless this is expressly included in other files that you read.
-- Be sure to prefix the file with the following text:
-
+Required File Header:
 ```
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 ```
+</claude_md_authoring_protocol>

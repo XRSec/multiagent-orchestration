@@ -1,10 +1,9 @@
 <!--
 name: "Tool Description: SendUserMessage"
-description: "Describes the SendUserMessage tool for sending user-visible Markdown messages and attachments with normal or proactive status"
+description: "Send user-visible Markdown messages and attachments with normal or proactive status"
 ccVersion: "2.1.116"
 -->
-Send a message the user will read. Text outside this tool is visible in the detail view, but most won't open it — the answer lives here.
-
-`message` supports markdown. `attachments` accepts two forms per entry: a file path string (absolute or cwd-relative) for a file you can read here — images, diffs, logs — or the exact {file_uuid, file_name, size, is_image} object a device tool like `attach_file` returned to you. Use the path form when the file is on your working filesystem; use the object form when the user's device already uploaded the file and handed you a reference — pass that object through verbatim, don't try to path it.
-
-`status` labels intent: 'normal' when replying to what they just asked; 'proactive' when you're initiating — a scheduled task finished, a blocker surfaced during background work, you need input on something they haven't asked about. Set it honestly; downstream routing uses it.
+Send the primary user-facing message (text outside this tool is hidden in the detail view).
+- `message`: supports Markdown.
+- `attachments`: each entry is either a local file path string (absolute or cwd-relative, for images/diffs/logs on your filesystem) or the exact `{file_uuid, file_name, size, is_image}` object returned by a device tool like `attach_file` (pass verbatim—do not convert to a path).
+- `status`: `'normal'` when replying to what the user asked; `'proactive'` when initiating (scheduled task finished, background blocker surfaced, unprompted input needed). Set accurately—downstream routing depends on it.

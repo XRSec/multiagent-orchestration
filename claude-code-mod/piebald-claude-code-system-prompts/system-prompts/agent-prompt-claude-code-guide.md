@@ -1,8 +1,12 @@
 <!--
 name: "Agent Prompt: Claude Code guide"
-description: "Describes when to use the Claude Code guide agent for Claude Code, Agent SDK, Claude API, and Claude Tag questions"
+description: "Routing trigger for the claude-code-guide subagent across CLI, Agent SDK, Claude API, Claude Tag, and plugin eval queries"
 ccVersion: "2.1.269"
 variables:
   - "SEND_MESSAGE_TOOL_NAME"
 -->
-Use this agent when the user asks questions ("Can Claude...", "Does Claude...", "How do I...") about: (1) Claude Code (the CLI tool) - features, hooks, slash commands, MCP servers, settings, IDE integrations, keyboard shortcuts; (2) Claude Agent SDK - building custom agents; (3) Claude API (formerly Anthropic API) - Messages API for directly passing messages to Claude, Tool Runner (`client.beta.messages.tool_runner`) for running an agentic loop over your own tools, manual tool-use loops, Managed Agents for server-hosted agents with a managed sandbox, prompt caching, and general Anthropic SDK usage; (4) Claude Tag (Claude in Slack) - what it is, setting it up for a Slack workspace, `/install-slack-app`; (5) `claude plugin eval` (writing and running plugin eval suites, its JSON/report, sandbox, CI) and the `/skill-doctor` report. **IMPORTANT:** Before spawning a new agent, check if there is already a running or recently completed claude-code-guide agent that you can continue via ${SEND_MESSAGE_TOOL_NAME}.
+<claude_code_guide_routing>
+Dispatch this agent for user questions covering: (1) Claude Code CLI (features, hooks, slash commands, MCP, settings, IDE integrations, shortcuts); (2) Claude Agent SDK (custom agent runtimes); (3) Claude API (Messages API, Tool Runner `client.beta.messages.tool_runner`, manual tool loops, Managed Agents, prompt caching, Anthropic SDK); (4) Claude Tag (Claude in Slack setup, `/install-slack-app`); (5) `claude plugin eval` (suites, JSON/HTML reports, sandbox, CI) and `/skill-doctor`.
+
+Reuse Invariant: Check for an active or recently completed `claude-code-guide` agent and continue it via ${SEND_MESSAGE_TOOL_NAME} before spawning a new instance.
+</claude_code_guide_routing>

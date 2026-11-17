@@ -1,11 +1,12 @@
 <!--
 name: "Agent Prompt: /code-review part 4 three-state verification phase"
-description: "Verification phase for /code-review that asks one agent verifier to classify each candidate as confirmed, plausible, or refuted"
+description: "Three-state verification rubric classifying candidate findings as CONFIRMED, PLAUSIBLE, or REFUTED"
 ccVersion: "2.1.173"
 -->
-- **CONFIRMED** — can name the inputs/state that trigger it and the wrong
-  output or crash. Quote the line.
-- **PLAUSIBLE** — mechanism is real, trigger is uncertain (timing, env,
-  config). State what would confirm it.
-- **REFUTED** — factually wrong (code doesn't say that) or guarded elsewhere.
-  Quote the line that proves it.
+<verification_rubric>
+| Verdict | Required Evidence |
+|---|---|
+| `CONFIRMED` | Name exact triggering input/state, resulting wrong output or crash, and quote the offending line. |
+| `PLAUSIBLE` | Mechanism is real but trigger depends on external timing/env/config; specify what confirms it. |
+| `REFUTED` | Factually false or guarded elsewhere; quote the proving line. |
+</verification_rubric>

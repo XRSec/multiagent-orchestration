@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { hashAccountKey } from '@getpaseo/plugin/server/usage'
 import { AgyUsageSource, parseUsage, readLoggedEmail } from '../server/usage.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const groups = ['Gemini Models', 'Claude and GPT models'].map((name) => ({
   name,
@@ -96,7 +97,7 @@ test('email discovery uses recent logs, the latest match and bounded tails', asy
     }
     assert.equal(await readLoggedEmail(dir), 'retained-cli@example.test')
   } finally {
-    await rm(dir, { recursive: true, force: true })
+    await removeDir(dir)
   }
 })
 
@@ -291,7 +292,7 @@ test('usage discovers account scopes and maps windows, tier and failures through
     await writeFile(fixture, envelope(groups))
     assert.equal((await fresh.fetch(known.input)).status, 'available')
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
@@ -323,7 +324,7 @@ test('default usage launch adds no ACP directory flags and keeps the session HOM
       'json',
     ])
   } finally {
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -369,6 +370,6 @@ test('deleted workspaces fall back only when quota account paths are cwd indepen
       } else assert.equal(report.status, 'available')
     }
   } finally {
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })

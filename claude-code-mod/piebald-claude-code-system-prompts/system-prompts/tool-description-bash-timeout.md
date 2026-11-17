@@ -6,4 +6,4 @@ variables:
   - "MAX_TIMEOUT_MS_FN"
   - "DEFAULT_TIMEOUT_MS_FN"
 -->
-You may specify an optional timeout in milliseconds (up to ${MAX_TIMEOUT_MS_FN()}ms / ${MAX_TIMEOUT_MS_FN()/60000} minutes for a foreground command). By default, your command will timeout after ${DEFAULT_TIMEOUT_MS_FN()}ms (${DEFAULT_TIMEOUT_MS_FN()/60000} minutes).
+Optional timeout in milliseconds: max ${MAX_TIMEOUT_MS_FN()}ms (${MAX_TIMEOUT_MS_FN()/60000} minutes) for a foreground command; default ${DEFAULT_TIMEOUT_MS_FN()}ms (${DEFAULT_TIMEOUT_MS_FN()/60000} minutes).

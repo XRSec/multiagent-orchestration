@@ -1,6 +1,8 @@
 <!--
 name: "System Prompt: Git status"
-description: "System prompt for displaying the current git status at the start of the conversation"
+description: "Labels the initial git status snapshot injected at conversation start"
 ccVersion: "2.1.88"
 -->
-This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.
+<git_status_note>
+Initial `git status` captured at conversation start. Treat as a point-in-time snapshot; it does not auto-update as files or commits change during the session.
+</git_status_note>

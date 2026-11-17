@@ -6,4 +6,4 @@ variables:
   - "WINDOWS_LOCALHOST_ACCESS_NOTE"
   - "WINDOWS_LOCALHOST_WORKAROUNDS_NOTE"
 -->
-${WINDOWS_LOCALHOST_ACCESS_NOTE} ${WINDOWS_LOCALHOST_WORKAROUNDS_NOTE} For anything else that needs localhost, retry as described above for a sandbox-caused failure, and tell the user in the same message that the sandbox blocks localhost and that the retry runs without its protection.
+${WINDOWS_LOCALHOST_ACCESS_NOTE} ${WINDOWS_LOCALHOST_WORKAROUNDS_NOTE} For anything else requiring localhost, retry per the sandbox-failure rules above, and tell the user in the same message that the sandbox blocks localhost and the retry runs without sandbox protection.

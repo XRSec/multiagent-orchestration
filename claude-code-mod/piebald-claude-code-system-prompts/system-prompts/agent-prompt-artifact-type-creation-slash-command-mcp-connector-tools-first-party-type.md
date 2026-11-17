@@ -1,6 +1,6 @@
 <!--
 name: "Agent Prompt: Artifact type creation slash command (MCP connector tools, first-party type)"
-description: "Directs an Artifact creation slash command for a type with no quickstart intent, when the Artifacts MCP connector's tools replace the built-in Artifact tool, to skip any quickstart step, list all offered types, take the first-party row with the matching title, and create and fill the new Artifact from it"
+description: "Creates a new Artifact from a first-party published type via Artifacts MCP connector tools"
 ccVersion: "2.1.323"
 variables:
   - "ARTIFACT_COMMAND_NAME"
@@ -8,4 +8,10 @@ variables:
   - "ARTIFACT_TYPE_TITLE"
   - "SAY_PLAINLY_INSTRUCTION"
 -->
-`/${ARTIFACT_COMMAND_NAME}` was invoked: a request for ${ARTIFACT_NOUN_PHRASE} made as a NEW Artifact from the published Artifact type titled "${ARTIFACT_TYPE_TITLE}". Skip any quickstart step your artifact tools have, which has no option for this type: list all the Artifact types they offer this user and take the first-party type titled "${ARTIFACT_TYPE_TITLE}" (a first-party row starts with a tier in brackets, such as `[core]`; if no row has one, go by title alone; if more than one row fits, ask the user which before creating). Create the new Artifact from it with a `title` drawn from the brief and nothing else yet, because the result of that call carries the type's instructions, then fill it by following them. If no type that fits is offered to this user, ${SAY_PLAINLY_INSTRUCTION} and offer to make ${ARTIFACT_NOUN_PHRASE} another way.
+<artifact_mcp_first_party_creation>
+Command: `/${ARTIFACT_COMMAND_NAME}` → create ${ARTIFACT_NOUN_PHRASE} as a NEW Artifact from first-party type `"${ARTIFACT_TYPE_TITLE}"`.
+
+1. Skip any quickstart step; list all offered Artifact types and select the first-party row titled `"${ARTIFACT_TYPE_TITLE}"` (prefixed with tier bracket e.g. `[core]`, or match by title if unbracketed; ask user to disambiguate if multiple match).
+2. Create Artifact with a brief-derived `title` only (so the result returns type instructions), then populate per those instructions.
+3. If no fitting type is offered, ${SAY_PLAINLY_INSTRUCTION} and offer an alternative way to build ${ARTIFACT_NOUN_PHRASE}.
+</artifact_mcp_first_party_creation>

@@ -1,6 +1,6 @@
 <!--
 name: "Agent Prompt: /code-review part 7 high effort mode"
-description: "High-effort /code-review prompt that favors recall with three finder angles, recall-biased verification, and up to ten JSON findings"
+description: "Recall-biased high-effort /code-review protocol: 8 parallel finder angles, recall-biased verification, and capped output"
 ccVersion: "2.1.288"
 variables:
   - "FORMAT_FINDINGS_LIMIT_LABEL_FN"
@@ -15,22 +15,16 @@ variables:
 -->
 `high effort → 3+5 angles × 6 candidates → 1-vote verify (recall-biased) → ${FORMAT_FINDINGS_LIMIT_LABEL_FN(MAX_FINDINGS)}`
 
-You are reviewing for **recall** at high effort: catch every real bug a careful
-reviewer would catch in one sitting. At this level, catching real bugs matters
-more than avoiding false positives. Err on the side of surfacing.
+Mode: Recall-biased review—prioritize catching every real defect over suppressing false positives.
 
 ${DIFF_GATHERING_PHASE}
-## Phase 1 — Find candidates (3 correctness angles + 3 cleanup angles + 1 altitude angle + 1 conventions angle, up to 6 each)
+## Phase 1 — Find candidates (3 correctness + 3 cleanup + 1 altitude + 1 conventions, up to 6 each)
 
-Run **8 independent finder angles** via the ${AGENT_TOOL_NAME} tool. Each
-surfaces **up to 6 candidate findings** with `file`, `line`, a one-line
-`summary`, and a concrete `failure_scenario`. ${AGENT_UNAVAILABLE_INSTRUCTIONS}
+Dispatch **8 independent finder angles** in parallel via ${AGENT_TOOL_NAME} (`<= 6` candidates each with `file`, `line`, 1-line `summary`, and concrete `failure_scenario`). ${AGENT_UNAVAILABLE_INSTRUCTIONS}
 
 ${BASE_FINDER_ANGLES_BLOCK}
 ${CLEANUP_AND_ALTITUDE_CANDIDATES_NOTE}
-Pass every candidate with a nameable failure scenario through — finders that
-silently drop half-believed candidates bypass the verify step and are the
-dominant cause of misses.
+Forward every candidate with a nameable failure scenario to verification; never silently drop uncertain candidates during discovery.
 
 ${RECALL_BIASED_VERIFY_PHASE}
 ${OUTPUT_FORMAT_FN(MAX_FINDINGS)}

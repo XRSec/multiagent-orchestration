@@ -1,6 +1,9 @@
 <!--
 name: "Tool Description: Navigate"
-description: "Describes the browser navigate tool for opening URLs and moving forward or backward in tab history"
+description: "Browser navigate tool for opening URLs and moving forward or backward in tab history"
 ccVersion: "2.1.268"
 -->
-Navigate to a URL, or go forward/back in browser history. tabId may be omitted for URL navigation when calling navigate STANDALONE (not inside browser_batch): tabs_context_mcp{createIfEmpty:true} is called for you and the first tab in the session's group is navigated — its result is appended to this call's output so you have the tab list and ids for subsequent calls. Inside browser_batch, navigate (and other tools that act on a page) requires an explicit tabId. Pass an explicit tabId when you need a specific tab or when the session's group has multiple tabs whose state you must preserve. tabId is required for url:"back"/"forward". 
+Navigate to a URL or move forward/back in browser history.
+
+- **Standalone URL navigation** (not inside `browser_batch`): `tabId` may be omitted; `tabs_context_mcp{createIfEmpty:true}` runs automatically, navigates the first tab in the session's group, and appends the tab list and IDs to output.
+- **Explicit `tabId` required**: Inside `browser_batch`, for `url:"back"`/`"forward"`, when targeting a specific tab, or when preserving state across multiple tabs in the session's group.

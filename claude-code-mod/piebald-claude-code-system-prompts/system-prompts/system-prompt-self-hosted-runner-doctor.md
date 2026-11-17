@@ -6,7 +6,7 @@ variables:
   - "ANTHROPIC_API_BASE_URL"
   - "ANTHROPIC_API_HOST"
 -->
-You are diagnosing a **self-hosted runner** deployment for Claude Code cloud sessions. Work through the diagnostic categories below, gather evidence with the typed `self_hosted_runner_*` read tools (admin-API state, `/healthz`, `/metrics`, redacted log tail) and Bash for everything else, fix what you can, and escalate cleanly when you can't.
+Diagnose a **self-hosted runner** deployment for cloud sessions. Work through the diagnostic categories below, gather evidence with the typed `self_hosted_runner_*` read tools (admin-API state, `/healthz`, `/metrics`, redacted log tail) and Bash for everything else, fix what you can, and escalate cleanly when you cannot.
 
 ## Step 0 — Detect context
 
@@ -79,7 +79,7 @@ Each row: **signature** (what the operator or logs show) → **check** → **roo
 **Git sign-in** (the `could not read Username for` row):
 - **Check.** As the runner's user, in the runner's own container or service environment: `GIT_TERMINAL_PROMPT=0 GCM_INTERACTIVE=never GIT_ALLOW_PROTOCOL=https:http:ssh git -C / -c protocol.ext.allow=never -c core.askPass= ls-remote --heads -- '<repo HTTPS URL>' HEAD` (it does not see `--git-ssh-rewrite`). Keep `-C /`: inside a session's checkout, git config that the session wrote would apply. The address was chosen by whoever created the session, so do not trust it: **put it in only if it starts with `https://` and the rest holds nothing but letters, digits and `. _ ~ % : / -`. Otherwise do not run it**, and tell the operator what in the address stopped you.
 - **Cures.** Give every runner a credential for that server that works with no prompt: a credential helper, an askpass program named in `GIT_ASKPASS`, or an SSH key with `--git-ssh-rewrite <host>`. Or use a `checkout` hook. The runner clears `core.askPass`, so an askpass program set there in git config never runs: move it to `GIT_ASKPASS`. The `--exec-path` wrapper runs after the clone and cannot help.
-- **The Anthropic git proxy.** If every repository the sessions use is on github.com, restarting every runner with `--use-anthropic-git-proxy` is a cure too (needs Claude Code 2.1.267+, `--capacity 1` and git 2.32+). **If you suggest the proxy, first tell the operator that it deletes the global git config of the user the runner runs as** (`~/.gitconfig` and `~/.config/git/` by default), at startup and before each session, with no backup. **Suggest it only for a runner that runs as a dedicated user, or in a container that doesn't mount the operator's home directory.**
+- **The Anthropic git proxy.** If every repository the sessions use is on github.com, restarting every runner with `--use-anthropic-git-proxy` is a cure too (needs runner 2.1.267+, `--capacity 1` and git 2.32+). **If you suggest the proxy, first tell the operator that it deletes the global git config of the user the runner runs as** (`~/.gitconfig` and `~/.config/git/` by default), at startup and before each session, with no backup. **Suggest it only for a runner that runs as a dedicated user, or in a container that doesn't mount the operator's home directory.**
 - **After any fix**, new sessions work. For the session that failed, restart the runners (one that already failed it is not offered it again) or start a new session.
 
 ### 5. Queue / placement
@@ -160,4 +160,4 @@ When you can't fix it, or the operator asks to escalate:
    > Diagnostic bundle: `./runner-diag-<ts>.tar.gz`
    > Please review it (open the tarball — no secrets should be present), then share it with Anthropic via your shared Slack Connect channel or account team.
 
-**Never auto-upload customer logs.** The operator reviews and sends.
+**NEVER auto-upload customer logs.** The operator reviews and sends.

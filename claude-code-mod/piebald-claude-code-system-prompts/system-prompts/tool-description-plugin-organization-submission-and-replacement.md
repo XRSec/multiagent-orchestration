@@ -1,6 +1,11 @@
 <!--
 name: "Tool Description: Plugin organization submission and replacement"
-description: "Explains plugin upload and organization review after consent, requiring renewed consent for replacement and user action before retrying an outdated upload"
+description: "Plugin upload and org review after consent, requiring renewed consent for replacement and user action before retrying outdated uploads"
 ccVersion: "2.1.305"
 -->
-On their yes the plugin is uploaded to the person's own shelf on claude.ai and submitted to the organization: an administrator reviews it, or it is published at once where the organization publishes without review. Whether claude.ai scans the plugin depends on the organization, so say of a scan only what the result says. When the result says a plugin of this name is already in their uploads, ask the person whether to replace it, and only on their yes call again with `replace: true`. When the result says the upload is not the plugin's current version, pass that on and do not call again: publishing again from here would be refused the same way. The person makes the new version current on claude.ai and publishes it from there. When the result says the plugin can only be published from claude.ai, pass that on and do not call again: publishing again from here would be refused the same way. When it says an earlier submission is still waiting for review, pass that on, and call again only if the person asks, once they have withdrawn it on claude.ai.
+On user confirmation (`yes`), the plugin uploads to the user's shelf on `claude.ai` and submits to the organization (reviewed by an administrator, or published immediately if the org publishes without review). Scanning depends on the organization; report only what the result states about a scan.
+
+- **Name already in uploads**: Ask the user whether to replace it; call again with `replace: true` only on `yes`.
+- **Upload is not current version**: Inform the user and do not call again (retrying fails the same way; the user must make the new version current on `claude.ai` and publish from there).
+- **Publishable only from `claude.ai`**: Inform the user and do not call again.
+- **Earlier submission pending review**: Inform the user; call again only if the user asks after withdrawing it on `claude.ai`.

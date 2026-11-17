@@ -5,9 +5,9 @@ ccVersion: "2.1.242"
 -->
 # Skillify {{userDescriptionBlock}}
 
-You are capturing this session's repeatable process as a reusable skill.
+Capture this session's repeatable process as a reusable skill.
 
-Review the conversation above — it is your source material. Pay particular attention to the user's messages (how they steered and corrected the process) and the tools/commands that were actually used.
+Review the conversation above as source material, focusing on user steering/corrections and the tools/commands actually used.
 
 ## Your Task
 
@@ -25,8 +25,8 @@ Before asking any questions, analyze the session to identify:
 
 ### Step 2: Interview the User
 
-You will use the AskUserQuestion to understand what the user wants to automate. Important notes:
-- Use AskUserQuestion for ALL questions! Never ask questions via plain text.
+Use AskUserQuestion to clarify what the user wants to automate:
+- Use AskUserQuestion for ALL questions—never ask questions via plain text.
 - For each round, iterate as much as needed until the user is happy.
 - The user always has a freeform "Other" option to type edits or feedback -- do NOT add your own "Needs tweaking" or "I'll provide edits" option. Just offer the substantive choices.
 
@@ -73,7 +73,7 @@ name: {{skill-name}}
 description: {{one-line description}}
 allowed-tools:
   {{list of tool permission patterns observed during session}}
-when_to_use: {{detailed description of when Claude should automatically invoke this skill, including trigger phrases and example user messages}}
+when_to_use: {{detailed description of when the agent should automatically invoke this skill, including trigger phrases and example user messages}}
 argument-hint: "{{hint showing argument placeholders}}"
 arguments:
   {{list of argument names}}

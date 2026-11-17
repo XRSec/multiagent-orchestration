@@ -1,56 +1,46 @@
 <!--
 name: "Skill: /init CLAUDE.md and skill setup (new version)"
-description: "A comprehensive onboarding flow for setting up CLAUDE.md and related skills/hooks in the current repository, including codebase exploration, user interviews, and iterative proposal refinement"
+description: "Onboarding workflow to set up CLAUDE.md, skills, and hooks via codebase exploration, interviews, and proposal refinement"
 ccVersion: "2.1.235"
 variables:
   - "IS_IMPORT_ENABLED_FN"
   - "IMPORT_OFFER_NOTE"
 -->
-Set up a minimal CLAUDE.md (and optionally skills and hooks) for this repo. CLAUDE.md is loaded into every Claude Code session, so it must be concise — only include what Claude would get wrong without it.
+Set up a minimal `CLAUDE.md` (and optionally skills and hooks) for this repo. `CLAUDE.md` loads into every session, so include only what you would get wrong without it.
 
 ## Phase 0: Check for an existing CLAUDE.md
 
-Before asking anything, check if CLAUDE.md already exists at the project root (just `cat ./CLAUDE.md` — only the project-root file counts; don't explore the tree yet). This branches Phase 1.
+Run `cat ./CLAUDE.md` only (project-root file only; do not explore the tree yet). This branches Phase 1.
 
 ## Phase 1: Ask what to set up
 
-Use AskUserQuestion to find out what the user wants. Which question you ask depends on Phase 0. Call AskUserQuestion with **only Q1** — do NOT include Q2 in the same call. Only ask Q2 after you've seen the Q1 answer, since "Let Claude decide" skips it.
-
-Before the first question, print this primer as normal assistant text so first-time users know the terms:
+Before the first `AskUserQuestion`, print this primer as normal assistant text:
 
 > Quick context:
-> - **CLAUDE.md** files give Claude persistent instructions for a project, your personal workflow, or your organization. Claude reads them at the start of every session.
-> - **Skills** are packaged instructions Claude invokes automatically when a task matches, or that you trigger with a slash command (e.g. `/frontend-design`, `/commit-push-pr`).
-> - **Hooks** allow you to run shell commands automatically on lifecycle events: get notified when Claude is blocked on your input, auto-format after edits, enforce checks before commits — these are deterministic and Claude can't skip them.
+> - **CLAUDE.md** files give persistent instructions for a project, personal workflow, or organization, read at the start of every session.
+> - **Skills** are packaged instructions invoked automatically on task match, or triggered with a slash command (e.g. `/frontend-design`, `/commit-push-pr`).
+> - **Hooks** run shell commands automatically on lifecycle events (notify when blocked on input, auto-format after edits, enforce pre-commit checks) — deterministic and cannot be skipped.
 
-**If CLAUDE.md already exists**, ask:
-- "I found an existing CLAUDE.md. What would you like to do?"
-  Options: "Review and improve it" | "Leave it, set up other things" | "Start fresh (replace it)"
-  Description for improve: "Explore what's changed in the codebase and propose targeted edits to the existing file."
-  Description for leave it: "Skip CLAUDE.md. Go straight to skills and hooks."
-  Description for start fresh: "Discard it and write new file(s)."
-  Routing:
-  - "Review and improve" → skip Q1/Q2; explore (Phase 2), ask the single Phase 3-lite question, then go to Phase 4's diff-proposal, then Phase 8.
-  - "Leave it" → skip Q1, ask Q2 (rename its fourth option to "Neither — skip setup"). If they pick "Neither — skip setup", jump straight to Phase 8 with: "Nothing to set up — your CLAUDE.md is unchanged." Otherwise: Phase 2 → Phase 3 proposal (no gap-fill interview) → Phases 6/7 per queue → Phase 8. For Phase 7's hook target-file default, treat this path as "project" (`.claude/settings.json`).
-  - "Start fresh" → continue to Q1 below as if no file existed.
+Call `AskUserQuestion` with **only Q1** (do not include Q2 in the same call; `"Let the agent decide"` skips Q2).
 
-**If no CLAUDE.md exists** (or the user picked "Start fresh"), ask:
-- Q1: "Which CLAUDE.md files should /init set up?"
-  Options: "Project CLAUDE.md" | "Personal CLAUDE.local.md" | "Both project + personal" | "Let Claude decide"
-  Description for project: "Team-shared instructions checked into source control — architecture, coding standards, common workflows."
-  Description for personal: "Your private preferences for this project (gitignored, not shared) — your role, sandbox URLs, preferred test data, workflow quirks."
-  Description for Let Claude decide: "Fastest path — project CLAUDE.md plus whatever skills or hooks fit this repo. No follow-on questions; you'll approve everything before it's written."
-  If the user picks "Let Claude decide", skip Q2 — treat it as project CLAUDE.md with no skills/hooks constraint.
+- **If `CLAUDE.md` already exists**, ask: `"I found an existing CLAUDE.md. What would you like to do?"`
+  - `"Review and improve it"` — Explore codebase changes and propose targeted edits. Routing: skip Q1/Q2 → Phase 2 → single Phase 3-lite question → Phase 4 diff-proposal → Phase 8.
+  - `"Leave it, set up other things"` — Skip `CLAUDE.md`; go straight to skills and hooks. Routing: skip Q1, ask Q2 (rename 4th option to `"Neither — skip setup"`). If `"Neither — skip setup"` → Phase 8 (`"Nothing to set up — your CLAUDE.md is unchanged."`). Else: Phase 2 → Phase 3 proposal (no gap-fill interview) → Phases 6/7 per queue → Phase 8 (Phase 7 hook target default = `.claude/settings.json`).
+  - `"Start fresh (replace it)"` — Discard it and write new file(s). Routing: continue to Q1 below.
 
-- Q2: "Also set up skills and hooks?"
-  Options: "Skills + hooks" | "Skills only" | "Hooks only" | "Neither, just CLAUDE.md"
-  Description for skills: "Packaged instructions Claude invokes automatically when a task matches, or that you trigger with a slash command (e.g. `/frontend-design`, `/commit-push-pr`)."
-  Description for hooks: "Deterministic shell commands that run on tool events (e.g., format after every edit). Claude can't skip them."
-  Q2 is a hint, not a filter — Phase 3 proposes what fits the codebase and notes any deviation.
+- **If no `CLAUDE.md` exists** (or `"Start fresh"`):
+  - **Q1:** `"Which CLAUDE.md files should /init set up?"`
+    - `"Project CLAUDE.md"` — Team-shared instructions checked into source control (architecture, coding standards, workflows).
+    - `"Personal CLAUDE.local.md"` — Private project preferences (gitignored: role, sandbox URLs, test data, workflow quirks).
+    - `"Both project + personal"`
+    - `"Let the agent decide"` — Fastest path: project `CLAUDE.md` plus fitting skills/hooks; no follow-on questions (approve before writing). Skips Q2; treat as project `CLAUDE.md` with no skills/hooks constraint.
+  - **Q2:** `"Also set up skills and hooks?"`
+    - `"Skills + hooks"` | `"Skills only"` | `"Hooks only"` | `"Neither, just CLAUDE.md"`
+    - Q2 is a hint, not a filter — Phase 3 proposes what fits the codebase and notes any deviation.
 
 ## Phase 2: Explore the codebase
 
-Launch a subagent to survey the codebase, and ask it to read key files to understand the project: manifest files (package.json, Cargo.toml, pyproject.toml, go.mod, pom.xml, etc.), README, Makefile/build configs, CI config, existing CLAUDE.md, .claude/rules/, AGENTS.md, .cursor/rules or .cursorrules, .github/copilot-instructions.md, .devin/rules/ or .windsurf/rules/ or .windsurfrules, .clinerules, .mcp.json.
+Launch a subagent to survey key files: manifests (`package.json`, `Cargo.toml`, `pyproject.toml`, `go.mod`, `pom.xml`, etc.), `README`, `Makefile`/build configs, CI config, existing `CLAUDE.md`, `.claude/rules/`, `AGENTS.md`, `.cursor/rules`, `.cursorrules`, `.github/copilot-instructions.md`, `.devin/rules/`, `.windsurf/rules/`, `.windsurfrules`, `.clinerules`, `.mcp.json`.
 ${IS_IMPORT_ENABLED_FN()?`
 Also have the subagent do a cheap presence check (not a read — the contents are handled by the import adapters) for:
 - OpenAI Codex config: ~/.codex/config.toml or ./.codex/
@@ -59,180 +49,120 @@ Also have the subagent do a cheap presence check (not a read — the contents ar
 Record which of these exist — Phase 8 uses it.
 `:""}
 Detect:
-- Build, test, and lint commands (especially non-standard ones)
+- Non-standard build, test, and lint commands
 - Languages, frameworks, and package manager
 - Project structure (monorepo with workspaces, multi-module, or single project)
-- Code style rules that differ from language defaults
+- Code style rules differing from language defaults
 - Non-obvious gotchas, required env vars, or workflow quirks
-- Existing .claude/skills/ and .claude/rules/ directories
-- Formatter configuration (prettier, biome, ruff, black, gofmt, rustfmt, or a unified format script like `npm run format` / `make fmt`)
-- Git worktree usage: run `git worktree list` to check if this repo has multiple worktrees (only relevant if the user wants a personal CLAUDE.local.md)
+- Existing `.claude/skills/` and `.claude/rules/` directories
+- Formatter config (`prettier`, `biome`, `ruff`, `black`, `gofmt`, `rustfmt`, or unified script like `npm run format` / `make fmt`)
+- Git worktree usage (`git worktree list`, relevant only if setting up `CLAUDE.local.md`)
 
-Note what you could NOT figure out from code alone — these become interview questions.
+Note what cannot be determined from code alone — these become interview questions.
 
 ## Phase 3: Fill in the gaps
 
-Use AskUserQuestion to gather what you still need to write good CLAUDE.md files and skills. Ask only things the code can't answer.
+Use `AskUserQuestion` only for what code cannot answer.
 
-If the user chose project CLAUDE.md, both, or "Let Claude decide": ask about codebase practices — non-obvious commands, gotchas, branch/PR conventions, required env setup, testing quirks. Skip things already in README or obvious from manifest files. Do not mark any options as "recommended" — this is about how their team works, not best practices.
+- **Project `CLAUDE.md`, both, or `"Let the agent decide"`:** Ask about codebase practices (non-obvious commands, gotchas, branch/PR conventions, required env setup, testing quirks). Skip items already in `README` or obvious from manifests. Do not mark any option `"recommended"`.
+- **Personal `CLAUDE.local.md` or both:** Ask about the user, not the codebase (do not mark any option `"recommended"`):
+  - Role on the team (e.g. `"backend engineer"`, `"data scientist"`, `"new hire onboarding"`)
+  - Familiarity with codebase and languages/frameworks (to calibrate explanation depth)
+  - Personal sandbox URLs, test accounts, API key paths, or local setup details
+  - Only if Phase 2 found multiple git worktrees: ask whether worktrees are nested inside the main repo (e.g. `.claude/worktrees/<name>/` — upward walk finds main repo's `CLAUDE.local.md` automatically) or sibling/external (e.g. `../myrepo-feature/` — store personal content in `~/.claude/<project-name>-instructions.md` and put a 1-line `CLAUDE.local.md` stub `@~/.claude/<project-name>-instructions.md` per worktree; NEVER put this import in project `CLAUDE.md`).
+  - Communication preferences (e.g. `"be terse"`, `"always explain tradeoffs"`, `"don't summarize at the end"`)
+- **`"Review and improve"` path:** Ask one question: `"Has anything changed about how the team works since this CLAUDE.md was written (new conventions, commands, gotchas)?"` (`"No, nothing's changed"` | `"Yes — let me describe"` → free text if Yes), then skip to Phase 4.
 
-If the user chose personal CLAUDE.local.md or both: ask about them, not the codebase. Do not mark any options as "recommended" — this is about their personal preferences, not best practices. Examples of questions:
-  - What's their role on the team? (e.g., "backend engineer", "data scientist", "new hire onboarding")
-  - How familiar are they with this codebase and its languages/frameworks? (so Claude can calibrate explanation depth)
-  - Do they have personal sandbox URLs, test accounts, API key paths, or local setup details Claude should know?
-  - Only if Phase 2 found multiple git worktrees: ask whether their worktrees are nested inside the main repo (e.g., `.claude/worktrees/<name>/`) or siblings/external (e.g., `../myrepo-feature/`). If nested, the upward file walk finds the main repo's CLAUDE.local.md automatically — no special handling needed. If sibling/external, the personal content should live in a home-directory file (e.g., `~/.claude/<project-name>-instructions.md`) and each worktree gets a one-line CLAUDE.local.md stub that imports it: `@~/.claude/<project-name>-instructions.md`. Never put this import in the project CLAUDE.md — that would check a personal reference into the team-shared file.
-  - Any communication preferences? (e.g., "be terse", "always explain tradeoffs", "don't summarize at the end")
+**Synthesize proposal** from Phase 2 + gap-fill answers:
+- **Hook:** deterministic, fast, per-edit shell command (formatting, linting a changed file).
+- **Skill:** on-demand multi-step workflow (`/verify`, `/deploy-staging`, session reports).
+- **CLAUDE.md note:** guidance shaping behavior without enforcement (conventions, communication style).
 
-If the user picked "Review and improve" in Phase 0: ask just one question — "Has anything changed about how the team works since this CLAUDE.md was written (new conventions, commands, gotchas)?" with options "No, nothing's changed" | "Yes — let me describe". If they pick Yes, ask what changed (free text) before continuing. Then skip to Phase 4.
+Include Q1 `CLAUDE.md` file(s) first with 1-line summaries, then skills/hooks/notes. On `"Leave it"`, omit `CLAUDE.md` bullets/notes. On `"Start fresh"` with Q1 = personal-only, note the existing project `CLAUDE.md` stays untouched. Note any Q2 deviation in one line at the top.
 
-**Synthesize a proposal from Phase 2 findings and the gap-fill answers.** For each item, pick the artifact type that fits the evidence:
-
-  - **Hook** — deterministic, fast, per-edit shell command (formatting, linting a changed file).
-  - **Skill** — on-demand multi-step workflow (`/verify`, `/deploy-staging`, session reports).
-  - **CLAUDE.md note** — guidance that shapes behavior but isn't enforced (conventions, communication style).
-
-Include the CLAUDE.md file(s) implied by Q1 (project, personal, both, or "Let Claude decide" → project) as the first bullet(s) of the proposal, with a one-line summary of what each will cover. Then list skills/hooks/notes. On the "Leave it" path, omit CLAUDE.md file bullets and notes (Phase 4 won't run). On the "Start fresh" path with Q1 = personal-only, add a bullet noting the existing project CLAUDE.md will be left untouched (they chose not to replace it with a project file).
-
-Propose what fits. If the user gave a Q2 hint and your proposal deviates from it (e.g. they said "Hooks only" but nothing hook-shaped exists), say so in one line at the top of the proposal and propose the better-fitting artifacts anyway.
-
-**Print the proposal as normal assistant text**, one bullet per item:
-
+Print the proposal as normal text:
 > Here's what I'd set up:
 > • **[Artifact type: file/hook/skill/note]** — [one-line description]
 > • …
 
-Then call AskUserQuestion with a simple question ("Does this look right?") and options like "Looks good — proceed" | "Drop the hook" | "Drop the skill". Don't use the `preview` field — the proposal is already visible in scrollback. The tool auto-adds an "Other" option for custom tweaks.
+Call `AskUserQuestion` (`"Does this look right?"`, e.g. `"Looks good — proceed"` | `"Drop the hook"` | `"Drop the skill"`; omit `preview` field).
 
-**Build the preference queue** from the accepted proposal. Each entry: {type: hook|skill|note, description, target file, any Phase-2-sourced details like the actual test/format command}. Phase 6 and Phase 7's hooks sub-bullet consume this queue; Phases 4/5 gate on the approved proposal's file bullets directly; Phase 7's GitHub-CLI and linting checks run regardless of queue contents.
+**Build preference queue** from accepted proposal: `{type: hook|skill|note, description, target file, Phase-2-sourced details}`. Phases 6 and 7's hooks sub-bullet consume this queue; Phases 4/5 gate on approved file bullets; Phase 7's GitHub-CLI and linting checks always run.
 
-## Phase 4: Write CLAUDE.md (if the approved proposal includes it, or on the "Review and improve" path)
+## Phase 4: Write CLAUDE.md
 
-Write a minimal CLAUDE.md at the project root. Every line must pass this test: "Would removing this cause Claude to make mistakes?" If no, cut it.
+Runs if approved or on `"Review and improve"`. Every line must pass: `"Would removing this cause mistakes?"` If no, cut it.
 
-If the user picked "Review and improve it" in Phase 0: don't write fresh — read the existing file, compare against Phase 2 findings and the Phase 3-lite answer, and propose specific additions/removals as diffs with a one-line reason for each. The existing file is the baseline; your job is to catch what's missing, outdated, or bloated. After printing the diffs, call AskUserQuestion ("Apply these edits?" with options like "Apply all" | "Let me pick which" | "Skip — leave it as is") before writing anything.
+- **`"Review and improve"`:** Read existing file, compare against Phase 2 + Phase 3-lite, propose specific additions/removals as diffs with 1-line reasons. Confirm via `AskUserQuestion` (`"Apply these edits?"`: `"Apply all"` | `"Let me pick which"` | `"Skip — leave it as is"`) before writing.
+- Consume `CLAUDE.md`-targeted `note` entries from the Phase 3 queue as concise lines in relevant sections (leave personal notes for Phase 5).
 
-**Consume `note` entries from the Phase 3 preference queue whose target is CLAUDE.md** (team-level notes) — add each as a concise line in the most relevant section. These are the behaviors the user wants Claude to follow but didn't need guaranteed (e.g., "propose a plan before implementing", "explain the tradeoffs when refactoring"). Leave personal-targeted notes for Phase 5.
+| Include | Exclude |
+|---|---|
+| Non-guessable build/test/lint commands (non-standard scripts, flags, sequences) | File-by-file structure or component lists |
+| Code style rules differing from language defaults (e.g. `"prefer type over interface"`) | Standard language conventions |
+| Testing instructions and quirks (e.g. `pytest -k 'test_name'`) | Generic advice (`"write clean code"`, `"handle errors"`) |
+| Repo etiquette (branch naming, PR conventions, commit style) | Detailed API docs / long references (use `@path/to/import`) |
+| Required env vars or setup steps | Frequently changing info (reference source with `@path/to/import`) |
+| Non-obvious gotchas or architectural decisions | Long tutorials/walkthroughs (move to `@path/to/import` or skill) |
+| Key parts from existing AI configs (`AGENTS.md`, `.cursor/rules`, `.cursorrules`, `.github/copilot-instructions.md`, `.devin/rules/`, `.windsurf/rules/`, `.windsurfrules`, `.clinerules`) | Commands obvious from manifests (`npm test`, `cargo test`, `pytest`) |
 
-Include:
-- Build/test/lint commands Claude can't guess (non-standard scripts, flags, or sequences)
-- Code style rules that DIFFER from language defaults (e.g., "prefer type over interface")
-- Testing instructions and quirks (e.g., "run single test with: pytest -k 'test_name'")
-- Repo etiquette (branch naming, PR conventions, commit style)
-- Required env vars or setup steps
-- Non-obvious gotchas or architectural decisions
-- Important parts from existing AI coding tool configs if they exist (AGENTS.md, .cursor/rules, .cursorrules, .github/copilot-instructions.md, .devin/rules/, .windsurf/rules/, .windsurfrules, .clinerules)
-
-Exclude:
-- File-by-file structure or component lists (Claude can discover these by reading the codebase)
-- Standard language conventions Claude already knows
-- Generic advice ("write clean code", "handle errors")
-- Detailed API docs or long references — use `@path/to/import` syntax instead (e.g., `@docs/api-reference.md`) to inline content on demand without bloating CLAUDE.md
-- Information that changes frequently — reference the source with `@path/to/import` so Claude always reads the current version
-- Long tutorials or walkthroughs (move to a separate file and reference with `@path/to/import`, or put in a skill)
-- Commands obvious from manifest files (e.g., standard "npm test", "cargo test", "pytest")
-
-Be specific: "Use 2-space indentation in TypeScript" is better than "Format code properly."
-
-Do not repeat yourself and do not make up sections like "Common Development Tasks" or "Tips for Development" — only include information expressly found in files you read.
+Be specific (`"Use 2-space indentation in TypeScript"`, not `"Format code properly"`). Do not repeat yourself or invent sections like `"Common Development Tasks"` or `"Tips for Development"` — include only facts from read files.
 
 Prefix the file with:
-
 ```
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 ```
 
-For projects with multiple concerns, suggest organizing instructions into `.claude/rules/` as separate focused files (e.g., `code-style.md`, `testing.md`, `security.md`). These are loaded automatically alongside CLAUDE.md and can be scoped to specific file paths using `paths` frontmatter.
+For multi-concern projects, suggest `.claude/rules/` focused files (`code-style.md`, `testing.md`, `security.md`) optionally scoped with `paths` frontmatter. For monorepos/multi-module projects, mention subdirectory `CLAUDE.md` files (loaded when working in those directories) and offer to create them.
 
-For projects with distinct subdirectories (monorepos, multi-module projects, etc.): mention that subdirectory CLAUDE.md files can be added for module-specific instructions (they're loaded automatically when Claude works in those directories). Offer to create them if the user wants.
+## Phase 5: Write CLAUDE.local.md
 
-## Phase 5: Write CLAUDE.local.md (if the approved proposal includes it)
+Runs if approved. Write a minimal `CLAUDE.local.md` at project root and add `CLAUDE.local.md` to `.gitignore`.
+- Consume personal-targeted `note` entries from Phase 3 queue.
+- Include: user's role and codebase familiarity, personal sandbox URLs/test accounts/local setup, personal workflow or communication preferences. Keep short.
+- Sibling/external worktrees: write personal content to `~/.claude/<project-name>-instructions.md` and make `CLAUDE.local.md` a 1-line stub `@~/.claude/<project-name>-instructions.md` (user copies stub to each worktree; NEVER put in project `CLAUDE.md`). Nested worktrees (`.claude/worktrees/`) need no special handling.
+- If `CLAUDE.local.md` exists: read it, propose additions, do NOT silently overwrite.
 
-Write a minimal CLAUDE.local.md at the project root. This file is automatically loaded alongside CLAUDE.md. After creating it, add `CLAUDE.local.md` to the project's .gitignore so it stays private.
+## Phase 6: Suggest and create skills
 
-**Consume `note` entries from the Phase 3 preference queue whose target is CLAUDE.local.md** (personal-level notes) — add each as a concise line. If the user chose personal-only in Phase 1, this is the sole consumer of note entries.
-
-Include:
-- The user's role and familiarity with the codebase (so Claude can calibrate explanations)
-- Personal sandbox URLs, test accounts, or local setup details
-- Personal workflow or communication preferences
-
-Keep it short — only include what would make Claude's responses noticeably better for this user.
-
-If Phase 2 found multiple git worktrees and the user confirmed they use sibling/external worktrees (not nested inside the main repo): the upward file walk won't find a single CLAUDE.local.md from all worktrees. Write the actual personal content to `~/.claude/<project-name>-instructions.md` and make CLAUDE.local.md a one-line stub that imports it: `@~/.claude/<project-name>-instructions.md`. The user can copy this one-line stub to each sibling worktree. Never put this import in the project CLAUDE.md. If worktrees are nested inside the main repo (e.g., `.claude/worktrees/`), no special handling is needed — the main repo's CLAUDE.local.md is found automatically.
-
-If CLAUDE.local.md already exists: read it, propose specific additions, and do not silently overwrite.
-
-## Phase 6: Suggest and create skills (if the approved proposal includes any)
-
-Skills add capabilities Claude can use on demand without bloating every session.
-
-**First, consume `skill` entries from the Phase 3 preference queue.** Each queued skill preference becomes a SKILL.md tailored to what the user described. For each:
-- Name it from the preference (e.g., "verify-deep", "session-report", "deploy-sandbox")
-- Write the body using the user's own words from the interview plus whatever Phase 2 found (test commands, report format, deploy target). If the preference maps to an existing bundled skill (e.g., `/verify`), write a project skill that adds the user's specific constraints on top — tell the user the bundled one still exists and theirs is additive.
-- Ask a quick follow-up if the preference is underspecified (e.g., "which test command should verify-deep run?")
-
-**Then suggest additional skills** beyond the queue when you find:
-- Reference knowledge for specific tasks (conventions, patterns, style guides for a subsystem)
-- Repeatable workflows the user would want to trigger directly (deploy, fix an issue, release process, verify changes)
-
-For each suggested skill, provide: name, one-line purpose, and why it fits this repo.
-
-If `.claude/skills/` already exists with skills, review them first. Do not overwrite existing skills — only propose new ones that complement what is already there.
-
-Create each skill at `.claude/skills/<skill-name>/SKILL.md`:
-
+Runs if approved.
+1. **Consume `skill` entries from Phase 3 queue:** Name from preference (`verify-deep`, `session-report`, `deploy-sandbox`), write body from interview + Phase 2 details. If mapping to an existing bundled skill (e.g. `/verify`), create an additive project skill with user constraints and note the bundled one remains. Ask a quick follow-up if underspecified.
+2. **Suggest additional skills** for subsystem reference knowledge or repeatable workflows (provide name, 1-line purpose, repo fit).
+3. Review existing `.claude/skills/` first; do not overwrite existing skills.
+4. Create each at `.claude/skills/<skill-name>/SKILL.md`:
 ```yaml
 ---
 name: <skill-name>
 description: <what the skill does and when to use it>
 ---
 
-<Instructions for Claude>
+<Instructions>
 ```
-
-Both the user (`/<skill-name>`) and Claude can invoke skills by default. For workflows with side effects (e.g., `/deploy`, `/fix-issue 123`), add `disable-model-invocation: true` so only the user can trigger it, and use `$ARGUMENTS` to accept input.
+Both the user (`/<skill-name>`) and the agent can invoke skills by default. For side-effect workflows (`/deploy`, `/fix-issue 123`), add `disable-model-invocation: true` and use `$ARGUMENTS`.
 
 ## Phase 7: Suggest additional optimizations
 
-Tell the user you're going to suggest a few additional optimizations now that CLAUDE.md and skills (if chosen) are in place.
-
-Check the environment and ask about each gap you find (use AskUserQuestion):
-
-- **GitHub CLI**: Run `which gh` (or `where gh` on Windows). If it's missing AND the project uses GitHub (check `git remote -v` for github.com), ask the user if they want to install it. Explain that the GitHub CLI lets Claude help with commits, pull requests, issues, and code review directly.
-
-- **Linting**: If Phase 2 found no lint config (no .eslintrc, ruff.toml, .golangci.yml, etc. for the project's language), ask the user if they want Claude to set up linting for this codebase. Explain that linting catches issues early and gives Claude fast feedback on its own edits.
-
-- **Proposal-sourced hooks** (if the approved proposal includes any): Consume `hook` entries from the Phase 3 preference queue. If Phase 2 found a formatter and the queue has no formatting hook, offer format-on-edit as a fallback.
-
-  For each hook preference (from the queue or the formatter fallback):
-
-  1. Target file: default based on the Phase 1 CLAUDE.md choice — project → `.claude/settings.json` (team-shared, committed); personal → `.claude/settings.local.json`. Only ask if the user chose "both" in Phase 1 or the preference is ambiguous. Ask once for all hooks, not per-hook.
-
-  2. Pick the event and matcher from the preference:
-     - "after every edit" → `PostToolUse` with matcher `Write|Edit`
-     - "when Claude finishes" / "before I review" → `Stop` event (fires at the end of every turn — including read-only ones)
-     - "before running bash" → `PreToolUse` with matcher `Bash`
-     - "before committing" (literal git-commit gate) → **not a hooks.json hook.** Matchers can't filter Bash by command content, so there's no way to target only `git commit`. Route this to a git pre-commit hook (`.git/hooks/pre-commit`, husky, pre-commit framework) instead — offer to write one. If the user actually means "before I review and commit Claude's output", that's `Stop` — probe to disambiguate.
-     Probe if the preference is ambiguous.
-
-  3. **Load the hook reference** (once per `/init` run, before the first hook): invoke the Skill tool with `skill: 'update-config'` and args starting with `[hooks-only]` followed by a one-line summary of what you're building — e.g., `[hooks-only] Constructing a PostToolUse/Write|Edit format hook for .claude/settings.json using ruff`. This loads the hooks schema and verification flow into context. Subsequent hooks reuse it — don't re-invoke.
-
-  4. Follow the skill's **"Constructing a Hook"** flow: dedup check → construct for THIS project → pipe-test raw → wrap → write JSON → `jq -e` validate → live-proof (for `Pre|PostToolUse` on triggerable matchers) → cleanup → handoff. Target file and event/matcher come from steps 1–2 above.
-
-Act on each "yes" before moving on.
+Check environment and ask via `AskUserQuestion`, acting on each `"yes"` before moving on:
+- **GitHub CLI:** Run `which gh` (or `where gh` on Windows). If missing AND `git remote -v` includes `github.com`, offer to install (enables direct commits, PRs, issues, code review).
+- **Linting:** If Phase 2 found no lint config (`.eslintrc`, `ruff.toml`, `.golangci.yml`, etc.), offer to set up linting for fast feedback.
+- **Proposal-sourced hooks:** Consume `hook` entries from Phase 3 queue (fallback: offer format-on-edit if Phase 2 found a formatter and no formatting hook is queued):
+  1. **Target file:** project → `.claude/settings.json`; personal → `.claude/settings.local.json`. Ask once for all hooks only if `"both"` or ambiguous.
+  2. **Event & matcher:**
+     - `"after every edit"` → `PostToolUse`, matcher `Write|Edit`
+     - `"when turn finishes"` / `"before I review"` → `Stop` (fires every turn, including read-only)
+     - `"before running bash"` → `PreToolUse`, matcher `Bash`
+     - `"before committing"` (literal git-commit gate) → not a `hooks.json` hook (matchers can't filter Bash command content); route to a git pre-commit hook (`.git/hooks/pre-commit`, husky, pre-commit framework). Probe if they meant `"before I review and commit output"` (`Stop`).
+  3. **Load hook reference** (once per `/init` run, before first hook): invoke `Skill` tool with `skill: 'update-config'` and args `[hooks-only] <one-line summary>` (e.g. `[hooks-only] Constructing a PostToolUse/Write|Edit format hook for .claude/settings.json using ruff`).
+  4. Follow **"Constructing a Hook"**: dedup check → construct for THIS project → pipe-test raw → wrap → write JSON → `jq -e` validate → live-proof (for `Pre|PostToolUse` on triggerable matchers) → cleanup → handoff.
 
 ## Phase 8: Summary and next steps
 
-Recap what was set up — which files were written and the key points included in each. Remind the user these files are a starting point: they should review and tweak them, and can run `/init` again anytime to re-scan.
-
-Then tell the user that you'll be introducing a few more suggestions for optimizing their codebase and Claude Code setup based on what you found. Present these as a single, well-formatted to-do list where every item is relevant to this repo. Put the most impactful items first.
-
-When building the list, work through these checks and include only what applies:${IS_IMPORT_ENABLED_FN()?`
+Recap written files and key points; remind the user to review/tweak and that `/init` can be re-run anytime. Then present a single prioritized to-do list of applicable optimizations:${IS_IMPORT_ENABLED_FN()?`
 - If Phase 2 found Codex or Gemini CLI config: ${IMPORT_OFFER_NOTE} Put this first — it saves re-entering config they already have.`:""}
-- If frontend code was detected (React, Vue, Svelte, etc.): `/plugin install frontend-design@claude-plugins-official` gives Claude design principles and component patterns so it produces polished UI; `/plugin install playwright@claude-plugins-official` lets Claude launch a real browser, screenshot what it built, and fix visual bugs itself.
-- If you found gaps in Phase 7 (missing GitHub CLI, missing linting) and the user said no: list them here with a one-line reason why each helps.
-- If tests are missing or sparse: suggest setting up a test framework so Claude can verify its own changes.
-- To help you create skills and optimize existing skills using evals, Claude Code has an official skill-creator plugin you can install. Install it with `/plugin install skill-creator@claude-plugins-official`, then run `/skill-creator <skill-name>` to create new skills or refine any existing skill. (Always include this one.)
-- Browse official plugins with `/plugin` — these bundle skills, agents, hooks, and MCP servers that you may find helpful. You can also create your own custom plugins to share them with others. (Always include this one.)
+- Frontend detected (React, Vue, Svelte, etc.): `/plugin install frontend-design@claude-plugins-official` (design principles/component patterns); `/plugin install playwright@claude-plugins-official` (browser screenshot & visual bug fixing).
+- Declined Phase 7 gaps (GitHub CLI, linting): list with 1-line benefit each.
+- Missing/sparse tests: suggest setting up a test framework for self-verification.
+- Always include: `/plugin install skill-creator@claude-plugins-official`, then `/skill-creator <skill-name>` to create or refine skills with evals.
+- Always include: `/plugin` to browse official plugins or create custom ones.

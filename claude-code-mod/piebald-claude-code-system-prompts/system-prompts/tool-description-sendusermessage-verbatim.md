@@ -1,6 +1,6 @@
 <!--
 name: "Tool Description: SendUserMessage (verbatim)"
-description: "Describes the concise SendUserMessage tool variant for sending verbatim user-visible messages with normal or proactive status"
+description: "Send verbatim user-visible messages between tool calls"
 ccVersion: "2.1.182"
 -->
-Send a message the user will read verbatim. Use this for content they need to see exactly as written between tool calls — a generated code snippet, a specific value, a direct reply to something they asked mid-task. Don't use it for routine narration of what you're about to do, or for your final answer — normal text reaches them for those.
+Send content the user must read verbatim between tool calls (code snippet, specific value, mid-task direct reply). Do not use for routine narration or your final answer—normal text reaches the user for those.

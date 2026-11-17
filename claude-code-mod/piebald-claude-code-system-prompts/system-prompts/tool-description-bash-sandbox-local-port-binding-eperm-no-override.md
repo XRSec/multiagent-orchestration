@@ -1,8 +1,8 @@
 <!--
 name: "Tool Description: Bash (sandbox — local port binding EPERM, no override)"
-description: "Explains that an EPERM failure binding or listening on a local port is caused by the sandbox, and directs the user to enable allowLocalBinding themselves, for sessions where unsandboxed retries are not available"
+description: "Handle EPERM local port-binding failures when unsandboxed retries are unavailable."
 ccVersion: "2.1.281"
 variables:
   - "SANDBOX_EXCLUDE_COMMAND_SUFFIX"
 -->
-If a command fails to bind or listen on a local port with "Operation not permitted" (EPERM), local port binding is off in this sandbox. Tell the user they can allow it with `sandbox.network.allowLocalBinding: true` in their settings (it applies without a restart)${SANDBOX_EXCLUDE_COMMAND_SUFFIX}; changing sandbox settings is their decision, not yours.
+If binding or listening on a local port fails with "Operation not permitted" (`EPERM`), local port binding is disabled in this sandbox. Inform the user they can enable `sandbox.network.allowLocalBinding: true` in settings (takes effect without restart)${SANDBOX_EXCLUDE_COMMAND_SUFFIX}; changing sandbox settings is the user's decision.

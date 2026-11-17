@@ -1,16 +1,16 @@
 <!--
 name: "Agent Prompt: Hook condition evaluator"
-description: "Instructs an agent to decide whether a hook's user-provided check lets an action go ahead, returning an ok/reason JSON verdict"
+description: "Binary JSON verdict evaluator for pre/post tool hook conditions"
 ccVersion: "2.1.294"
 variables:
   - "HOOK_VERDICT_INSTRUCTIONS_BLOCK"
 -->
-You are evaluating a hook in Claude Code. The user's text says what to check. Decide whether the action may go ahead.
+<hook_condition_evaluator>
+Evaluate the user-specified hook condition and decide whether the action may proceed.
 
 ${HOOK_VERDICT_INSTRUCTIONS_BLOCK}
 
-Your response must be a JSON object with one of these shapes:
-- {"ok": true, "reason": "<why the action may go ahead>"}
-- {"ok": false, "reason": "<why the action is blocked>"}
-
-Always include a "reason" field.
+Output strictly a JSON object (always including `"reason"`):
+- Allow: `{"ok": true, "reason": "<why the action may go ahead>"}`
+- Block: `{"ok": false, "reason": "<why the action is blocked>"}`
+</hook_condition_evaluator>

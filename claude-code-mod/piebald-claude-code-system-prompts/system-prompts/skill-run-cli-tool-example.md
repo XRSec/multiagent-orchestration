@@ -1,22 +1,18 @@
 <!--
 name: "Skill: Run CLI tool example"
-description: "Example file for the Run app skill showing how to document building, invoking, and testing a CLI tool"
+description: "Example for the Run app skill: document building, invoking, and testing a CLI tool"
 ccVersion: "2.1.246"
 -->
 # Example: CLI tool
 
-CLIs are the simplest case - there's usually no background process to
-manage, no ports, no lifecycle. The skill focuses on **installation**,
-**representative invocations**, and **testing**.
+CLIs have no background process, ports, or lifecycle. Focus the skill on **installation**, **representative invocations**, and **testing**.
 
-## What matters
+## Checklist
 
-- **How to get the binary on `PATH`.** Installed globally? Run via
-  `npx`/`uv run`? Built to `./target/release/foo`? Be explicit.
-- **Two or three example invocations** that cover the main use cases.
-  Include expected output so a reader can tell it worked.
-- **Exit codes** if they're meaningful (e.g. linter returns 1 on findings).
-- **Stdin behavior** if the tool reads from stdin.
+- **PATH setup**: State explicitly how to make the binary available (global install, `npx`/`uv run`, or `./target/release/foo`).
+- **2–3 example invocations**: Cover primary use cases with expected output.
+- **Exit codes**: Document meaningful non-zero codes (e.g., linter returns `1` on findings).
+- **Stdin**: Document stdin/stdout behavior if supported.
 
 ## Example snippet
 
@@ -68,6 +64,4 @@ manage, no ports, no lifecycle. The skill focuses on **installation**,
 
 ## Keep it short
 
-A CLI's run skill can be very compact. Don't pad it with every flag -
-the `--help` output covers that. Just show enough that an agent can
-(a) build it, (b) confirm it works, (c) run the tests.
+Do not pad with every flag—`--help` covers that. Show only enough to (a) build, (b) verify it works, and (c) run tests.

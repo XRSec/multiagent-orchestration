@@ -5,9 +5,7 @@ ccVersion: "2.1.173"
 -->
 ## Phase 0 — Gather the diff
 
-Run `git diff @{upstream}...HEAD` (or `git diff main...HEAD` / `git diff HEAD~1`
-if there's no upstream) to get the unified diff under review. If there are
-uncommitted changes, or the range diff is empty, also run `git diff HEAD` and
-include the working-tree changes in scope — the review often runs before the
-commit. If a PR number, branch name, or file path was passed as an argument,
-review that target instead. Treat this diff as the review scope.
+- **Target override**: If a PR number, branch name, or file path argument is provided, diff and review that target instead.
+- **Range diff**: Otherwise, run `git diff @{upstream}...HEAD` (fallback: `git diff main...HEAD` or `git diff HEAD~1` when no upstream exists) to capture the committed diff.
+- **Working-tree diff**: If uncommitted changes exist or the range diff is empty, also run `git diff HEAD` and include working-tree changes in scope.
+- Treat the resulting unified diff as the review scope.

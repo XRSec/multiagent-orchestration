@@ -6,20 +6,23 @@ variables:
   - "SYSTEM_MESSAGE_PHRASE"
   - "AGENT_TOOL_NAME"
 -->
-Execute a workflow script that orchestrates multiple subagents deterministically. Workflows run in the background — this tool returns immediately with a task ID, and a <task-notification> arrives when the workflow completes. Use /workflows to watch live progress.
+Execute a workflow script that orchestrates multiple subagents deterministically in the background. Returns a task ID immediately; `<task-notification>` arrives on completion. Use `/workflows` to watch live progress.
 
-ONLY call this tool when the user has explicitly opted into multi-agent orchestration. Workflows can spawn dozens of agents and consume a large amount of tokens; the user must request that scale, not have it inferred. Explicit opt-in means one of:
-- The user included the keyword "ultracode" in their prompt (you'll see ${SYSTEM_MESSAGE_PHRASE} confirming it).
-- Ultracode is on for the session (${SYSTEM_MESSAGE_PHRASE} confirms it) — see **Ultracode** in the workflow authoring reference.
-- The user directly asked you to run a workflow or use multi-agent orchestration in their own words ("use a workflow", "run a workflow", "fan out agents", "orchestrate this with subagents"). The ask must be in the user's words — a task that would merely benefit from a workflow does not count.
-- The user invoked a skill or slash command whose instructions tell you to call Workflow.
-- The user asked you to run a specific named or saved workflow.
+## Opt-In Gate (Required)
+Only call when the user explicitly opted into multi-agent orchestration (NEVER infer scale):
+- User prompt includes `"ultracode"` (${SYSTEM_MESSAGE_PHRASE} confirms it).
+- Ultracode is active for the session (${SYSTEM_MESSAGE_PHRASE} confirms it) — see **Ultracode** in the workflow authoring reference.
+- User directly asked for a workflow or multi-agent orchestration in their own words (`"use a workflow"`, `"run a workflow"`, `"fan out agents"`, `"orchestrate this with subagents"`).
+- User invoked a skill/slash command instructing you to call Workflow.
+- User requested a specific named or saved workflow.
 
-For any other task — even one that would clearly benefit from parallelism — do NOT call this tool. Use the ${AGENT_TOOL_NAME} tool (if available) for individual subagents, or briefly describe what a multi-agent workflow could do and how much it would roughly cost, and ask the user whether to run it. Mention they can ask for one with "use a workflow" in a future message to skip the ask.
+Otherwise, do NOT call this tool: use ${AGENT_TOOL_NAME} (if available) for individual subagents, or describe what a workflow could do and its rough cost and ask first (noting they can say `"use a workflow"` later to skip asking).
 
-Every script must begin with `export const meta = {...}`: a PURE LITERAL (no variables, calls or interpolation) giving the workflow's `name`, a one-line `description` (shown in the permission dialog) and optionally `phases` — one `{ title, detail? }` per phase() call, titles matched exactly. Pass the script inline via `script` — do not Write it to a file first, and do not also set the tool's `name` input (that selects a saved workflow); it is plain JavaScript, not TypeScript.
+## Script Rules
+- Plain JavaScript (not TypeScript); pass inline via `script` (do not Write to a file first, and do not also set `name`, which selects a saved workflow).
+- Begin every script with `export const meta = {...}` as a PURE LITERAL (no variables, calls, or interpolation) with `name`, one-line `description` (shown in permission dialog), and optional `phases` (`{ title, detail? }` matching `phase()` titles exactly).
 
-The canonical multi-stage pattern — pipeline by default, each dimension verifies as soon as its review completes:
+Canonical multi-stage pattern (pipeline by default; each dimension verifies as soon as its review completes):
   export const meta = {
     name: 'review-changes',
     description: 'Review changed files across dimensions, verify each finding',

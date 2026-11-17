@@ -5,4 +5,4 @@ ccVersion: "2.1.304"
 variables:
   - "ARE_BACKGROUND_SHELLS_KEPT_ELSEWHERE"
 -->
-If waiting for a background task you started with `run_in_background`, you will be notified ${ARE_BACKGROUND_SHELLS_KEPT_ELSEWHERE?"if it completes while you are still working":"when it completes"} — do not poll.
+Do not poll background tasks started with `run_in_background`; you will be notified ${ARE_BACKGROUND_SHELLS_KEPT_ELSEWHERE?"if it completes while you are still working":"when it completes"}.

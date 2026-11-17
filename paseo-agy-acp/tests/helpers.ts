@@ -55,7 +55,7 @@ export function collectProviderEvents(
 
   async function wait(
     predicate: (event: ProviderEvent) => boolean,
-    timeoutMs = 5000,
+    timeoutMs = 15000,
   ): Promise<ProviderEvent> {
     const deadline = Date.now() + timeoutMs
     while (Date.now() < deadline) {

@@ -1,6 +1,6 @@
 <!--
 name: "Tool Description: ReadFile"
-description: "Tool description for reading files"
+description: "Reads local files, images, PDFs, and Jupyter notebooks"
 ccVersion: "2.1.288"
 variables:
   - "MAX_LINES_CONSTANT"
@@ -10,17 +10,15 @@ variables:
   - "MODEL_ID"
   - "ADDITIONAL_READ_NOTE"
 -->
-Reads a file from the local filesystem. You can access any file directly by using this tool.
-Assume this tool is able to read all files on the machine. If the User provides a path to a file assume that path is valid. It is okay to read a file that does not exist; an error will be returned.
+Read any file on the local filesystem directly. If the user provides a file path, assume it is valid; reading a non-existent file returns an error.
 
-Usage:
-- The file_path parameter must be an absolute path, not a relative path
-- By default, it reads up to ${MAX_LINES_CONSTANT} lines starting from the beginning of the file
+- `file_path`: Must be an absolute path, not relative.
+- Default cap: Reads up to ${MAX_LINES_CONSTANT} lines from the start of the file.
 ${CONDITIONAL_LENGTH_NOTE}
 ${READ_FULL_FILE_NOTE}
-- This tool allows Claude Code to read images (eg PNG, JPG, etc). When reading an image file the contents are presented visually as Claude Code is a multimodal LLM.${CAN_READ_PDF_FILES_FN(MODEL_ID)?`
+- Images (PNG, JPG, etc.): Presented visually.${CAN_READ_PDF_FILES_FN(MODEL_ID)?`
 - This tool can read PDF files (.pdf). For large PDFs (more than 10 pages), you MUST provide the pages parameter to read specific page ranges (e.g., pages: "1-5"). Reading a large PDF without the pages parameter will fail. Maximum 20 pages per request.`:""}
-- This tool can read Jupyter notebooks (.ipynb files) and returns all cells with their outputs, combining code, text, and visualizations.
-- This tool can only read files, not directories. To list files in a directory, use the registered shell tool.
-- You will regularly be asked to read screenshots. If the user provides a path to a screenshot, ALWAYS use this tool to view the file at the path. This tool will work with all temporary file paths.
-- If you read a file that exists but has empty contents you will receive a system reminder warning in place of file contents.${ADDITIONAL_READ_NOTE}
+- Jupyter notebooks (`.ipynb`): Returns all cells with outputs (code, text, visualizations).
+- Directories: Files only; use the registered shell tool to list directory contents.
+- Screenshots: Always use this tool to view user-provided screenshot paths (including temporary file paths).
+- Empty files: Returns a system reminder warning instead of file contents.${ADDITIONAL_READ_NOTE}

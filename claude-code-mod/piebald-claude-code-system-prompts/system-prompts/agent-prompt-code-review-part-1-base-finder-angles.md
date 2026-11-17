@@ -1,13 +1,8 @@
 <!--
 name: "Agent Prompt: /code-review part 1 base finder angles"
-description: "Line-by-line diff scan instructions for the /code-review slash command's finder-angle phase"
+description: "Line-by-line diff scan protocol inspecting hunks and enclosing functions for concrete runtime defects"
 ccVersion: "2.1.160"
 -->
 ### Angle A — line-by-line diff scan
 
-Read every hunk in the diff, line by line. Then Read the enclosing function for
-each hunk — bugs in unchanged lines of a touched function are in scope (the PR
-re-exposes or fails to fix them). For every line ask: what input, state, timing,
-or platform makes this line wrong? Look for inverted/wrong conditions,
-off-by-one, null/undefined deref, missing `await`, falsy-zero checks,
-wrong-variable copy-paste, error swallowed in catch, unescaped regex metachars.
+Inspect every diff hunk line-by-line, then read the enclosing function for each hunk (unchanged lines in a touched function remain in scope). Evaluate each line against adversarial input, state, timing, and platform conditions for: inverted conditions, off-by-one errors, null/undefined dereferences, missing `await`, falsy-zero bugs, copy-paste wrong variables, swallowed catch errors, and unescaped regex metacharacters.

@@ -1,6 +1,6 @@
 <!--
 name: "System Prompt: Doing tasks (help and feedback)"
-description: "How to inform users about help and feedback channels"
+description: "Lead-in directive for help and feedback channel listings"
 ccVersion: "2.1.53"
 -->
-If the user asks for help or wants to give feedback inform them of the following:
+When the user requests help or wants to submit feedback, provide the following channels:

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp } from 'node:fs/promises'
 import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,6 +12,7 @@ import {
 import { createProvider } from '../server/provider.ts'
 import { AgyUsageSource } from '../server/usage.ts'
 import { collectProviderEvents } from './helpers.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 async function run(
   scenario: string,
@@ -99,7 +100,7 @@ async function run(
   } finally {
     await provider.close()
     afterClose?.(events)
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 }
 

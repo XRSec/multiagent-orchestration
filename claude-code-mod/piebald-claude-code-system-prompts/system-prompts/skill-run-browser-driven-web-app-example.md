@@ -1,38 +1,28 @@
 <!--
 name: "Skill: Run browser-driven web app example"
-description: "Example file for the Run app skill showing how to start a web dev server, drive it with chromium-cli, capture screenshots, and document app-specific gotchas"
+description: "Example for the Run app skill: start a web dev server, drive headless Chromium via chromium-cli, capture screenshots, and document gotchas"
 ccVersion: "2.1.246"
 -->
 # Example: Browser-driven web app
 
-You have a dev server that serves HTML to a browser. An agent in a
-headless container can't open a browser window - so "run the app" means
-launching the dev server, driving a headless Chromium against it, and
-producing a screenshot that proves the page rendered.
-
-Don't write a browser driver. Use `chromium-cli`.
+Use `chromium-cli` to drive a headless Chromium instance against the dev server and capture a screenshot proving the page rendered. Do not write a custom browser driver.
 
 ## Dev server
 
-Find the dev command (`package.json` `scripts.dev`, `Makefile`,
-README), start it in the background, and wait for it to actually serve:
-
-```bash
-npm run dev &   # or yarn dev, pnpm dev, make serve, ./dev.sh
-timeout 30 bash -c 'until curl -sf http://localhost:3000 >/dev/null; do sleep 1; done'
-```
-
-Don't `sleep 5` - poll the port. Stop by killing the port's listener
--- `lsof -ti:3000 -sTCP:LISTEN | xargs -r kill` - before relaunching,
-or the next run hits `EADDRINUSE`. (`$!` after `npm run dev &` is only
-the npm wrapper; npm doesn't forward SIGTERM to the server it spawned,
-so the port kill is what actually frees it.) Avoid `pkill -f` with a
-broad pattern - it can match the agent's own command line and kill the
-session.
+- Start the dev command (`package.json` `scripts.dev`, `Makefile`, or README) in the background and poll the port until ready (never `sleep 5`):
+  ```bash
+  npm run dev &   # or yarn dev, pnpm dev, make serve, ./dev.sh
+  timeout 30 bash -c 'until curl -sf http://localhost:3000 >/dev/null; do sleep 1; done'
+  ```
+- Stop by killing the port listener before relaunching (`$!` after `npm run dev &` only tracks the npm wrapper, which does not forward `SIGTERM`):
+  ```bash
+  lsof -ti:3000 -sTCP:LISTEN | xargs -r kill
+  ```
+- Avoid `pkill -f` with broad patterns; it can match and kill your own agent session.
 
 ## Drive
 
-`chromium-cli` is a headless-Chromium REPL. Pipe a script to stdin:
+Pipe a `chromium-cli` script to stdin:
 
 ```bash
 chromium-cli --session app <<'EOF'
@@ -48,47 +38,23 @@ console --errors
 EOF
 ```
 
-Screenshots land in `chromium_cli/sessions/app/screenshots/` (latest
-symlinked as `screenshot.png`). That's the whole loop: `nav` ->
-`wait-for` the element you need -> act (`click` / `fill` / `type` /
-`press`) -> `screenshot` -> `console --errors` to check nothing threw.
-Full command reference: `chromium-cli` skill, or `help` at the prompt.
+- **Loop**: `nav` -> `wait-for` target element -> act (`click` / `fill` / `type` / `press`) -> `screenshot` -> `console --errors`.
+- **Outputs**: Screenshots save to `chromium_cli/sessions/app/screenshots/` (latest symlinked as `screenshot.png`).
+- **Reference**: See the `chromium-cli` skill or run `help` at the REPL prompt. For iterative debugging, run under `tmux` and `send-keys` one command at a time.
+- **Fallback (no `chromium-cli`)**: Adapt [electron.md](electron.md)'s REPL driver: import `{ chromium }`, launch with `chromium.launch({ args: ['--no-sandbox'] })`, acquire a page via `(await app.newContext()).newPage()` then `goto()`, and drop Electron-only window introspection (`.windows()`, `.firstWindow()`, `windows`).
 
-For iterative debugging, run it under tmux and `send-keys` one command
-at a time - same commands, same session.
+## Skill checklist
 
-**If `chromium-cli` isn't available:** adapt
-[electron.md](electron.md)'s REPL driver - the structure and commands
-transfer, but it's `_electron`-specific:
-import `{ chromium }` instead, launch with
-`chromium.launch({ args: ['--no-sandbox'] })`, acquire the page via
-`(await app.newContext()).newPage()` then `goto()` your dev URL, and
-drop the Electron-only window introspection
-(`.windows()`/`.firstWindow()`/the `windows` command).
+Document only project-specific details (`chromium-cli` covers the mechanics):
+- **Dev command, port, and stop**: Exact start command, required env vars, and port-kill command.
+- **Auth**: Login sequence (`set-cookie`, `fill`/`click`, or API helper script emitting the cookie).
+- **Representative interaction**: One end-to-end path proving the app runs, ending in a screenshot.
+- **App-specific gotchas**: Only issues actually encountered.
 
-## What to put in the skill
+## Recurring gotchas
 
-The project-specific bits only. `chromium-cli` handles the mechanics.
-
-- **Dev command + port + stop.** The exact start line, any env vars it
-  needs, and the `kill` to stop it.
-- **Auth.** Whatever gets a logged-in session - a `set-cookie` line, a
-  `fill`/`click` login sequence, or a helper script that does the API
-  dance and emits the cookie.
-- **One representative interaction.** Not the whole app - one path that
-  proves it's running, ending in a screenshot.
-- **App-specific gotchas.** Only the ones you actually hit.
-
-## Gotchas that recur
-
-- **React controlled inputs.** `eval el.value = '...'` doesn't fire
-  React's onChange. Use `fill` / `type` - they go through Playwright's
-  input pipeline.
-- **Websockets / long-poll.** `wait-idle` never settles. `wait-for` the
-  element you actually need.
-- **Slow first paint.** Vite/Next compile routes on demand; the first
-  `nav` can take 10s+. `wait-for` handles it; raw `sleep` doesn't.
-- **`screenshot-element <sel>`** crops to one element - use it when the
-  diff is in a specific component, not the whole page.
-- **Check `console --errors` before declaring success.** A page can
-  render its shell while every data fetch 500s.
+- **React controlled inputs**: `eval el.value = '...'` skips React's `onChange`; use `fill` or `type` to go through Playwright's input pipeline.
+- **Websockets / long-poll**: `wait-idle` never settles; use `wait-for` on the target element.
+- **Slow first paint**: Vite/Next compile routes on demand (10s+ first `nav`); `wait-for` handles this, raw `sleep` does not.
+- **Component crops**: Use `screenshot-element <sel>` when verifying a single component.
+- **Silent 500s**: Always check `console --errors` before declaring success; a shell can render while data fetches fail.

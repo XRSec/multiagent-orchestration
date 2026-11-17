@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { mkdtemp, readFile, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +11,7 @@ import {
 } from '@getpaseo/plugin/server/provider'
 import { createProvider } from '../server/provider.ts'
 import { collectProviderEvents } from './helpers.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 /** Connect a provider to interrupt-acp.ts and record its events. */
 async function connect(home: string, timeoutMs = 2000) {
@@ -169,7 +170,7 @@ for (const mode of ['plan', 'full-access']) {
       )
     } finally {
       await provider.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   })
 }
@@ -263,7 +264,7 @@ test('closing during interruption cannot start a replacement runtime after sessi
           if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
         }
       }
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   }
 })
@@ -319,6 +320,6 @@ test('interrupt without active background work uses native session/cancel fast p
     )
   } finally {
     await provider.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })

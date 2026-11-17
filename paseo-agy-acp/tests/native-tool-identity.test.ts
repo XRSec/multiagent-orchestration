@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test } from 'node:test'
@@ -11,6 +11,7 @@ import {
 import { readInboxState, readSubagents } from '../server/brain-io.ts'
 import { SubagentRegistry, isSubagentMessage } from '../server/subagents.ts'
 import { toolDetail } from '../server/mapping.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const parent = '11111111-1111-4111-8111-111111111111'
 const child = '22222222-2222-4222-8222-222222222222'
@@ -254,7 +255,7 @@ test('Brain metadata and inbox agree on namespaced native spawn identity', async
       assert.equal(sub.spawnStepIndex, native ? 23 : 1)
       assert.equal(sub.spawnCallId, native ? 'spawn-example' : undefined)
     } finally {
-      await rm(root, { recursive: true, force: true })
+      await removeDir(root)
     }
   }
 })

@@ -117,9 +117,12 @@ export async function removeTurnJournal(
   nativeId: string,
 ): Promise<void> {
   if (!sessionIdPattern.test(nativeId)) return
-  await rm(journalPath(appDataDir, nativeId), { force: true }).catch(
-    () => undefined,
-  )
+  // Queue behind in-flight writes; a bare rm can race a pending rename and lose the file.
+  await queue(nativeId, async () => {
+    await rm(journalPath(appDataDir, nativeId), { force: true }).catch(
+      () => undefined,
+    )
+  })
 }
 
 /**

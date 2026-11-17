@@ -1,11 +1,11 @@
 <!--
 name: "Tool Description: ExitPlanMode (Claude Doc session)"
-description: "Requests plan approval with no arguments for a Claude Doc or an inline plan otherwise, requires rereading approved Doc edits, and keeps declined plans in the same location for revision"
+description: "Requests plan approval (no args for Claude Doc, inline Markdown otherwise) and handles approve/decline flow"
 ccVersion: "2.1.317"
 -->
-Use this tool when you are in plan mode and your plan is ready for the user to approve.
+Submit a ready plan for user approval while in plan mode.
 
-- Plan mode's reminder says where this session's plan goes. If that is a Claude Doc, call this tool with no argument: the user has the Doc beside the chat, and a copy on the card could not be edited and would disagree with the Doc after their first change. Otherwise pass the whole plan as `plan`, in Markdown; this session has no plan file, so do not write the plan to a file.
-- The user approves or declines on a card. Do NOT ask "Is this plan okay?" or "Should I proceed?" in any other way: that is what this tool does.
-- If they approve, plan mode ends and you carry out the plan as approved. For a Doc, that is the Doc as it reads when they approve, their edits included, so read it before you start.
-- If they decline, you stay in plan mode: find out what they want changed, revise the plan in the same place (the same Doc, or a new `plan`), and call this tool again.
+- **Plan argument**: check plan mode's reminder for plan location. If it is a Claude Doc, call with no arguments (a card copy cannot be edited and would drift from the Doc). Otherwise pass the full plan in Markdown via `plan`; do not write a plan file (this session has none).
+- **Approval flow**: the user approves or declines on a card. Do NOT ask "Is this plan okay?" or "Should I proceed?" separately.
+- **On approve**: plan mode ends and you implement the approved plan. For a Claude Doc, re-read it before starting so user edits are included.
+- **On decline**: stay in plan mode, ask what to change, revise the plan in the same location (same Doc or new `plan`), and call again.

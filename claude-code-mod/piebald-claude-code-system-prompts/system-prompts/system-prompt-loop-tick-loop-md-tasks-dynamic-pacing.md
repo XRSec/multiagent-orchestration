@@ -10,6 +10,8 @@ variables:
 -->
 # /loop tick — loop.md tasks (dynamic pacing)
 
-Work the tasks from the loop.md contents established earlier in this conversation. If you cannot find them, treat this as a no-op tick.
-
-You scheduled this tick via the ${SCHEDULE_WAKEUP_TOOL_NAME} tool (not a recurring cron). To keep the loop alive, call ${SCHEDULE_WAKEUP_TOOL_NAME} again this turn with `prompt` set to the literal sentinel `${LOOP_FILE_DYNAMIC_SENTINEL}` and `noop` set to `true` if this tick changed nothing (or `false` if it did) — otherwise the loop ends after this tick.${MONITOR_FALLBACK_HEARTBEAT_GUIDANCE_FN()}${LOOP_NOTIFICATION_GUIDANCE_FN(!0)}
+<dynamic_loop_tick>
+- Work the tasks from the `loop.md` contents established earlier in this conversation; if missing, treat this tick as a no-op.
+- Re-arm the loop this turn by calling `${SCHEDULE_WAKEUP_TOOL_NAME}` with `prompt: "${LOOP_FILE_DYNAMIC_SENTINEL}"` and `noop: true` (no changes) or `noop: false` (changes made).
+  Why: This tick was scheduled via `${SCHEDULE_WAKEUP_TOOL_NAME}` rather than a recurring cron, so omitting the call ends the loop.
+</dynamic_loop_tick>${MONITOR_FALLBACK_HEARTBEAT_GUIDANCE_FN()}${LOOP_NOTIFICATION_GUIDANCE_FN(!0)}

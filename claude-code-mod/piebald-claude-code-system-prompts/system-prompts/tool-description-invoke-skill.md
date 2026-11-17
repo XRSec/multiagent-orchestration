@@ -1,16 +1,15 @@
 <!--
 name: "Tool Description: Invoke skill"
-description: "Tool description for invoking available skills, including skill name selection, optional arguments, scoped skill names, and avoiding duplicate invocation when a skill is already loaded"
+description: "Invokes listed skills by exact or scoped name with optional args, avoiding duplicate invocation"
 ccVersion: "2.1.323"
 variables:
   - "SKILL_LISTING_SOURCE_PHRASE"
   - "SKILL_TAG_NAME"
 -->
-Invoke a skill.
+Invoke a packaged skill (task instructions, deploy steps, review checklist, or repo workflow) listed in ${SKILL_LISTING_SOURCE_PHRASE}.
 
-A skill is a packaged set of instructions the user or project has set up for a particular kind of task (deploy steps, a review checklist, a repo-specific workflow). Available skills appear in ${SKILL_LISTING_SOURCE_PHRASE} with one-line descriptions. When the task at hand is one a listed skill covers, call this tool first — the skill's instructions load into the turn for you to follow in place of your default approach; some skills instead run in a subagent and return the finished result. A skill that runs in the background returns only the agent's name — its result arrives later as a task notification, so don't wait on it or invoke it again in the meantime. Users may also ask for one by name (`/<name>`, or "slash command"); that's a request to invoke it.
-
-- `skill`: exact name from the listing, no leading slash. Plugin skills use `plugin:skill`. Directory-scoped skills are listed with a path prefix (`apps/web:deploy`); when both scoped and unscoped variants of a name exist, pick the one whose directory contains the files you're working on (most specific wins; unscoped otherwise).
-- `args`: optional arguments to pass through.
-
-Only names from the listing (or that the user typed explicitly) are valid. Built-in CLI commands (`/help`, `/clear`, …) aren't skills. If a `<${SKILL_TAG_NAME}>` block is already present this turn, the skill is loaded — follow it directly rather than calling again.
+- **When to call**: call first when a listed skill covers the task or the user requests it (`/<name>` or "slash command"). Instructions load into the turn to follow instead of your default approach; some skills run in a subagent and return the finished result (background skills return only the agent's name and deliver results later via task notification — do not wait or re-invoke).
+- **Parameters**:
+  - `skill`: exact name from the listing, no leading slash. Plugin skills use `plugin:skill`; directory-scoped skills use a path prefix (`apps/web:deploy`). When both scoped and unscoped variants exist, pick the one whose directory contains your target files (most specific wins; unscoped otherwise).
+  - `args`: optional arguments to pass through.
+- **Constraints**: only listed or user-typed skill names are valid (built-in CLI commands like `/help`, `/clear` are not skills). If `<${SKILL_TAG_NAME}>` is already present this turn, the skill is loaded — follow it directly instead of calling again.

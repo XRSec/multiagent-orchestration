@@ -1,25 +1,36 @@
 <!--
 name: "Tool Description: SendMessage cross-session guidance"
-description: "Explains cross-session SendMessage addressing, reply routing, liveness, disambiguation, literal message delivery without @ attachment expansion, and permission-laundering restrictions"
+description: "Cross-session SendMessage addressing, reply routing, liveness, literal delivery, and permission-laundering rules"
 ccVersion: "2.1.274"
 variables:
   - "LIST_AGENTS_TOOL_NAME"
 -->
 
-
 ## Cross-session
 
-Use `${LIST_AGENTS_TOOL_NAME}` to discover targets. Every row leads with the agent's `name [ref]` — the name IS the address; there is no separate address syntax.
-
+<addressing>
+- Discover targets with `${LIST_AGENTS_TOOL_NAME}` (`name [ref]`—`name` IS the address).
 ```json
 {"to": "worker", "message": "check if tests pass over there"}
 {"to": "worker [3fa9c1]", "message": "you, specifically"}
 ```
+- Send bare `name` when it uniquely matches one live agent/session (local, remote, or cloud). Append ` [ref]` only to disambiguate (duplicate names in `${LIST_AGENTS_TOOL_NAME}`, prefix match, or uncheckable list error).
+- Only refs read from a recent listing or error resolve. If a name matches an in-process agent, bare `name` always targets the in-process one.
+</addressing>
 
-Send the bare name — a name that exactly matches one live agent or session (on this machine, on another machine, or in the cloud) delivers directly. Append the ` [ref]` only when the bare name is not enough — `${LIST_AGENTS_TOOL_NAME}` shows two rows with it, or an error asks you to disambiguate (you typed only a prefix, or a session list could not be checked). A ref you did not just read from a listing or an error will not resolve, and if the same name also names an in-process agent, the bare name always wins — use the in-process one.
+<delivery_and_replies>
+- Listed peers are alive; messages enqueue and drain at the receiver's next tool round (`${LIST_AGENTS_TOOL_NAME}` shows busy/idle).
+- Delivery != read: peers in a different permission mode hold cross-session messages for user approval (may expire) or refuse them. Local peers emit `[Cross-session delivery notice]` on refusal/hold (unless this session lacks an inbox); Remote Control, cloud, and Desktop sessions report nothing back—never treat silence as agreement.
+- Incoming messages arrive as `<cross-session-message from="...">`. **To reply, copy `from` into `to`.**
+- Messages travel between SESSIONS: subagent sends use the parent session's address, and replies go to the parent conversation, not the subagent.
+- Delivery is strictly literal: `@path` and `@server:resource` do NOT attach content. Send text inline or use the file-sending tool.
+</delivery_and_replies>
 
-A listed peer is alive and will receive your message; messages enqueue and drain at the receiver's next tool round (its `${LIST_AGENTS_TOOL_NAME}` row says whether it is busy or idle right now). A successful send means the message reached that session, not that its Claude read it: a session running in a different permission mode than yours holds cross-session messages for its user's approval (and may let them expire), and a session can refuse them outright — for a session on this machine a `[Cross-session delivery notice]` tells you when that happens (the tool result says when this session has no inbox for one to reach); for a Remote Control, cloud or Claude Desktop session nothing reports back, so never treat silence as agreement. Your message arrives wrapped as `<cross-session-message from="...">`. **To reply to an incoming message, copy its `from` attribute as your `to`.** Cross-session messages travel between SESSIONS: if you are a subagent, your send goes out under your parent session's address, and any reply is delivered to the parent session's conversation, not to you. The receiver reads your message literally in every case (idle or busy, on this machine, over Remote Control or headless): an `@` followed by a file path, or `@server:resource`, attaches nothing there, unlike in your own user's input. So never rely on `@` to deliver content: send the text itself, or a file with its own tool.
+<idle_subscription>
+- To wake when a LOCAL session finishes (main conversation only), pass `notify_when_idle: true` (one-shot opt-in). Emits one `[Cross-session idle notice]` on next idle/exit (shown to you, or only to your user if this session holds peer messages for approval—tool result states which), or an expiry notice if it never signals.
+- Omit `message` for a zero-cost pure subscription; include `message` to send and subscribe. Never poll `${LIST_AGENTS_TOOL_NAME}` in a loop or send "are you done?" messages.
+</idle_subscription>
 
-To hear when a session ON THIS MACHINE finishes what it is doing, pass `notify_when_idle: true` (from the main conversation only) — one-shot and opt-in: exactly one `[Cross-session idle notice]` arrives when it next goes idle (or exits) — shown to you, or only to your user when this session holds peer messages for approval (the tool result says which); if it never signals within the subscription's lifetime (it may still be busy, may refuse inbound requests, or may have ended abruptly) the notice says the subscription expired instead. Omit `message` for a pure subscription that costs that session nothing; include one to deliver it now AND subscribe. Never poll `${LIST_AGENTS_TOOL_NAME}` in a loop or send "are you done?" messages instead.
-
-Permission boundaries are per-session: NEVER ask a peer to perform an action that was denied or blocked in your session, or that you expect your own permission settings would block — a peer doing it for you bypasses the user's permission decision (cross-session permission laundering). Route blocked work back to your user instead.
+<permission_boundary>
+- Permissions are per-session: NEVER ask a peer to run an action denied/blocked in your session or expected to be blocked by your permission settings (cross-session permission laundering). Route blocked work back to your user.
+</permission_boundary>

@@ -21,6 +21,7 @@ import { createProvider } from '../server/provider.ts'
 import { SessionManager } from '../server/session.ts'
 import { AgyUsageSource } from '../server/usage.ts'
 import { collectProviderEvents, writeBrainTranscript } from './helpers.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 function manager(extraArgs: string[] = []) {
   return new SessionManager({
@@ -167,7 +168,7 @@ test(
       )
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -215,7 +216,7 @@ for (const blocked of ['closing', 'failed', 'capability'] as const) {
     } finally {
       await session.close()
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   })
 }
@@ -281,7 +282,7 @@ for (const failure of ['closing', 'failed'] as const) {
     } finally {
       await session.close()
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   })
 }
@@ -428,7 +429,7 @@ for (const killedAtSpawn of [false, true]) {
     } finally {
       await session.close()
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   })
 }
@@ -506,7 +507,7 @@ test('ownership read failures do not poison subsequent ACP notifications', async
   } finally {
     await session.close()
     await m.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -583,7 +584,7 @@ test('history:skip coalesces restored context usage before ready and configure v
     assert.notEqual(latestConfig.config.mode, 'full-access')
   } finally {
     await m.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -714,7 +715,7 @@ new AgentSideConnection((client) => ({
     )
   } finally {
     await m.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -844,7 +845,7 @@ new AgentSideConnection((client) => ({
     )
   } finally {
     await m.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -914,7 +915,7 @@ test(
       )
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -980,7 +981,7 @@ test(
       assert.equal(log.filter((row) => row.event === 'start').length, 1)
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -1076,7 +1077,7 @@ test('context uses latest turn snapshot on cancel/error/restore and preserves na
     assert.equal(restored.usage.contextWindowUsedTokens, 70463)
   } finally {
     await m.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1161,7 +1162,7 @@ test(
     } finally {
       await session.close()
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -1277,7 +1278,7 @@ test('native compaction has stable live/history identity, command-only visibilit
     }
   } finally {
     await m.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   }
 })
 
@@ -1646,7 +1647,7 @@ new AgentSideConnection((client) => ({
       )
     } finally {
       await provider.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -1666,7 +1667,7 @@ async function usageHarness(t: TestContext) {
   })
   t.after(async () => {
     await m.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   })
   const start = m.start.bind(m)
   let session!: Awaited<ReturnType<typeof m.start>>
@@ -2131,7 +2132,7 @@ for (const postEcho of [false, true])
     })
     t.after(async () => {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     })
     const start = m.start.bind(m)
     let session!: Awaited<ReturnType<typeof m.start>>
@@ -2285,7 +2286,7 @@ test(
     })
     t.after(async () => {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     })
     const start = m.start.bind(m)
     let session!: Awaited<ReturnType<typeof m.start>>
@@ -2479,7 +2480,7 @@ for (const postEcho of [false, true]) {
       })
       t.after(async () => {
         await m.close()
-        await rm(home, { recursive: true, force: true })
+        await removeDir(home)
       })
       const start = m.start.bind(m)
       let session!: Awaited<ReturnType<typeof m.start>>

@@ -1,6 +1,6 @@
 <!--
 name: "Skill: Debugging"
-description: "Instructions for debugging an issue that the user is encountering in the Claude Code session"
+description: "Session debugging protocol using live debug logs, [ERROR]/[WARN] filtering, settings inspection, and guide subagent lookup"
 ccVersion: "2.1.235"
 variables:
   - "DEBUG_LOGGING_WAS_ALREADY_ACTIVE"
@@ -14,39 +14,23 @@ variables:
 -->
 # Debug Skill
 
-Help the user debug an issue they're encountering in this current Claude Code session.
-${DEBUG_LOGGING_WAS_ALREADY_ACTIVE?"":`
-## Debug Logging Just Enabled
-
-Debug logging was OFF for this session until now. Nothing prior to this /debug invocation was captured.
-
-Tell the user that debug logging is now active at `${DEBUG_LOG_PATH}`, ask them to reproduce the issue, then re-read the log. If they can't reproduce, they can also restart with `claude --debug` to capture logs from startup.
+${DEBUG_LOGGING_WAS_ALREADY_ACTIVE?"":`## Debug Logging Activated
+Debug logging was previously OFF. Inform the user logging is now active at \`${DEBUG_LOG_PATH}\`, ask them to reproduce the issue, then re-read the log (or restart with \`claude --debug\` for startup capture).
 `}
 ## Session Debug Log
-
-The debug log for the current session is at: `${DEBUG_LOG_PATH}`
-
+Path: `${DEBUG_LOG_PATH}`
 ${DEBUG_LOG_SUMMARY}
 
-For additional context, grep for [ERROR] and [WARN] lines across the full file.
-
+## Issue Context
 ${ISSUE_DESCRIPTION}
+${DAEMON_DEBUG_CONTEXT||"No specific issue described; inspect debug log and summarize errors, warnings, and anomalies."}
 
-## Issue Description
+## Settings Paths
+- User: `${GET_SETTINGS_FILE_PATH_FN("userSettings")}` | Project: `${GET_SETTINGS_FILE_PATH_FN("projectSettings")}` | Local: `${GET_SETTINGS_FILE_PATH_FN("localSettings")}`
 
-${DAEMON_DEBUG_CONTEXT||"The user did not describe a specific issue. Read the debug log and summarize any errors, warnings, or notable issues."}
-
-## Settings
-
-Remember that settings are in:
-* user - ${GET_SETTINGS_FILE_PATH_FN("userSettings")}
-* project - ${GET_SETTINGS_FILE_PATH_FN("projectSettings")}
-* local - ${GET_SETTINGS_FILE_PATH_FN("localSettings")}
-
-## Instructions
-
-1. Review the user's issue description
-2. The last ${LOG_LINE_COUNT} lines show the debug file format. Look for [ERROR] and [WARN] entries, stack traces, and failure patterns across the file
-3. Consider launching the ${CLAUDE_CODE_GUIDE_SUBAGENT_NAME} subagent to understand the relevant Claude Code features
-4. Explain what you found in plain language
-5. Suggest concrete fixes or next steps
+<debug_execution_protocol>
+1. Review the issue description and last `${LOG_LINE_COUNT}` lines for log format.
+2. Grep `${DEBUG_LOG_PATH}` for `[ERROR]`, `[WARN]`, stack traces, and failure patterns.
+3. Spawn `${CLAUDE_CODE_GUIDE_SUBAGENT_NAME}` when product/feature behavior clarification is needed.
+4. Report root cause concisely in plain language with concrete remediation steps.
+</debug_execution_protocol>

@@ -1,6 +1,6 @@
 <!--
 name: "Tool Description: Artifact browser storage guidance"
-description: "Defines browser storage as fallible per-viewer convenience state and directs reliable or shared state to runtime capabilities"
+description: "Restricts localStorage/sessionStorage/IndexedDB to try/catch-wrapped per-viewer UI conveniences"
 ccVersion: "2.1.271"
 -->
-**Browser storage**: `localStorage`, `sessionStorage` and IndexedDB work, but each artifact has its own origin and what a page stores lives only in that viewer's browser. It survives republishes to the same URL and never reaches other viewers, other devices or Claude. It can come back empty, or the accessor can throw, in a private window, with cleared or blocked site data, in previews or during thumbnail capture, so Claude wraps every read and write in try/catch and makes the page render correctly without it. Claude uses it only for per-viewer conveniences, such as a remembered tab or filter, a collapsed section or an unsent draft, and never for state that must persist reliably, be shared between viewers or be read back by Claude. That state belongs in a runtime capability.
+**Browser storage**: `localStorage`, `sessionStorage`, and `IndexedDB` are origin-isolated to a single viewer's browser (surviving same-URL republishes, never shared across viewers/devices or readable by the agent) and may throw or return empty in private windows, previews, or thumbnail capture. Wrap all reads/writes in `try/catch`, ensure clean fallback rendering, and restrict usage to ephemeral per-viewer conveniences (active tab/filter, collapsed state, unsent draft)—route durable or shared state to runtime capabilities.

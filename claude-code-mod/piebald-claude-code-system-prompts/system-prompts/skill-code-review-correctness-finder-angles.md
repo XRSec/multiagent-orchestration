@@ -1,27 +1,16 @@
 <!--
 name: "Skill: Code Review correctness finder angles"
-description: "Shared /code-review finder-angle block covering line-by-line diff scanning, removed-behavior auditing, and cross-file tracing"
+description: "Composite correctness finder angles A–C: line-by-line scan, removed-behavior audit, and cross-file contract tracing"
 ccVersion: "2.1.206"
 -->
 ### Angle A — line-by-line diff scan
 
-Read every hunk in the diff, line by line. Then Read the enclosing function for
-each hunk — bugs in unchanged lines of a touched function are in scope (the PR
-re-exposes or fails to fix them). For every line ask: what input, state, timing,
-or platform makes this line wrong? Look for inverted/wrong conditions,
-off-by-one, null/undefined deref, missing `await`, falsy-zero checks,
-wrong-variable copy-paste, error swallowed in catch, unescaped regex metachars.
+Inspect every diff hunk and its enclosing function (unchanged lines in touched functions remain in scope) for adversarial input/state/timing/platform failures: inverted conditions, off-by-one, null deref, missing `await`, falsy-zero, copy-paste wrong var, swallowed catch, unescaped regex metachars.
 
 ### Angle B — removed-behavior auditor
 
-For every line the diff DELETES or replaces, name the invariant or behavior it
-enforced, then search the new code for where that invariant is re-established.
-If you can't find it, that's a candidate: a removed guard, a dropped error
-path, a narrowed validation, a deleted test that was covering a real case.
+For every deleted or replaced line, identify the invariant it enforced and verify where the new code re-establishes it; flag missing guards, dropped error paths, narrowed validations, or deleted regression tests.
 
 ### Angle C — cross-file tracer
 
-For each function the diff changes, find its callers (Grep for the symbol) and
-check whether the change breaks any call site: a new precondition, a changed
-return shape, a new exception, a timing/ordering dependency. Also check callees:
-does a parallel change in the same PR make a call unsafe?
+Grep all callers of each modified function to detect broken contracts (new preconditions, altered return shapes, new exceptions, ordering dependencies) and verify callees against concurrent PR edits.

@@ -7,10 +7,7 @@ variables:
 -->
 ## Phase 3 — Sweep for gaps
 
-Run **one more finder** as a fresh reviewer who has the verified list. Re-read
-the diff and enclosing functions looking ONLY for defects not already listed.
-Do not re-derive or re-confirm anything already there — the job is gaps. Focus
-on what the first pass tends to miss: ${SWEEP_MISS_CATEGORIES}
-
-Surface **up to 8 additional candidates**, each naming a defect not already on
-the list. If nothing new, return an empty sweep — do not pad.
+- Run **one more finder** as a clean-slate reviewer supplied with the verified candidate list.
+- Re-read the diff and enclosing functions strictly for defects not already listed; do not re-derive or re-confirm existing findings.
+- Prioritize common first-pass blind spots: ${SWEEP_MISS_CATEGORIES}
+- Surface **up to 8 additional candidates**, each naming a net-new defect. Return an empty sweep if none exist; do not pad.

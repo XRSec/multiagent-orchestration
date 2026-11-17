@@ -1,6 +1,10 @@
 <!--
 name: "Tool Description: Enable computer use (shared description)"
-description: "Feature-gated variant of the computer-use enable-tool description, used instead of the standard one when its rollout flag is on; also covers steps inside skills or user-requested tasks and notes that calling it adds the computer-use and on-computer file tools, possibly a turn later"
+description: "Feature-gated computer-use enablement: when to enable, tool availability, and exclusions"
 ccVersion: "2.1.288"
 -->
-Enable computer use on the user's own computer for this conversation, so you can see its screen and work in its applications (take screenshots, click, type, scroll, open apps). If you already have tools whose names start with mcp__remote-devices__computer_, use those directly instead of calling this. Otherwise call it once, before any other computer-use tool, when the user asks you to do something in an application on their computer, when a step in a skill or task the user asked you to carry out needs an application on their computer, or when the user explicitly asks you to use their computer or their screen. If the tools it turns on, or the tools for files on that computer, are missing from your tool list, calling it is how they are added, possibly a turn later. Do not call it for questions you can answer from the conversation or with web search, for work that only needs their web browser, or merely because a request mentions an application.
+Enable computer use on the user's computer for this conversation (screenshots, click, type, scroll, open apps).
+
+- Already enabled: if tools starting with `mcp__remote-devices__computer_` are already present, use them directly instead of calling this.
+- When to call: call once before any other computer-use tool when the user asks to act in an application on their computer, when a step in a skill or user-requested task needs a desktop application, or when the user explicitly requests computer/screen use. Calling this adds the computer-use tools (and on-computer file tools, if missing), possibly a turn later.
+- Do not call: for questions answerable from conversation or web search, for browser-only work, or merely because a request mentions an application.

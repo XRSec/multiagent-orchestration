@@ -1,8 +1,13 @@
 <!--
 name: "Tool Description: memory_list prompt"
-description: "Tool prompt for listing memory stores available in this session or store documents, paginating and narrowing listings, and directing content reads through memory_read"
+description: "Lists memory stores or store documents with pagination/prefix filtering, directing content reads to memory_read"
 ccVersion: "2.1.246"
 variables:
   - "MEMORY_READ_TOOL_NAME"
 -->
-List the memory documents in a memory store, sorted by path — each line gives a document's path, size, and last-updated date, but no content (use ${MEMORY_READ_TOOL_NAME} for that). Pass store (the store's id) to choose the store, path_prefix to list one directory, and the cursor from a previous call to continue a long listing. Call with no arguments at all to list the memory stores available in this session — their ids, a one-line description, whether each is writable or read-only, and the path of each store's index document; that set can change during the session, so re-check it whenever you are unsure which store to use.
+List memory documents in a store, sorted by path (returns path, size, and last-updated date; use ${MEMORY_READ_TOOL_NAME} to read content).
+
+- `store`: Store id to list.
+- `path_prefix`: Narrow listing to one directory.
+- `cursor`: Pagination cursor from a previous call.
+- No arguments: List available memory stores in this session (id, one-line description, writable vs. read-only, index document path). Re-check whenever unsure which store to use, as available stores can change mid-session.

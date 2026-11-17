@@ -14,6 +14,7 @@ import {
 import { watchBrain } from '../server/brain.ts'
 import { BrainTranscriptProjector } from '../server/brain-projector.ts'
 import { normalizeAskQuestionInput } from '../server/questions.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -102,7 +103,7 @@ async function harness(t: TestContext) {
   const path = join(dir, 'transcript_full.jsonl')
   t.after(async () => {
     await manager.close()
-    await rm(home, { recursive: true, force: true })
+    await removeDir(home)
   })
   const write = (rows: Row[], partial = '') =>
     writeFile(path, encode(rows) + partial)

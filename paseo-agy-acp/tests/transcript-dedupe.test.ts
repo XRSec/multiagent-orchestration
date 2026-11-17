@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { appendFile, mkdtemp, mkdir, open, rm } from 'node:fs/promises'
+import { appendFile, mkdtemp, mkdir, open } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -8,6 +8,7 @@ import {
   TranscriptReader,
   readTranscriptRows,
 } from '../server/brain-io.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const id = '11111111-1111-4111-8111-111111111111'
 const row = (step_index: number, content: string) => ({
@@ -96,7 +97,7 @@ test('empty rewrite observations preserve delivered identities until rows return
     )
   } finally {
     await file.close()
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
@@ -161,7 +162,7 @@ test('first read and one-shot history deliver complete rows before a partial tai
     assert.deepEqual((await reader.read(root, id)).rows, [])
   } finally {
     await file.close()
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })
 
@@ -254,6 +255,6 @@ test('snapshot reconciliation spans partial reads and never inherits a truncated
     assert.deepEqual(freshOwner.rows, [replacement])
   } finally {
     await file.close()
-    await rm(root, { recursive: true, force: true })
+    await removeDir(root)
   }
 })

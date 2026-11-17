@@ -3,4 +3,9 @@ name: "Tool Description: Upload image"
 description: "Describes uploading fresh computer-tool screenshots to file inputs or drag-and-drop targets with bounded retries"
 ccVersion: "2.1.268"
 -->
-Upload a screenshot you took with the computer tool's screenshot action to a file input or drag & drop target. Screenshot IDs expire a few minutes after capture, so take the screenshot of what you want to upload right before uploading. Don't reuse an ID that an upload already failed with: to retry, take a new screenshot of the same content, and retry that upload at most once (never after the user declined). This tool cannot upload user-attached images or other files; use file_upload with the file's path for those, if that tool is available. Supports two approaches: (1) ref - for targeting specific elements, especially hidden file inputs, (2) coordinate - for drag & drop to visible locations like Google Docs. Provide either ref or coordinate, not both.
+Upload a screenshot captured via the computer tool's `screenshot` action to a file input or drag-and-drop target.
+
+- Capture right before uploading (screenshot IDs expire after a few minutes).
+- Do not reuse a failed screenshot ID: capture a fresh screenshot of the same content and retry at most once (NEVER retry after user decline).
+- Do not use for user-attached images or other files; use `file_upload` with the file path instead (if available).
+- Target via either `ref` (specific elements, especially hidden file inputs) or `coordinate` (drag-and-drop to visible locations such as Google Docs) — provide one, not both.

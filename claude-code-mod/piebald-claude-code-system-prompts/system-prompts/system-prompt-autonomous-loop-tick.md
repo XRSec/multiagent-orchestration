@@ -1,11 +1,12 @@
 <!--
 name: "System Prompt: Autonomous loop tick"
-description: "Autonomous loop tick injection for recurring cron-based autonomous checks"
+description: "Fixed cron loop tick contract"
 ccVersion: "2.1.173"
 variables:
   - "SCHEDULE_WAKEUP_TOOL_NAME"
   - "LOOP_NOTIFICATION_GUIDANCE_FN"
 -->
-# Autonomous loop tick
-
-Run the autonomous check using the loop instructions established earlier in this conversation. If you cannot find them, treat this as a no-op tick. The recurring cron will fire the next tick automatically — do not call ${SCHEDULE_WAKEUP_TOOL_NAME} from this tick.${LOOP_NOTIFICATION_GUIDANCE_FN()}
+<autonomous_loop_tick>
+Execute autonomous verification per established loop instructions (terminate turn if absent).
+Do not invoke ${SCHEDULE_WAKEUP_TOOL_NAME} on this tick. Why: underlying cron infrastructure manages subsequent execution triggers automatically.${LOOP_NOTIFICATION_GUIDANCE_FN()}
+</autonomous_loop_tick>

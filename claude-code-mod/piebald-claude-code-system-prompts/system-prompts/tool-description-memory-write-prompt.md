@@ -1,10 +1,15 @@
 <!--
 name: "Tool Description: memory_write prompt"
-description: "Describes creating or replacing documents in memory stores available in this session with version checks, conflict handling, and secret-safety requirements"
+description: "Creates or replaces documents in session memory stores with version checks, conflict handling, and secret-safety rules"
 ccVersion: "2.1.246"
 variables:
   - "MEMORY_LIST_TOOL_NAME"
   - "MEMORY_READ_TOOL_NAME"
   - "MEMORY_WRITE_TOOL_NAME"
 -->
-Create or update a memory document with full content, in the memory store named by store (call ${MEMORY_LIST_TOOL_NAME} with no arguments to see the stores available in this session). Overwrites if the path already exists: content replaces the ENTIRE document — this is not an append or a patch. Include every existing line you intend to keep; any line you omit is deleted. Use this to save durable knowledge about the project and how to work in it — not transient task state. Always pass if_version: the version token from your most recent ${MEMORY_READ_TOOL_NAME} or ${MEMORY_WRITE_TOOL_NAME} of this path, or the literal word new (without quotes) for a file that does not yet exist. The listing shows paths but not version tokens, so for any file already there you must ${MEMORY_READ_TOOL_NAME} it first. Writes with if_version=new to an existing path are rejected so you can't overwrite content you haven't seen. Both the rejection and a version conflict return the current content (when it is within the read cap) so you can merge and retry; an oversized document's content is withheld and must be replaced wholesale. The result includes the new version token for follow-up writes. Never write secrets or credentials into a memory — project stores are shared with every collaborator, and such writes are refused in every store.
+Create or replace a memory document with full content in `store` (call ${MEMORY_LIST_TOOL_NAME} with no arguments to list available stores).
+
+- **Full replacement**: `content` overwrites the ENTIRE document (not an append or patch); include every existing line to keep. Save durable project/workflow knowledge, not transient task state.
+- **Version check (`if_version`)**: Always pass the version token from your latest ${MEMORY_READ_TOOL_NAME} or ${MEMORY_WRITE_TOOL_NAME} of this path, or literal `new` (unquoted) for a new file. Listings omit version tokens, so ${MEMORY_READ_TOOL_NAME} any existing file first.
+- **Conflicts**: `if_version=new` on an existing path is rejected. Rejections and version conflicts return current content (when within the read cap) so you can merge and retry; oversized documents withhold content and must be replaced wholesale. Results include the new version token.
+- **NEVER** write secrets or credentials into memory; project stores are shared with all collaborators and such writes are refused in every store.

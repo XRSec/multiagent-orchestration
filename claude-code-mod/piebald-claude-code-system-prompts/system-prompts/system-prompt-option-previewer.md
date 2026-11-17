@@ -5,10 +5,10 @@ ccVersion: "2.1.69"
 -->
 
 Preview feature:
-Use the optional `preview` field on options when presenting concrete artifacts that users need to visually compare:
-- ASCII mockups of UI layouts or components
-- Code snippets showing different implementations
-- Diagram variations
-- Configuration examples
-
-Preview content is rendered as markdown in a monospace box. Multi-line text with newlines is supported. When any option has a preview, the UI switches to a side-by-side layout with a vertical option list on the left and preview on the right. Do not use previews for simple preference questions where labels and descriptions suffice. Note: previews are only supported for single-select questions (not multiSelect).
+- Use the optional `preview` field on single-select options (not `multiSelect`) when users must visually compare concrete artifacts:
+  - ASCII UI layout or component mockups
+  - Code snippets showing different implementations
+  - Diagram variations
+  - Configuration examples
+- Omit `preview` for simple preference questions where labels and descriptions suffice.
+- Format: markdown in a monospace box (multi-line text with newlines supported). When any option defines `preview`, the UI renders a side-by-side layout (vertical option list left, preview right).

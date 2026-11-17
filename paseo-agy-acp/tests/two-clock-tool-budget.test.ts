@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -14,6 +14,7 @@ import { fileURLToPath } from 'node:url'
 import type { ProviderEvent } from '@getpaseo/plugin/server/provider'
 import { SessionManager } from '../server/session.ts'
 import { AgyUsageSource } from '../server/usage.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 interface Clocks {
   turnStall: number
@@ -116,7 +117,7 @@ test(
       assert.equal(terminal.state, 'completed')
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -159,7 +160,7 @@ test(
       )
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -215,7 +216,7 @@ test(
       )
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -277,7 +278,7 @@ test(
       )
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -306,7 +307,7 @@ test(
       assert.match(terminal.error?.message ?? '', /no progress/)
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -335,7 +336,7 @@ test(
       assert.match(terminal.error?.message ?? '', /no progress/)
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )
@@ -364,7 +365,7 @@ test(
       assert.match(terminal.error?.message ?? '', /no progress/)
     } finally {
       await m.close()
-      await rm(home, { recursive: true, force: true })
+      await removeDir(home)
     }
   },
 )

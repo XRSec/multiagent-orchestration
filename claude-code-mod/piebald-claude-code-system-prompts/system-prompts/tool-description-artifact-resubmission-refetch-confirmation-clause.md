@@ -1,6 +1,6 @@
 <!--
 name: "Tool Description: Artifact resubmission refetch confirmation clause"
-description: "Shared clause in Artifact resubmission refusals requiring a fresh fetch of the artifact URL, and a full Read of any saved file that fetch requires, before resending content that supposedly already includes the newer version"
+description: "Inline clause requiring a fresh artifact URL fetch and full Read of any required saved file before resubmitting content"
 ccVersion: "2.1.302"
 -->
-fetch the artifact's URL again to confirm it (re-Reading a file an earlier refusal handed you does not count; if that fetch's result says the version counts as viewed only once its saved file is Read, Read every line of that file first) and, once you have that fetch's result,
+fetch the artifact's URL again to confirm (re-Reading a file from an earlier refusal does not count; if that fetch result says the version counts as viewed only once its saved file is Read, Read every line of that file first) and, once you have that fetch result,

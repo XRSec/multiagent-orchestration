@@ -1,6 +1,6 @@
 <!--
 name: "Tool Description: REPL asynchronous output and polling instructions"
-description: "Explains inline versus dispatched REPL results, asynchronous event formats, Poll waiting and how to avoid launching a running script twice"
+description: "Explains inline vs. dispatched REPL results, async event formats, Poll waiting, and duplicate-execution avoidance"
 ccVersion: "2.1.318"
 variables:
   - "MATH_OBJECT"
@@ -9,6 +9,16 @@ variables:
   - "POLL_TOOL_NAME"
 -->
 
-How output arrives: a script that finishes within about ${MATH_OBJECT.round(GET_REPL_INLINE_WAIT_TIMEOUT_MS_FN()/1000)} s comes back as the `REPL` call's own result, a `<repl-output eval="N">` element holding `<log>` lines and the `<result>` (or `<error>`). One still running by then returns `(dispatched #N)` instead, runs on, and no longer holds up the scripts after it: its output arrives as an ${IS_REPL_JSON_EVENT_FORMAT_ENABLED?'`<event kind="repl-eval">` element whose body is one JSON object (`eval` is the script's number, with its `log` lines and its `result` or `error`)':'`<event kind="repl-eval" eval="N">` element with the same children'}, in a `${POLL_TOOL_NAME}` result or before your next turn, with an `<event kind="repl-status">` ${IS_REPL_JSON_EVENT_FORMAT_ENABLED?"element":"line"} meanwhile saying what is still pending. A receipt means the script is running, so issuing it again would run it twice. Scripts start in call order.
+<output_delivery>
+- Scripts start in call order.
+- Finishes within ~${MATH_OBJECT.round(GET_REPL_INLINE_WAIT_TIMEOUT_MS_FN()/1000)} s: returns inline as the `REPL` call's result (`<repl-output eval="N">` with `<log>` lines and `<result>` or `<error>`).
+- Still running after ~${MATH_OBJECT.round(GET_REPL_INLINE_WAIT_TIMEOUT_MS_FN()/1000)} s: returns `(dispatched #N)`, continues running without blocking subsequent scripts, and delivers output as an ${IS_REPL_JSON_EVENT_FORMAT_ENABLED?'`<event kind="repl-eval">` element whose body is one JSON object (`eval` is the script's number, with its `log` lines and its `result` or `error`)':'`<event kind="repl-eval" eval="N">` element with the same children'} in a `${POLL_TOOL_NAME}` result or before your next turn, with an `<event kind="repl-status">` ${IS_REPL_JSON_EVENT_FORMAT_ENABLED?"element":"line"} showing pending work.
+- A `(dispatched #N)` receipt means the script is running—do not re-issue it or it will run twice.
+</output_delivery>
 
-Waiting: `${POLL_TOOL_NAME}` returns as soon as something arrives; while a script or a background task (a context, say) is still running, a wait with nothing to deliver ends just before the prompt cache would expire (about 5 minutes, or about an hour on a 1-hour cache) in a status line saying what is still pending, so you can poll again. Sent in the same turn as a `REPL` call it waits for that call's script: a long one (a test suite, a build) then costs no extra round trip, and one that has already come back ends the wait at once. When nothing else needs doing while a long script or a context runs, ending your turn works too: its result or notification starts your next turn when it lands, and waiting that way costs nothing. A shell command with no timeout of its own moves to the background after 10 minutes, so give a long build a longer timeout (up to 2 hours) to await it.
+<waiting>
+- `${POLL_TOOL_NAME}` returns as soon as an event arrives. If a script or background task (e.g., a context) is still running with nothing to deliver, `${POLL_TOOL_NAME}` ends just before prompt cache expiry (~5 min, or ~1 h on a 1-hour cache) with a status line of pending items so you can poll again.
+- Calling `${POLL_TOOL_NAME}` in the same turn as `REPL` waits for that script (saving a round trip on long builds/tests; returns immediately if already finished).
+- If nothing else is needed while a long script/context runs, end your turn—its result/notification starts the next turn at zero cost.
+- Shell commands without an explicit timeout move to the background after 10 min; pass a longer timeout (up to 2 h) to await a long build.
+</waiting>

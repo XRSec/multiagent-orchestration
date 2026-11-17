@@ -3,4 +3,4 @@ name: "Tool Description: Bash (maintain cwd)"
 description: "Bash tool instruction: use absolute paths and avoid cd"
 ccVersion: "2.1.113"
 -->
-Try to maintain your current working directory throughout the session by using absolute paths and avoiding usage of `cd`. You may use `cd` if the User explicitly requests it. In particular, never prepend `cd <current-directory>` to a `git` command — `git` already operates on the current working tree, and the compound triggers a permission prompt.
+Maintain your current working directory using absolute paths; avoid `cd` unless the user explicitly requests it. Never prepend `cd <current-directory>` to a `git` command—`git` already targets the current working tree, and the compound command triggers an extra permission prompt.

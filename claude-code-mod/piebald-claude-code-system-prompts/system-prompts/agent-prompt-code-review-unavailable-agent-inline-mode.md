@@ -1,6 +1,6 @@
 <!--
 name: "Agent Prompt: /code-review unavailable-agent inline mode"
-description: "Builds a single-pass inline code-review prompt that gathers a diff, evaluates configured angles, deduplicates findings, optionally sweeps gaps, and reports capped results when the Agent tool is unavailable"
+description: "Single-context sequential code-review protocol when subagent spawning is unavailable"
 ccVersion: "2.1.213"
 variables:
   - "REVIEW_MODE_TAG"
@@ -22,15 +22,12 @@ ${REVIEW_LEAD_IN}
 ${AGENT_UNAVAILABLE_INSTRUCTIONS}
 ${DIFF_GATHERING_PHASE}## Phase 1 — Find candidates (${ANGLE_COUNT} angles, single pass)
 
-Work through **${ANGLE_COUNT} angles** yourself, in sequence, in this same
-context — do not spawn subagents. Each surfaces candidate findings with
-`file`, `line`, a one-line `summary`, and a concrete `failure_scenario`.
+Evaluate **${ANGLE_COUNT} angles** sequentially in the active context without spawning subagents, recording `file`, `line`, 1-line `summary`, and concrete `failure_scenario` for each candidate.
 
 ${FINDER_ANGLES_BLOCK}
 ${CLEANUP_AND_ALTITUDE_CANDIDATES_NOTE}
 ## Phase 2 — Dedup and self-check (no subagent verify)
 
-Dedup near-duplicates (same defect, same location, same reason → keep one).
-Re-check each remaining candidate yourself against the diff before keeping it.
+Deduplicate overlapping candidates (same defect, location, and cause → retain one) and verify each survivor directly against the diff.
 ${GAP_SWEEP_PHASE}
 ${OUTPUT_FORMAT_FN(MAX_FINDINGS)}${INLINE_REVIEW_DISCLOSURE}

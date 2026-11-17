@@ -6,13 +6,13 @@ import {
   writeFile,
   appendFile,
   open,
-  rm,
   type FileHandle,
 } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { TranscriptReader, StepDedupe } from '../server/brain-io.ts'
 import { BrainTurnObservation } from '../server/brain-observer.ts'
+import { removeDir } from './helpers/cleanup.ts'
 
 const id = '11111111-1111-4111-8111-111111111111'
 const checkpoint = (step_index: number) => ({
@@ -38,7 +38,7 @@ async function fixture(t: TestContext) {
   const handle = await open(path, 'r')
   const prototype = Object.getPrototypeOf(handle)
   await handle.close()
-  t.after(() => rm(root, { recursive: true, force: true }))
+  t.after(() => removeDir(root))
   return { root, path, prototype }
 }
 

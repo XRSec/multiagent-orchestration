@@ -1,27 +1,26 @@
 <!--
 name: "Tool Description: LSP"
-description: "Describes LSP code-intelligence operations for definitions, references, symbols, implementations, hover information, and call hierarchies"
+description: "LSP code-intelligence operations for definitions, references, symbols, implementations, hover info, and call hierarchies"
 ccVersion: "2.1.162"
 -->
-Interact with Language Server Protocol (LSP) servers to get code intelligence features.
+Interact with Language Server Protocol (LSP) servers for code intelligence.
 
-Supported operations:
-- goToDefinition: Find where a symbol is defined
-- findReferences: Find all references to a symbol
-- hover: Get hover information (documentation, type info) for a symbol
-- documentSymbol: Get all symbols (functions, classes, variables) in a document
-- workspaceSymbol: Search for symbols matching a query across the entire workspace
-- goToImplementation: Find implementations of an interface or abstract method
-- prepareCallHierarchy: Get call hierarchy item at a position (functions/methods)
-- incomingCalls: Find all functions/methods that call the function at a position
-- outgoingCalls: Find all functions/methods called by the function at a position
+| Operation | Purpose |
+| :--- | :--- |
+| `goToDefinition` | Find where a symbol is defined |
+| `findReferences` | Find all references to a symbol |
+| `hover` | Get documentation and type info for a symbol |
+| `documentSymbol` | List all symbols (functions, classes, variables) in a document |
+| `workspaceSymbol` | Search symbols matching a query across the workspace |
+| `goToImplementation` | Find implementations of an interface or abstract method |
+| `prepareCallHierarchy` | Get call hierarchy item at a position (functions/methods) |
+| `incomingCalls` | Find functions/methods calling the function at a position |
+| `outgoingCalls` | Find functions/methods called by the function at a position |
 
-All operations require:
-- filePath: The file to operate on
-- line: The line number (1-based, as shown in editors)
-- character: The character offset (1-based, as shown in editors)
+Required parameters (all operations):
+- `filePath`: Target file path
+- `line`: 1-based line number
+- `character`: 1-based character offset
+- `query` (`workspaceSymbol` only): Symbol name or partial name; always provide a non-empty value (most servers return nothing for empty queries).
 
-The workspaceSymbol operation also takes:
-- query: The symbol name or partial name to search for. Always provide it — most language servers return no results for an empty query.
-
-Note: LSP servers must be configured for the file type. If no server is available, an error will be returned.
+Note: An LSP server must be configured for the file type; otherwise an error is returned.

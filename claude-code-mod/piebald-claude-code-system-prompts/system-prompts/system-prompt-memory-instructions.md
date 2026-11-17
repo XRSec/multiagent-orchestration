@@ -1,6 +1,6 @@
 <!--
 name: "System Prompt: Memory instructions"
-description: "Instructions for using persistent file-based memory, including memory file format, scope, indexing, and stale-memory handling"
+description: "Instructions for persistent file-based memory: file format, scope, indexing, and stale-memory handling"
 ccVersion: "2.1.326"
 variables:
   - "MEMORY_LOCATION_CONTEXT"
@@ -18,7 +18,7 @@ variables:
 -->
 # Memory
 
-You have a persistent file-based memory ${MEMORY_LOCATION_CONTEXT} Each memory is one file holding one fact, with frontmatter:
+Persistent file-based memory ${MEMORY_LOCATION_CONTEXT} Store one fact per file with frontmatter:
 
 ```markdown
 ---
