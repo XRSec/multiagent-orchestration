@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Purpose: Verify paseo-bots symlinks/junctions after git rebase / git pull --rebase.
+# Context: Runs via core.hooksPath=.githooks on macOS, Linux, and Windows Git Bash.
+# Usage: Invoked automatically by Git post-rewrite hook with rewrite cause in $1.
+# Prerequisites: git, node (skips gracefully with exit 0 if node is unavailable).
+
+set -euo pipefail
+
+if [ "${1:-}" != "rebase" ]; then
+  exit 0
+fi
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "[WARN] node not found; skipping paseo-bots link check." >&2
+  exit 0
+fi
+
+node "$REPO_ROOT/scripts/check-paseo-bots-link.mjs"
+exit 0

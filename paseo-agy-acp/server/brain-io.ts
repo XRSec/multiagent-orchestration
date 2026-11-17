@@ -1,0 +1,858 @@
+import {
+  lstat,
+  open,
+  readdir,
+  readFile,
+  realpath,
+  type FileHandle,
+} from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { join, sep } from 'node:path'
+import {
+  isAskQuestionName,
+  isMissingError,
+  isNativeToolName,
+  nonnegative,
+  record,
+  sessionIdPattern,
+  setBounded,
+} from './common.ts'
+import type { StepUsage } from './mapping.ts'
+
+export type SubagentRecord = {
+  conversationId: string
+  /** Native lifecycle state; only SUBAGENT_STATE_ALIVE counts as active work. */
+  state: string
+  spawnStepIndex: number
+  spawnCallId?: string
+}
+
+export const SUBAGENT_ALIVE = 'SUBAGENT_STATE_ALIVE'
+
+export type BrainMessageRecord = {
+  id: string
+  sender: string
+  priority?: string
+  hideFromUser?: boolean
+  tool?: {
+    conversationId?: string
+    stepIndex?: number
+    callId?: string
+    name?: string
+  }
+}
+
+export type InboxState = {
+  messages: BrainMessageRecord[]
+  readIds: Set<string>
+  unconsumedHighPriority: BrainMessageRecord[]
+  consumedNonUserCount: number
+  stepCallIds: Map<number, string>
+}
+
+const restartNoticePattern =
+  /\bsender=system\b[^\n]*\scontent=\[Notice\] All your subagents and background tasks have been stopped/
+
+// agy 1.5.7 cortex/planexecute handoff notices (Brain SYSTEM_MESSAGE rows carry no structured subtype).
+const PLAN_EXECUTE_NOTICE_PREFIXES = [
+  'Plan mode is off: this turn runs on ',
+  '\\[plan review\\] Plan mode is on: this turn runs on ',
+  '\\[plan review due\\] ',
+] as const
+
+const planExecuteNoticePattern = new RegExp(
+  `(?:^|<SYSTEM_MESSAGE>\\s*)(?:${PLAN_EXECUTE_NOTICE_PREFIXES.join('|')})`,
+)
+
+const rowMessageHeaderPattern =
+  /(?:^|\n)(?:\d+\.\s+)?\[Message\]\s+(?:timestamp=\S+\s+)?sender=(\S+)(?:\s+priority=(\S+))?/g
+
+/**
+ * agy logs a step once it reaches RUNNING, WAITING or DONE (or fails) and never appends it again.
+ * Only full O_TRUNC rewrites can contain these earlier statuses, and a later row for the same step
+ * always supersedes them, so readers drop them entirely.
+ */
+const unloggedStepStatuses = new Set(['PENDING', 'QUEUED', 'GENERATING'])
+
+class BrainEscapeError extends Error {
+  constructor() {
+    super('Brain artifact escapes its directory')
+    this.name = 'BrainEscapeError'
+  }
+}
+
+export const isMissing = isMissingError
+
+function isUnloggedStep(row: Record<string, unknown>): boolean {
+  return typeof row.status === 'string' && unloggedStepStatuses.has(row.status)
+}
+
+export function isCompletePlannerResponse(
+  step: Record<string, unknown> | undefined,
+): boolean {
+  return (
+    step?.type === 'PLANNER_RESPONSE' &&
+    step.status === 'DONE' &&
+    (!Array.isArray(step.tool_calls) ||
+      step.tool_calls.length === 0 ||
+      step.tool_calls.every((call) =>
+        isAskQuestionName(String(record(call).name ?? '')),
+      ))
+  )
+}
+
+export function isRestartNotice(
+  row: Record<string, unknown> | undefined,
+): boolean {
+  return (
+    row?.type === 'SYSTEM_MESSAGE' &&
+    restartNoticePattern.test(String(row.content ?? ''))
+  )
+}
+
+export function isPlanExecuteNotice(
+  row: Record<string, unknown> | undefined,
+): boolean {
+  return (
+    row?.type === 'SYSTEM_MESSAGE' &&
+    planExecuteNoticePattern.test(String(row.content ?? ''))
+  )
+}
+
+const userRequestPattern =
+  /<USER_REQUEST>\r?\n?([\s\S]*?)\r?\n?<\/USER_REQUEST>/
+
+const wrappedUserRequestPattern =
+  /^\s*<USER_REQUEST>(?:\r?\n([\s\S]*)\r?\n|\r?\n?([\s\S]*?)\r?\n?)<\/USER_REQUEST>(?<suffix>(?:\r?\n<(?:ADDITIONAL_METADATA|USER_SETTINGS_CHANGE)>[\s\S]*)?)\s*$/
+
+const uploadedImagesNoticePattern =
+  /(?:^|\r?\n)The user has uploaded (\d+) image\(s\):/
+
+function countImagePlaceholders(
+  media: unknown,
+  metadataSuffix: string,
+): number {
+  if (Array.isArray(media)) {
+    let count = 0
+    for (const entry of media) {
+      if (!entry || typeof entry !== 'object') continue
+      const mimeType = (entry as Record<string, unknown>).mime_type
+      if (typeof mimeType !== 'string' || mimeType.startsWith('image/')) {
+        count += 1
+      }
+    }
+    return count
+  }
+  if (!metadataSuffix) return 0
+  const uploaded = metadataSuffix.match(uploadedImagesNoticePattern)
+  if (!uploaded) return 0
+  const count = Number(uploaded[1])
+  return Number.isInteger(count) && count > 0 ? count : 0
+}
+
+export function stripMediaHints(text: string): string {
+  return text.replace(/(?:\r?\n)?<!--media:.*?-->/g, '')
+}
+
+function extractMediaUris(media: unknown): string[] {
+  if (!Array.isArray(media)) return []
+  const uris: string[] = []
+  for (const entry of media) {
+    if (!entry || typeof entry !== 'object') continue
+    const uri = (entry as Record<string, unknown>).uri
+    if (typeof uri === 'string' && uri.trim()) {
+      uris.push(uri.trim())
+    }
+  }
+  return uris
+}
+
+/**
+ * Normalizes a Brain transcript USER_INPUT row into Paseo display text,
+ * unwrapping prompt envelopes and appending `[image]` placeholders when media is attached.
+ * Also preserves local media file URIs via HTML comments (`<!--media:...-->`) for frontend hydration.
+ */
+export function normalizeUserText(text: string, media?: unknown): string {
+  const match = text.match(wrappedUserRequestPattern)
+  const body = match ? (match[1] ?? match[2] ?? '') : text
+  const suffix = match?.groups?.suffix ?? ''
+  const uris = extractMediaUris(media)
+  const imageCount = Math.max(
+    countImagePlaceholders(media, suffix),
+    uris.length,
+  )
+  if (imageCount === 0) return body
+  const placeholders = Array.from({ length: imageCount }, () => '[image]')
+  const base = body
+    ? `${body}\n${placeholders.join('\n')}`
+    : placeholders.join('\n')
+  if (uris.length === 0) return base
+  const hints = uris.map((uri) => `<!--media:${uri}-->`).join('')
+  return `${base}\n${hints}`
+}
+
+export function isCompactPrompt(content: unknown): boolean {
+  if (typeof content !== 'string') return false
+  const match = content.match(userRequestPattern)
+  const normalized = (match ? match[1] : content).trim().toLowerCase()
+  return normalized === '/compact' || normalized.startsWith('/compact ')
+}
+
+export function stepErrorMessage(
+  step: Record<string, unknown> | undefined,
+  fallback = 'Turn failed',
+): string {
+  if (typeof step?.content === 'string' && step.content) return step.content
+  if (typeof step?.error === 'string' && step.error) return step.error
+  const errObj = record(step?.error)
+  if (typeof errObj.message === 'string' && errObj.message)
+    return errObj.message
+  return fallback
+}
+
+const RETRY_EXACT_MESSAGES = new Set([
+  'The stream was interrupted. Please continue the task you were working on.',
+  'model output error: model output must contain either output text or tool calls, these cannot both be empty, please try again',
+])
+
+const RETRY_COUNTDOWN_PREFIXES = [
+  'Your previous response ',
+  'There was a problem',
+] as const
+
+function hasPositiveRetriesRemaining(message: string): boolean {
+  const lastLine = message.trimEnd().split(/\r?\n/).at(-1) ?? ''
+  return /^Retries remaining: [1-9]\d*$/.test(lastLine)
+}
+
+// shortcut: Brain has no retry outcome; replace these observed warning forms when upstream supplies one.
+export function isRetryWarning(
+  step: Record<string, unknown> | undefined,
+): boolean {
+  if (
+    step?.type !== 'ERROR_MESSAGE' ||
+    step.status !== 'DONE' ||
+    (step.source != null && step.source !== 'SYSTEM')
+  )
+    return false
+  const message = stepErrorMessage(step).replace(/^Error: /, '')
+  return (
+    RETRY_EXACT_MESSAGES.has(message) ||
+    /^API error \(attempt [1-9]\d*\): [\s\S]+$/.test(message) ||
+    (RETRY_COUNTDOWN_PREFIXES.some((prefix) => message.startsWith(prefix)) &&
+      hasPositiveRetriesRemaining(message))
+  )
+}
+
+// Brain has no exhaustion event: allow the normal silent model window after the latest retry warning.
+export const RETRY_IDLE_TIMEOUT_MS = 15 * 60_000
+
+export function extractStepUsage(
+  row: Record<string, unknown>,
+): StepUsage | undefined {
+  if (row.type !== 'PLANNER_RESPONSE') return undefined
+  const input = nonnegative(row.input_tokens) ? row.input_tokens : undefined
+  const output = nonnegative(row.output_tokens) ? row.output_tokens : undefined
+  if (
+    input === undefined &&
+    output === undefined &&
+    !nonnegative(row.cache_read_tokens) &&
+    !nonnegative(row.cache_write_tokens)
+  )
+    return undefined
+  const cacheWrite = nonnegative(row.cache_write_tokens)
+    ? row.cache_write_tokens
+    : undefined
+  const cachedRead = nonnegative(row.cache_read_tokens)
+    ? row.cache_read_tokens
+    : 0
+  if ((input ?? 0) + (output ?? 0) + cachedRead + (cacheWrite ?? 0) === 0)
+    return undefined
+  return {
+    inputTokens: input ?? 0,
+    outputTokens: output ?? 0,
+    cachedReadTokens: cachedRead,
+    ...(cacheWrite !== undefined ? { cachedWriteTokens: cacheWrite } : {}),
+  }
+}
+
+export function extractRowMessageSenders(
+  row: Record<string, unknown>,
+): string[] {
+  if (
+    row.type !== 'SYSTEM_MESSAGE' ||
+    typeof row.content !== 'string' ||
+    isRestartNotice(row)
+  )
+    return []
+  const senders: string[] = []
+  for (const match of row.content.matchAll(rowMessageHeaderPattern)) {
+    const sender = match[1]
+    const priority = match[2]
+    if (sender !== 'user' && priority !== 'MESSAGE_PRIORITY_LOW') {
+      senders.push(sender)
+    }
+  }
+  return senders
+}
+
+export function countRowMessages(
+  row: Record<string, unknown>,
+  allowInitialSpawnPrompt = true,
+): number {
+  const senders = extractRowMessageSenders(row)
+  if (senders.length === 0) return 0
+  if (
+    allowInitialSpawnPrompt &&
+    Number(row.step_index) === 0 &&
+    senders.some((sender) => sessionIdPattern.test(sender))
+  ) {
+    return Math.max(0, senders.length - 1)
+  }
+  return senders.length
+}
+
+type CachedMessage = {
+  mtimeMs: number
+  size: number
+  record: BrainMessageRecord
+}
+const messageCache = new Map<string, CachedMessage>()
+const MESSAGE_CACHE_LIMIT = 4096
+
+/** Parse a write-once inbox message into its light record (bodies and signatures are dropped). */
+function parseMessage(raw: Record<string, unknown>, fallbackId: string) {
+  const toolMeta = record(record(raw.sourceMetadata).tool)
+  const toolCall = record(toolMeta.toolCall)
+  const callId =
+    typeof toolCall.id === 'string' && toolCall.id ? toolCall.id : undefined
+  const stepIndex =
+    typeof toolMeta.stepIndex === 'number' &&
+    Number.isInteger(toolMeta.stepIndex)
+      ? toolMeta.stepIndex
+      : undefined
+  const conversationId =
+    typeof toolMeta.conversationId === 'string'
+      ? toolMeta.conversationId
+      : undefined
+  const message: BrainMessageRecord = {
+    id: typeof raw.id === 'string' && raw.id ? raw.id : fallbackId,
+    sender: typeof raw.sender === 'string' ? raw.sender : '',
+    priority: typeof raw.priority === 'string' ? raw.priority : undefined,
+    hideFromUser: raw.hideFromUser === true,
+    ...(conversationId || stepIndex !== undefined || callId
+      ? {
+          tool: {
+            conversationId,
+            stepIndex,
+            callId,
+            name: typeof toolCall.name === 'string' ? toolCall.name : undefined,
+          },
+        }
+      : {}),
+  }
+  return message
+}
+
+async function readSafeJsonFile(
+  path: string,
+): Promise<Record<string, unknown>> {
+  const info = await lstat(path)
+  if (info.isSymbolicLink()) throw new BrainEscapeError()
+  return record(JSON.parse(await readFile(path, 'utf8')))
+}
+
+/** Read a message file, re-parsing it only when its mtime or size changes. */
+async function readMessageCached(path: string, fallbackId: string) {
+  const info = await lstat(path)
+  if (info.isSymbolicLink()) throw new BrainEscapeError()
+  const hit = messageCache.get(path)
+  if (hit && hit.mtimeMs === info.mtimeMs && hit.size === info.size)
+    return hit.record
+  const message = parseMessage(
+    record(JSON.parse(await readFile(path, 'utf8'))),
+    fallbackId,
+  )
+  setBounded(
+    messageCache,
+    path,
+    {
+      mtimeMs: info.mtimeMs,
+      size: info.size,
+      record: message,
+    },
+    MESSAGE_CACHE_LIMIT,
+  )
+  return message
+}
+
+/** A subagent's spawning call never changes once its inbox has been populated. */
+const SPAWN_CACHE_LIMIT = 4096
+const spawnCache = new Map<string, { callId?: string; stepIndex?: number }>()
+
+export async function resolveBrainPath(
+  root: string,
+  nativeId: string,
+  subpath: string,
+): Promise<string> {
+  const base = await realpath(root)
+  const path = await realpath(
+    join(base, nativeId, '.system_generated', subpath),
+  )
+  const prefix = base === sep ? sep : base + sep
+  if (!path.startsWith(prefix)) throw new BrainEscapeError()
+  return path
+}
+
+/** Read structured inbox messages and read.json state from .system_generated/messages. */
+export async function readInboxState(
+  root: string,
+  nativeId: string,
+): Promise<InboxState> {
+  const empty: InboxState = {
+    messages: [],
+    readIds: new Set(),
+    unconsumedHighPriority: [],
+    consumedNonUserCount: 0,
+    stepCallIds: new Map(),
+  }
+  if (!sessionIdPattern.test(nativeId)) return empty
+  let dir: string
+  try {
+    dir = await resolveBrainPath(root, nativeId, 'messages')
+  } catch (error) {
+    if (isMissing(error)) return empty
+    throw error
+  }
+  const entries = await readdir(dir).catch(() => [] as string[])
+  const readIds = new Set<string>()
+  if (entries.includes('read.json')) {
+    try {
+      const parsed = await readSafeJsonFile(join(dir, 'read.json'))
+      for (const [id, isRead] of Object.entries(parsed))
+        if (isRead === true) readIds.add(id)
+    } catch (error) {
+      if (error instanceof BrainEscapeError) throw error
+      /* Ignore partially written read.json and re-poll on next tick. */
+    }
+  }
+  const messageEntries = entries.filter(
+    (name) => name.endsWith('.json') && name !== 'read.json',
+  )
+  const loaded = await Promise.all(
+    messageEntries.map(async (name) => {
+      try {
+        return await readMessageCached(join(dir, name), name.slice(0, -5))
+      } catch (error) {
+        if (error instanceof BrainEscapeError) throw error
+        /* Ignore partially written message files and re-poll on next tick. */
+        return undefined
+      }
+    }),
+  )
+  const messages: BrainMessageRecord[] = []
+  const stepCallIds = new Map<number, string>()
+  for (const message of loaded) {
+    if (!message) continue
+    const { tool } = message
+    if (
+      tool?.conversationId === nativeId &&
+      tool.callId &&
+      tool.stepIndex !== undefined
+    ) {
+      stepCallIds.set(tool.stepIndex, tool.callId)
+    }
+    messages.push(message)
+  }
+  const isWakeupMessage = (m: BrainMessageRecord) =>
+    m.sender !== 'user' &&
+    !isNativeToolName(m.tool?.name ?? '', 'invoke_subagent') &&
+    !m.hideFromUser &&
+    m.priority !== 'MESSAGE_PRIORITY_LOW'
+  const unconsumedHighPriority = messages.filter(
+    (m) => isWakeupMessage(m) && !readIds.has(m.id),
+  )
+  const consumedNonUserCount = messages.filter(
+    (m) => isWakeupMessage(m) && readIds.has(m.id),
+  ).length
+  return {
+    messages,
+    readIds,
+    unconsumedHighPriority,
+    consumedNonUserCount,
+    stepCallIds,
+  }
+}
+
+/** Read structured subagent descriptors from .system_generated/subagents. */
+export async function readSubagents(
+  root: string,
+  nativeId: string,
+): Promise<SubagentRecord[]> {
+  if (!sessionIdPattern.test(nativeId)) return []
+  let dir: string
+  try {
+    dir = await resolveBrainPath(root, nativeId, 'subagents')
+  } catch (error) {
+    if (isMissing(error)) return []
+    throw error
+  }
+  const entries = await readdir(dir).catch(() => [] as string[])
+  const loaded = await Promise.all(
+    entries
+      .filter((name) => name.endsWith('.json'))
+      .map(async (name): Promise<SubagentRecord | undefined> => {
+        try {
+          const raw = await readSafeJsonFile(join(dir, name))
+          const conversationId =
+            typeof raw.conversationId === 'string'
+              ? raw.conversationId
+              : name.slice(0, -5)
+          if (!sessionIdPattern.test(conversationId)) return undefined
+          // A missing state means the descriptor predates lifecycle tracking; unknown states are not active.
+          const state =
+            typeof raw.state === 'string' && raw.state
+              ? raw.state
+              : SUBAGENT_ALIVE
+          let spawnStepIndex =
+            typeof raw.spawnStepIndex === 'number' &&
+            Number.isInteger(raw.spawnStepIndex)
+              ? raw.spawnStepIndex
+              : 0
+          const spawnKey = `${root}\0${nativeId}\0${conversationId}`
+          let spawn = spawnCache.get(spawnKey)
+          if (!spawn) {
+            const childInbox = await readInboxState(root, conversationId)
+            const spawnTools = childInbox.messages
+              .map((m) => m.tool)
+              .filter(
+                (t): t is NonNullable<typeof t> =>
+                  t !== undefined &&
+                  isNativeToolName(t.name ?? '', 'invoke_subagent'),
+              )
+            const init =
+              spawnTools.find((t) => t.conversationId === nativeId) ??
+              (spawnTools.length === 1 ? spawnTools[0] : undefined)
+            if (init) {
+              spawn = { callId: init.callId, stepIndex: init.stepIndex }
+              setBounded(spawnCache, spawnKey, spawn, SPAWN_CACHE_LIMIT)
+            } else if (childInbox.messages.length > 0) {
+              spawn = {}
+              setBounded(spawnCache, spawnKey, spawn, SPAWN_CACHE_LIMIT)
+            }
+          }
+          const spawnCallId = spawn?.callId
+          if (spawn?.stepIndex !== undefined) spawnStepIndex = spawn.stepIndex
+          return {
+            conversationId,
+            state,
+            spawnStepIndex,
+            spawnCallId,
+          }
+        } catch (error) {
+          if (error instanceof BrainEscapeError) throw error
+          /* Ignore partially written subagent descriptor files. */
+          return undefined
+        }
+      }),
+  )
+  return loaded.filter((r): r is SubagentRecord => r !== undefined)
+}
+
+export async function resolveTranscriptPath(root: string, nativeId: string) {
+  return resolveBrainPath(root, nativeId, 'logs/transcript_full.jsonl')
+}
+
+const REWRITE_PROBE_BYTES = 4096
+
+/**
+ * One cursor owns partial records across polls, path replacement and in-place rewrites.
+ * agy rewrites transcript_full.jsonl with O_TRUNC on the same inode, so besides inode and size
+ * changes the reader re-checks the first bytes and the bytes just before its offset.
+ */
+export class TranscriptReader {
+  private identity = ''
+  private offset = 0
+  private remainder = ''
+  private snapshotStepIndices?: Set<number>
+  private head = Buffer.alloc(0)
+  private tail = Buffer.alloc(0)
+
+  private clearCursor(identity = '') {
+    this.identity = identity
+    this.offset = 0
+    this.remainder = ''
+    this.snapshotStepIndices = new Set()
+    this.head = Buffer.alloc(0)
+    this.tail = Buffer.alloc(0)
+  }
+
+  private async matches(file: FileHandle, probe: Buffer, position: number) {
+    if (!probe.length) return true
+    const buffer = Buffer.alloc(probe.length)
+    const { bytesRead } = await file.read(buffer, 0, probe.length, position)
+    return bytesRead === probe.length && buffer.equals(probe)
+  }
+
+  /** Keep the probes equal to bytes actually parsed, so a rewrite racing this read is still noticed. */
+  private remember(chunk: Buffer) {
+    if (this.head.length < REWRITE_PROBE_BYTES)
+      this.head = Buffer.concat([
+        this.head,
+        chunk.subarray(0, REWRITE_PROBE_BYTES - this.head.length),
+      ])
+    this.tail =
+      chunk.length >= REWRITE_PROBE_BYTES
+        ? Buffer.from(chunk.subarray(chunk.length - REWRITE_PROBE_BYTES))
+        : Buffer.concat([this.tail, chunk]).subarray(-REWRITE_PROBE_BYTES)
+  }
+
+  async read(
+    root: string,
+    nativeId: string,
+  ): Promise<{
+    rows: Record<string, unknown>[]
+    reset: boolean
+    /** Complete replacement identities, separate from immediately deliverable records. */
+    snapshotStepIndices?: ReadonlySet<number>
+    mtimeMs?: number
+  }> {
+    const previous = {
+      identity: this.identity,
+      offset: this.offset,
+      remainder: this.remainder,
+      snapshotStepIndices: this.snapshotStepIndices,
+      head: this.head,
+      tail: this.tail,
+    }
+    try {
+      return await this.readOnce(root, nativeId)
+    } catch (error) {
+      // Nothing was delivered: cursor bytes, probes and pending snapshot evidence must all roll back.
+      Object.assign(this, previous)
+      throw error
+    }
+  }
+
+  private async readOnce(root: string, nativeId: string) {
+    const path = await resolveTranscriptPath(root, nativeId)
+    const file = await open(path, 'r')
+    const rows: Record<string, unknown>[] = []
+    try {
+      const stat = await file.stat()
+      const identity = `${path}:${stat.dev}:${stat.ino}`
+      const reset =
+        identity !== this.identity ||
+        stat.size < this.offset ||
+        !(await this.matches(file, this.head, 0)) ||
+        !(await this.matches(file, this.tail, this.offset - this.tail.length))
+      if (reset) {
+        this.clearCursor(identity)
+      }
+      const startedAtZero = this.offset === 0 && this.remainder === ''
+      try {
+        while (this.offset < stat.size) {
+          const buffer = Buffer.alloc(
+            Math.min(stat.size - this.offset, 1024 * 1024),
+          )
+          const { bytesRead } = await file.read(
+            buffer,
+            0,
+            buffer.length,
+            this.offset,
+          )
+          if (!bytesRead) break
+          this.offset += bytesRead
+          this.remember(buffer.subarray(0, bytesRead))
+          // Preserve bytes until a complete line is available, including split UTF-8 characters.
+          this.remainder += buffer.subarray(0, bytesRead).toString('latin1')
+          const lines = this.remainder.split('\n')
+          this.remainder = lines.pop()!
+          if (this.remainder.length > 8 * 1024 * 1024)
+            throw new Error('Brain JSONL line exceeds 8 MiB')
+          for (const line of lines) {
+            if (line.length > 8 * 1024 * 1024)
+              throw new Error('Brain JSONL line exceeds 8 MiB')
+            if (!line.trim()) continue
+            const row = record(
+              JSON.parse(Buffer.from(line, 'latin1').toString('utf8')),
+            )
+            if (!isUnloggedStep(row)) rows.push(row)
+          }
+        }
+      } catch (error) {
+        if (error instanceof SyntaxError) {
+          const latestStat = await file.stat().catch(() => null)
+          const racedRewrite =
+            !startedAtZero ||
+            !latestStat ||
+            latestStat.size !== stat.size ||
+            !(await this.matches(file, this.head, 0).catch(() => false))
+          if (racedRewrite) {
+            this.clearCursor()
+            return {
+              rows: [],
+              reset: true,
+              mtimeMs: latestStat?.mtimeMs ?? stat.mtimeMs,
+            }
+          }
+        }
+        throw error
+      }
+      if (this.snapshotStepIndices && rows.length) {
+        this.snapshotStepIndices = new Set(this.snapshotStepIndices)
+        for (const row of rows)
+          this.snapshotStepIndices.add(Number(row.step_index))
+      }
+      // shortcut: observed JSONL has no commit marker; only a nonempty newline-complete snapshot authorizes pruning.
+      const snapshotStepIndices =
+        this.remainder.length === 0 && this.snapshotStepIndices?.size
+          ? this.snapshotStepIndices
+          : undefined
+      if (snapshotStepIndices) this.snapshotStepIndices = undefined
+      return { rows, reset, snapshotStepIndices, mtimeMs: stat.mtimeMs }
+    } finally {
+      await file.close()
+    }
+  }
+}
+
+export async function readTranscriptRows(
+  root: string,
+  nativeId: string,
+): Promise<Record<string, unknown>[]> {
+  if (!sessionIdPattern.test(nativeId)) return []
+  try {
+    return (await new TranscriptReader().read(root, nativeId)).rows
+  } catch (error) {
+    if (isMissing(error)) return []
+    throw error
+  }
+}
+
+/** Walk complete JSONL records backwards without parsing unrelated history or splitting UTF-8. */
+async function* readTranscriptTail(root: string, nativeId: string) {
+  if (!sessionIdPattern.test(nativeId)) return
+  let file
+  try {
+    file = await open(await resolveTranscriptPath(root, nativeId), 'r')
+  } catch (error) {
+    if (isMissing(error)) return
+    throw error
+  }
+  try {
+    let end = (await file.stat()).size
+    let prefix = Buffer.alloc(0)
+    while (end > 0) {
+      const start = Math.max(0, end - 64 * 1024)
+      const chunk = Buffer.alloc(end - start)
+      const { bytesRead } = await file.read(chunk, 0, chunk.length, start)
+      const bytes = Buffer.concat([chunk.subarray(0, bytesRead), prefix])
+      let lineEnd = bytes.length
+      for (
+        let i = bytes.lastIndexOf(10);
+        i >= 0;
+        i = bytes.lastIndexOf(10, i - 1)
+      ) {
+        const line = bytes.subarray(i + 1, lineEnd)
+        lineEnd = i
+        if (line.length > 8 * 1024 * 1024)
+          throw new Error('Brain JSONL line exceeds 8 MiB')
+        // Tail snapshots may end at a complete JSON value without LF; this does not commit a reader snapshot.
+        if (line.length) {
+          try {
+            yield record(JSON.parse(line.toString('utf8')))
+          } catch (error) {
+            if (!(error instanceof SyntaxError)) throw error
+          }
+        }
+        if (i === 0) break
+      }
+      prefix = Buffer.from(bytes.subarray(0, lineEnd))
+      if (prefix.length > 8 * 1024 * 1024)
+        throw new Error('Brain JSONL line exceeds 8 MiB')
+      end = start
+    }
+    if (prefix.length) {
+      try {
+        yield record(JSON.parse(prefix.toString('utf8')))
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error
+      }
+    }
+  } finally {
+    await file.close()
+  }
+}
+
+/** Step index of the newest complete transcript row. */
+export async function readLastStepIndex(
+  root: string,
+  nativeId: string,
+): Promise<number> {
+  for await (const row of readTranscriptTail(root, nativeId)) {
+    const step = Number(row.step_index)
+    if (Number.isInteger(step)) return step
+  }
+  return -1
+}
+
+/** Remembers each step's delivered shape, so a rewrite re-delivers only changed steps. */
+export class StepDedupe {
+  private seen = new Map<number, string>()
+
+  prune(stepIndices: ReadonlySet<number>) {
+    // An empty read can be the O_TRUNC window, not evidence that delivered steps were deleted.
+    if (stepIndices.size === 0) return
+    for (const step of this.seen.keys())
+      if (!stepIndices.has(step)) this.seen.delete(step)
+  }
+
+  /** Whether this row is new or changed since its step was last seen. */
+  fresh(row: Record<string, unknown>): boolean {
+    const step = Number(row.step_index)
+    // A completed checkpoint's summary/status revisions are not another completion.
+    if (row.type === 'CHECKPOINT') {
+      if (this.seen.get(step) === 'checkpoint:completed') return false
+      if (row.status === 'DONE') {
+        this.seen.set(step, 'checkpoint:completed')
+        return true
+      }
+    }
+    // Store a digest, not the payload: long-lived watchers would otherwise retain every step's full text.
+    const signature = createHash('sha1')
+      .update(
+        JSON.stringify([
+          row.type,
+          row.source ?? '',
+          row.status ?? '',
+          row.content ?? '',
+          row.thinking ?? '',
+          row.tool_calls ?? null,
+          row.error ?? null,
+        ]),
+      )
+      .digest('base64')
+    if (this.seen.get(step) === signature) return false
+    this.seen.set(step, signature)
+    return true
+  }
+}
+
+/** Latest positive model snapshot and observed turn boundary; cumulative usage is never context. */
+export async function readLatestStepUsage(
+  root: string,
+  nativeId: string,
+  minStepIndex = -1,
+): Promise<{ lastStepUsage?: StepUsage; lastStepIndex: number }> {
+  let lastStepIndex = -1
+  for await (const row of readTranscriptTail(root, nativeId)) {
+    if (!Number.isInteger(row.step_index)) continue
+    const step = Number(row.step_index)
+    lastStepIndex = Math.max(lastStepIndex, step)
+    if (step <= minStepIndex) break
+    const lastStepUsage = extractStepUsage(row)
+    if (lastStepUsage) return { lastStepUsage, lastStepIndex }
+  }
+  return { lastStepIndex }
+}

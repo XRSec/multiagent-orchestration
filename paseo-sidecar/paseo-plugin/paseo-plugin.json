@@ -1,0 +1,15 @@
+{
+  "id": "paseo-sidecar",
+  "name": "Paseo Sidecar",
+  "description": "Paseo-native Sidecar control plane for workspace-routed Skills, MCPs, and deterministic lifecycle Hooks.",
+  "requirements": {
+    "paseo": ">=0.15.0"
+  },
+  "build": [
+    [
+      "npm",
+      "install",
+      "--omit=dev"
+    ]
+  ]
+}

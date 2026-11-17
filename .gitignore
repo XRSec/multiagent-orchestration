@@ -1,0 +1,14 @@
+# Environment & Secrets
+.env
+.env.*
+*.env
+!.env.example
+
+extensions/*
+.dev/
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+paseo-bots-plugin-data/shared/Bots/*/memory/log/

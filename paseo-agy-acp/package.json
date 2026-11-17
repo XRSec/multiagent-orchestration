@@ -1,0 +1,57 @@
+{
+  "name": "@fdkevin/paseo-agy-acp",
+  "version": "0.1.1",
+  "files": [
+    "paseo-plugin.json",
+    "icon.png",
+    "icon.svg",
+    "OVERVIEW.md",
+    "OVERVIEW.*.md",
+    "README.md",
+    "README.*.md",
+    "LICENSE",
+    "docs/",
+    "index.server.ts",
+    "server/",
+    "npm-shrinkwrap.json"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.ts",
+    "check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "verify": "npm run format:check && npm run check && npm test && npm pack --dry-run --ignore-scripts"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "0.15.4",
+    "@types/node": "^22.0.0",
+    "prettier": "^3.6.2",
+    "typescript": "^7.0.0",
+    "zod": "^4.4.3"
+  },
+  "type": "module",
+  "dependencies": {
+    "@agentclientprotocol/sdk": "^1.9.0"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "description": "Connect Antigravity ACP to Paseo with native sessions, permissions and rich tool timelines",
+  "license": "MIT",
+  "author": "fdkevin0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fdkevin0/paseo-agy-acp.git"
+  },
+  "homepage": "https://github.com/fdkevin0/paseo-agy-acp#readme",
+  "bugs": {
+    "url": "https://github.com/fdkevin0/paseo-agy-acp/issues"
+  },
+  "keywords": [
+    "paseo",
+    "paseo-plugin",
+    "antigravity",
+    "agy",
+    "acp"
+  ]
+}

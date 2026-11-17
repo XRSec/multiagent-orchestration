@@ -1,0 +1,40 @@
+# Default behavior: normalize all text files to LF on commit
+* text=auto eol=lf
+
+# Strict LF enforcement for scripts and git hooks (CRLF breaks MSYS bash on Windows)
+*.sh text eol=lf
+*.bash text eol=lf
+.githooks/* text eol=lf
+scripts/* text eol=lf
+
+# Strict LF for Agent definitions and Prompt Cache integrity
+# (CRLF shifts byte offsets and can invalidate Anthropic prompt cache)
+*.md text eol=lf
+*.json text eol=lf
+*.jsonl text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+.claude/agents/*.md text eol=lf
+
+# Source code
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+
+# Binaries
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.db binary
+*.sqlite binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary

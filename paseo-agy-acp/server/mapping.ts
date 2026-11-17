@@ -1,0 +1,1004 @@
+import { z } from 'zod'
+import type {
+  SessionUpdate,
+  ToolCall,
+  ToolCallUpdate,
+  SessionConfigOption,
+  NewSessionResponse,
+  ContentBlock,
+  UsageUpdate,
+  Usage,
+} from '@agentclientprotocol/sdk'
+import type {
+  ProviderConfigState,
+  ProviderMode,
+  ProviderTimelineItem,
+  ProviderToolCallDetail,
+  ProviderContent,
+  ProviderUsage,
+} from '@getpaseo/plugin/server/provider'
+import {
+  classifyPlanModeTool,
+  cleanToolName,
+  isAskQuestionName,
+  sessionIdPattern,
+  setBounded,
+  record,
+  str,
+  num,
+  nonnegative,
+  text,
+} from './common.ts'
+import { boundToolCallPayload } from './tool-payload.ts'
+import { normalizeAskQuestionInput } from './questions.ts'
+
+export const FULL_ACCESS_MODE_ID = 'full-access'
+
+const modeVisuals: Record<
+  string,
+  Pick<ProviderMode, 'icon' | 'colorTier' | 'isUnattended'>
+> = {
+  default: { icon: 'Shield', colorTier: 'safe' },
+  'accept-edits': { icon: 'ShieldPlus', colorTier: 'moderate' },
+  plan: { icon: 'ShieldEllipsis', colorTier: 'planning' },
+  [FULL_ACCESS_MODE_ID]: {
+    icon: 'ShieldOff',
+    colorTier: 'dangerous',
+    isUnattended: true,
+  },
+}
+
+function joinChunks(
+  chunks: readonly Record<string, unknown>[] | undefined,
+  ...keys: string[]
+): string | undefined {
+  if (!chunks) return undefined
+  return chunks
+    .map((c) => {
+      for (const k of keys) {
+        const v = str(c[k])
+        if (v !== undefined) return v
+      }
+      return ''
+    })
+    .join('\n...\n')
+}
+
+const searchToolNames: ReadonlyArray<
+  readonly [string, 'grep' | 'glob' | 'web_search']
+> = [
+  ['grep', 'grep'],
+  ['find_by_name', 'glob'],
+  ['glob', 'glob'],
+  ['search_web', 'web_search'],
+  ['web_search', 'web_search'],
+]
+
+function extractToolContentText(
+  tool: Partial<ToolCall> | ToolCallUpdate,
+): string | undefined {
+  const joined = tool.content
+    ?.map((c) =>
+      c.type === 'content' && c.content.type === 'text' ? c.content.text : '',
+    )
+    .filter(Boolean)
+    .join('\n')
+  return joined || undefined
+}
+
+function cleanReadOutput(output: string | undefined): {
+  content: string | undefined
+  startLine?: number
+  endLine?: number
+} {
+  if (!output) return { content: output }
+  const header = output.match(
+    /^(?:Created At:[^\n]*\n)?(?:Completed At:[^\n]*\n)?Showing lines (\d+)-(\d+) of \d+\r?\n/,
+  )
+  const body = header ? output.slice(header[0].length) : output
+  const lines = body.split('\n')
+  const numbered =
+    lines.length > 0 &&
+    lines.every((line, i) =>
+      i === lines.length - 1 && line === '' ? true : /^\d+:(?: |$)/.test(line),
+    )
+  return {
+    content: numbered
+      ? lines.map((line) => line.replace(/^\d+:(?: |$)/, '')).join('\n')
+      : body,
+    ...(header
+      ? { startLine: Number(header[1]), endLine: Number(header[2]) }
+      : {}),
+  }
+}
+
+function nonEmptyRawOutput(rawOutput: unknown): string | undefined {
+  if (typeof rawOutput === 'string')
+    return rawOutput.trim() ? rawOutput : undefined
+  if (rawOutput == null || rawOutput === '') return undefined
+  const obj = record(rawOutput)
+  const keys = Object.keys(obj)
+  if (keys.length === 0) return undefined
+  if (keys.length === 1 && obj.output === '') return undefined
+  return JSON.stringify(rawOutput)
+}
+
+/** Map native tool arguments and output to Paseo detail cards. */
+const canonicalWriteToolPattern =
+  /^(?:write_file|write_to_file|create_file|fs\/write_text_file|write_text_file)$/i
+// Native identities and ACP kinds declare semantics; argument keys do not.
+const nativeToolKinds: Record<string, ToolCall['kind']> = {
+  invoke_subagent: 'other',
+  send_message: 'other',
+  ask_question: 'other',
+  ask_user: 'other',
+  run_command: 'execute',
+  read_file: 'read',
+  view_file: 'read',
+  write_file: 'edit',
+  write_to_file: 'edit',
+  create_file: 'edit',
+  'fs/write_text_file': 'edit',
+  write_text_file: 'edit',
+  edit_file: 'edit',
+  replace_file_content: 'edit',
+  multi_replace_file_content: 'edit',
+  read_url_content: 'fetch',
+  grep_search: 'search',
+  find_by_name: 'search',
+  glob: 'search',
+  search_web: 'search',
+  web_search: 'search',
+}
+const jsonValueSchema = z.json()
+const TOOL_SNAPSHOT_LIMIT = 1024
+
+function isTerminalToolStatus(status: unknown): boolean {
+  return (
+    status === 'completed' ||
+    status === 'failed' ||
+    status === 'canceled' ||
+    status === 'cancelled'
+  )
+}
+
+export function toolDetail(
+  tool: Partial<ToolCall> | ToolCallUpdate,
+): ProviderToolCallDetail {
+  const input = record(tool.rawInput)
+  const output =
+    typeof tool.rawOutput === 'string'
+      ? tool.rawOutput
+      : (extractToolContentText(tool) ?? nonEmptyRawOutput(tool.rawOutput))
+  const explicitRawName = str(record(tool).name)
+  const rawName = cleanToolName(explicitRawName ?? tool.title ?? '')
+  // Legacy ACP titles use `Run <native identity>` when no raw name is sent.
+  const legacyName = rawName.startsWith('Run ')
+    ? cleanToolName(rawName.slice(4)).toLowerCase()
+    : ''
+  const name =
+    explicitRawName === undefined && Object.hasOwn(nativeToolKinds, legacyName)
+      ? legacyName
+      : rawName.toLowerCase()
+  const kind = Object.hasOwn(nativeToolKinds, name)
+    ? nativeToolKinds[name]
+    : explicitRawName === undefined
+      ? tool.kind
+      : undefined
+  if (isAskQuestionName(name)) {
+    const questions = normalizeAskQuestionInput(input)
+    if (questions.length > 0) {
+      const formatted = questions
+        .map((q) => {
+          const opts = q.options
+            .map((o, i) => `  ${i + 1}. ${o.label}`)
+            .join('\n')
+          return opts ? `${q.question}\n${opts}` : q.question
+        })
+        .join('\n\n')
+      return {
+        type: 'plain_text',
+        label: rawName || 'ask_question',
+        text: output ? `${formatted}\n\nAnswer:\n${output}` : formatted,
+      }
+    }
+  }
+  const filePath =
+    str(
+      input.Path ??
+        input.TargetFile ??
+        input.AbsolutePath ??
+        input.file_path ??
+        input.path,
+    ) ?? tool.locations?.[0]?.path
+  const command = str(input.CommandLine ?? input.command)
+  if (kind === 'execute' && command) {
+    const exitMatch = output?.match(/Command exited with code (\d+)/)
+    const exitCode =
+      num(record(tool.rawOutput).exitCode) ??
+      (exitMatch ? Number(exitMatch[1]) : undefined)
+    return {
+      type: 'shell',
+      command,
+      cwd: str(input.Cwd ?? input.cwd),
+      output,
+      ...(exitCode !== undefined ? { exitCode } : {}),
+    }
+  }
+  const url = str(input.Url ?? input.url)
+  if (kind === 'fetch' && url)
+    return { type: 'fetch', url, ...(output ? { result: output } : {}) }
+  if (name === 'invoke_subagent' || name === 'send_message') {
+    const data = record(tool.rawOutput)
+    const childSessionId =
+      str(data.conversationId ?? data.conversation_id) ??
+      output?.match(
+        /(?:conversationId|conversation_id)["\s:=]+([a-f0-9-]{36})/i,
+      )?.[1] ??
+      (typeof input.Recipient === 'string' &&
+      sessionIdPattern.test(input.Recipient)
+        ? input.Recipient
+        : undefined)
+    return {
+      type: 'sub_agent',
+      description: str(
+        input.Prompt ??
+          input.Task ??
+          input.task ??
+          input.Message ??
+          input.message,
+      ),
+      subAgentType: str(
+        input.Role ??
+          input.TypeName ??
+          input.Name ??
+          input.name ??
+          input.Recipient,
+      ),
+      childSessionId,
+      log: output ?? '',
+    }
+  }
+  const planModeTool = classifyPlanModeTool(
+    explicitRawName,
+    tool.title,
+    tool.kind,
+  )
+  const planText =
+    planModeTool === 'exit_plan_mode' || planModeTool === 'switch_mode'
+      ? text(input.plan)
+        ? str(input.plan)
+        : undefined
+      : kind === 'edit' &&
+          record(input.ArtifactMetadata).RequestFeedback === true
+        ? str(input.Content ?? input.CodeContent ?? input.Replacement)
+        : undefined
+  if (planText) return { type: 'plan', text: planText }
+  const diff = tool.content?.find((c) => c.type === 'diff')
+  const nativeWriteContent = str(input.Content ?? input.CodeContent)
+  const writeContent = nativeWriteContent ?? str(input.content)
+  const hasEditTarget =
+    input.Target !== undefined ||
+    input.TargetContent !== undefined ||
+    input.old_string !== undefined ||
+    input.oldString !== undefined ||
+    input.OldString !== undefined ||
+    Array.isArray(input.ReplacementChunks) ||
+    diff?.oldText != null
+  const isCanonicalWrite = canonicalWriteToolPattern.test(name)
+  const isUnnamedWriteFallback =
+    explicitRawName === undefined &&
+    kind === 'edit' &&
+    !hasEditTarget &&
+    (nativeWriteContent !== undefined ||
+      (diff?.type === 'diff' &&
+        Boolean(diff.path) &&
+        diff.oldText == null &&
+        Object.keys(input).length === 0 &&
+        /^file(?:\s|$)/i.test(rawName)))
+  if (
+    (filePath || (diff?.type === 'diff' && diff.path)) &&
+    (isCanonicalWrite || isUnnamedWriteFallback)
+  ) {
+    return {
+      type: 'write',
+      filePath: (filePath ?? diff?.path)!,
+      content:
+        writeContent ?? (diff?.type === 'diff' ? diff.newText : undefined),
+    }
+  }
+  if (
+    diff?.type === 'diff' &&
+    (kind === 'edit' || !rawName) &&
+    (diff.path || filePath)
+  )
+    return {
+      type: 'edit',
+      filePath: (diff.path || filePath)!,
+      oldString: diff.oldText ?? '',
+      newString: diff.newText,
+    }
+  const query = str(
+    input.Query ??
+      input.Pattern ??
+      input.query ??
+      input.pattern ??
+      input.SearchDirectory,
+  )
+  if (query && kind === 'search') {
+    const toolName = searchToolNames.find(([pat]) => name.includes(pat))?.[1]
+    const filePaths = tool.locations
+      ?.map((l) => l.path)
+      .filter((p): p is string => Boolean(p))
+    return {
+      type: 'search',
+      query,
+      ...(toolName ? { toolName } : {}),
+      content: output,
+      ...(filePaths?.length ? { filePaths } : {}),
+    }
+  }
+  if (filePath) {
+    if (isCanonicalWrite)
+      return {
+        type: 'write',
+        filePath,
+        content: writeContent,
+      }
+    if (kind === 'edit') {
+      const chunks = Array.isArray(input.ReplacementChunks)
+        ? input.ReplacementChunks.map(record)
+        : undefined
+      const oldString =
+        str(
+          input.Target ??
+            input.TargetContent ??
+            input.old_string ??
+            input.oldString ??
+            input.OldString,
+        ) ?? joinChunks(chunks, 'TargetContent', 'Target')
+      const newString =
+        str(
+          input.Replacement ??
+            input.ReplacementContent ??
+            input.new_string ??
+            input.newString ??
+            input.NewString,
+        ) ?? joinChunks(chunks, 'ReplacementContent', 'Replacement')
+      const synthesizedUnifiedDiff =
+        oldString === undefined && newString === undefined
+          ? str(record(record(tool)._meta).synthesizedUnifiedDiff)
+          : undefined
+      return {
+        type: 'edit',
+        filePath,
+        oldString,
+        newString,
+        ...(synthesizedUnifiedDiff
+          ? { unifiedDiff: synthesizedUnifiedDiff }
+          : {}),
+      }
+    }
+    if (kind === 'read') {
+      const cleaned = cleanReadOutput(output)
+      const start = num(input.StartLine) ?? cleaned.startLine
+      const end = num(input.EndLine) ?? cleaned.endLine
+      return {
+        type: 'read',
+        filePath,
+        content: cleaned.content,
+        offset:
+          num(
+            input.offset ??
+              input.StartLine ??
+              input.ByteOffset ??
+              input.ContentOffset,
+          ) ?? cleaned.startLine,
+        limit:
+          num(input.limit) ??
+          (start !== undefined && end !== undefined
+            ? Math.max(1, end - start + 1)
+            : undefined),
+      }
+    }
+  }
+  return {
+    type: 'unknown',
+    input: jsonValueSchema.parse(tool.rawInput ?? null),
+    output: jsonValueSchema.parse(
+      tool.rawOutput !== undefined ? tool.rawOutput : (tool.content ?? null),
+    ),
+  }
+}
+
+/** agy still advertises the legacy per-effort model inventory. */
+export const nativeModelsSchema = z.object({
+  currentModelId: z.string().optional(),
+  availableModels: z.array(
+    z.object({
+      modelId: z.string(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+    }),
+  ),
+})
+export type SessionMetadata = Pick<NewSessionResponse, 'configOptions'> & {
+  models?: z.infer<typeof nativeModelsSchema>
+  fullAccess?: boolean
+}
+
+/** Convert native catalog options to Paseo's model-specific composer controls. */
+export function configState(response: SessionMetadata): ProviderConfigState {
+  const options = (response.configOptions ?? []).filter(
+    (o): o is Extract<SessionConfigOption, { type: 'select' }> =>
+      o.type === 'select',
+  )
+  const model = options.find((o) => o.category === 'model' || o.id === 'model')
+  const thinking = options.find(
+    (o) => o.category === 'thought_level' || o.id === 'thought_level',
+  )
+  const mode = options.find((o) => o.category === 'mode' || o.id === 'mode')
+  const choices = (o?: Extract<SessionConfigOption, { type: 'select' }>) =>
+    o?.options
+      .flatMap((v) => ('group' in v ? v.options : [v]))
+      .map((v) => ({
+        id: v.value,
+        label: v.name,
+        description: v.description ?? undefined,
+      })) ?? []
+  const thinkingOptions = choices(thinking)
+  const modelId = model?.currentValue
+  const models = choices(model).map((m) => {
+    // Matches agy 1.5.7 acp.(*modelFamily).defaultModel: active thought_level, else 'medium', else first.
+    const defaultThinkingOptionId =
+      thinkingOptions.length > 0
+        ? m.id === modelId &&
+          thinking?.currentValue &&
+          thinkingOptions.some((o) => o.id === thinking.currentValue)
+          ? thinking.currentValue
+          : thinkingOptions.some((o) => o.id === 'medium')
+            ? 'medium'
+            : thinkingOptions[0].id
+        : undefined
+    return {
+      ...m,
+      contextWindowMaxTokens: contextWindowForModel(m.id),
+      thinkingOptions,
+      ...(defaultThinkingOptionId ? { defaultThinkingOptionId } : {}),
+    }
+  })
+  const currentThinking = thinking ? thinkingOptions : []
+  const nativeModes = choices(mode)
+    .filter((m) => m.id !== FULL_ACCESS_MODE_ID)
+    .map((m) => ({ ...m, ...modeVisuals[m.id] }))
+  return {
+    model: modelId,
+    mode: response.fullAccess ? FULL_ACCESS_MODE_ID : mode?.currentValue,
+    thinkingOption: currentThinking.some((o) => o.id === thinking?.currentValue)
+      ? thinking?.currentValue
+      : undefined,
+    models,
+    modes: [
+      ...nativeModes,
+      {
+        id: FULL_ACCESS_MODE_ID,
+        label: 'Full Access',
+        description:
+          'Approve file edits, commands and tool requests without asking.',
+        ...modeVisuals[FULL_ACCESS_MODE_ID],
+      },
+    ],
+    thinkingOptions: currentThinking,
+    settings: [],
+  }
+}
+
+const SUPPORTED_IMAGE_MIME_TYPES = new Set([
+  'image/bmp',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+])
+export const MAX_IMAGE_ATTACHMENT_BYTES = 10 * 1024 * 1024
+export const MAX_TOTAL_IMAGE_ATTACHMENT_BYTES = 50 * 1024 * 1024
+
+function decodedBase64ByteLength(base64: string): number {
+  const cleaned = base64.replace(/\s+/g, '')
+  if (cleaned.length === 0) return 0
+  let padding = 0
+  if (cleaned.endsWith('==')) padding = 2
+  else if (cleaned.endsWith('=')) padding = 1
+  return Math.max(0, Math.floor((cleaned.length * 3) / 4) - padding)
+}
+
+/** Validate image attachments against agent prompt capabilities, MIME allowlist, and byte budgets. */
+export function validatePromptImages(
+  content: readonly ProviderContent[],
+  supportsImage: boolean | undefined,
+): void {
+  let totalBytes = 0
+  for (const item of content) {
+    if (item.type !== 'image') continue
+    if (supportsImage === false) {
+      throw new Error('ACP agent does not support image prompts')
+    }
+    const mimeType = item.mimeType.toLowerCase().split(';', 1)[0]?.trim() ?? ''
+    if (!SUPPORTED_IMAGE_MIME_TYPES.has(mimeType)) {
+      throw new Error(`Unsupported image MIME type: ${mimeType || 'unknown'}`)
+    }
+    const bytes = decodedBase64ByteLength(item.data)
+    if (bytes > MAX_IMAGE_ATTACHMENT_BYTES) {
+      throw new Error(`Image attachment exceeds 10 MiB limit (${bytes} bytes)`)
+    }
+    totalBytes += bytes
+    if (totalBytes > MAX_TOTAL_IMAGE_ATTACHMENT_BYTES) {
+      throw new Error(
+        `Total image attachments exceed 50 MiB limit (${totalBytes} bytes)`,
+      )
+    }
+  }
+}
+
+/** Preserve attachment context as text while retaining native image blocks. */
+export function promptContent(content: ProviderContent): ContentBlock {
+  if (content.type === 'image')
+    return { type: 'image', data: content.data, mimeType: content.mimeType }
+  if (content.type === 'text') {
+    const res =
+      'externalResource' in content ? content.externalResource : undefined
+    const title = 'title' in content ? text(content.title) : undefined
+    if (!res && !title) return { type: 'text', text: content.text }
+    const header = res
+      ? `${res.providerLabel} ${res.identifier}: ${res.title}`
+      : title
+    return {
+      type: 'text',
+      text: [
+        header,
+        res && title && title !== res.title ? title : undefined,
+        res?.url,
+        content.text,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }
+  }
+  if (content.type === 'uploaded_file')
+    return {
+      type: 'text',
+      text: `Attached file: ${content.fileName} (${content.mimeType}, ${content.size} bytes)\nPath: ${content.path}`,
+    }
+  if (content.type === 'review') {
+    return {
+      type: 'text',
+      text: [
+        `Code review: ${content.cwd} (${content.mode}${content.baseRef ? `, base: ${content.baseRef}` : ''})`,
+        ...content.comments.map(
+          (c) =>
+            `${c.filePath}:${c.lineNumber} (${c.side})\n${c.body}\n${c.context.hunkHeader}\n${c.context.lines.map((l) => l.content).join('\n')}`,
+        ),
+      ].join('\n\n'),
+    }
+  }
+  return {
+    type: 'text',
+    text: [
+      `${content.type} #${content.number}: ${content.title}`,
+      content.url,
+      'projectPath' in content ? content.projectPath : undefined,
+      'baseRefName' in content
+        ? `${content.headRefName ?? '?'} → ${content.baseRefName ?? '?'}`
+        : undefined,
+      content.body,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  }
+}
+
+/** Ignore malformed native usage; retain context size and USD cost when valid. */
+export function contextUsage(update: UsageUpdate): ProviderUsage | undefined {
+  if (
+    !nonnegative(update.used) ||
+    !nonnegative(update.size) ||
+    update.size === 0
+  )
+    return
+  return {
+    contextWindowUsedTokens: update.used,
+    contextWindowMaxTokens: update.size,
+    ...(update.cost?.currency === 'USD' && nonnegative(update.cost.amount)
+      ? { totalCostUsd: update.cost.amount }
+      : {}),
+  }
+}
+
+/** Native ACP model limits from agy 1.5.7 (observed usage_update size: 256000; 1M is TUI-only). */
+export function contextWindowForModel(modelId?: string): number {
+  return modelId?.startsWith('gpt-oss') ? 131_072 : 256_000
+}
+
+export type StepUsage = {
+  inputTokens: number
+  outputTokens: number
+  cachedReadTokens: number
+  /** Only present when agy records a step-level cache write counter. */
+  cachedWriteTokens?: number
+}
+
+export function addStepUsage(
+  a: StepUsage | undefined,
+  b: StepUsage,
+): StepUsage {
+  const cachedWriteTokens =
+    (a?.cachedWriteTokens ?? 0) + (b.cachedWriteTokens ?? 0)
+  return {
+    inputTokens: (a?.inputTokens ?? 0) + b.inputTokens,
+    outputTokens: (a?.outputTokens ?? 0) + b.outputTokens,
+    cachedReadTokens: (a?.cachedReadTokens ?? 0) + b.cachedReadTokens,
+    ...(cachedWriteTokens > 0 ? { cachedWriteTokens } : {}),
+  }
+}
+
+export function hasPositivePromptUsage(usage?: Usage | null): boolean {
+  if (!usage) return false
+  const raw = record(usage)
+  return (
+    (nonnegative(raw.inputTokens) && raw.inputTokens > 0) ||
+    (nonnegative(raw.outputTokens) && raw.outputTokens > 0) ||
+    (nonnegative(raw.cachedReadTokens) && raw.cachedReadTokens > 0) ||
+    (nonnegative(raw.cachedWriteTokens) && raw.cachedWriteTokens > 0) ||
+    (nonnegative(raw.thoughtTokens) && raw.thoughtTokens > 0) ||
+    (nonnegative(raw.totalTokens) && raw.totalTokens > 0)
+  )
+}
+
+export function appliesCarriedWakeup(
+  usage: Usage | null | undefined,
+  carriedWakeup: StepUsage | undefined,
+): carriedWakeup is StepUsage {
+  if (!carriedWakeup || !hasPositivePromptUsage(usage)) return false
+  const raw = record(usage)
+  return (
+    nonnegative(raw.inputTokens) &&
+    raw.inputTokens >= carriedWakeup.inputTokens &&
+    nonnegative(raw.outputTokens) &&
+    raw.outputTokens >= carriedWakeup.outputTokens &&
+    (!nonnegative(raw.cachedReadTokens) ||
+      raw.cachedReadTokens >= carriedWakeup.cachedReadTokens)
+  )
+}
+
+/** Combine ACP turn token counters with per-step context occupancy from transcript_full.jsonl when available. */
+export function promptUsage(
+  usage?: Usage | null,
+  options?: {
+    model?: string
+    preserveContext?: boolean
+    contextWindowMaxTokens?: number
+    lastStep?: StepUsage
+    carriedWakeup?: StepUsage
+    wakeup?: StepUsage
+  },
+): ProviderUsage {
+  const effective = hasPositivePromptUsage(usage) ? usage : undefined
+  if (!effective && !options?.lastStep && !options?.wakeup) return {}
+  const raw = record(effective)
+  const carried = appliesCarriedWakeup(effective, options?.carriedWakeup)
+    ? options.carriedWakeup
+    : undefined
+  const field = (
+    rawVal: unknown,
+    sub: number | undefined,
+    add: number | undefined,
+    fallback: number | undefined,
+  ) =>
+    nonnegative(rawVal)
+      ? Math.max(0, rawVal - (sub ?? 0)) + (add ?? 0)
+      : ((add || fallback) ?? 0)
+  const input = field(
+    raw.inputTokens,
+    carried?.inputTokens,
+    options?.wakeup?.inputTokens,
+    options?.lastStep?.inputTokens,
+  )
+  const cacheRead = field(
+    raw.cachedReadTokens,
+    carried?.cachedReadTokens,
+    options?.wakeup?.cachedReadTokens,
+    options?.lastStep?.cachedReadTokens,
+  )
+  const output = field(
+    raw.outputTokens,
+    carried?.outputTokens,
+    options?.wakeup?.outputTokens,
+    options?.lastStep?.outputTokens,
+  )
+  const step = options?.lastStep
+  // Each source is summed on its own: per-step counters never mix with cumulative turn counters.
+  const used = step
+    ? step.inputTokens +
+      step.cachedReadTokens +
+      (step.cachedWriteTokens ?? 0) +
+      step.outputTokens
+    : undefined
+  return {
+    inputTokens: input,
+    outputTokens: output,
+    cachedInputTokens: cacheRead,
+    ...(used !== undefined && used > 0 && !options?.preserveContext
+      ? {
+          contextWindowUsedTokens: used,
+          contextWindowMaxTokens:
+            options?.contextWindowMaxTokens ??
+            contextWindowForModel(options?.model),
+        }
+      : {}),
+  }
+}
+
+/** Assemble full snapshots and terminalize tools whose final native update is absent. */
+export class Timeline {
+  private sequence = 0
+  private message?: Extract<
+    ProviderTimelineItem,
+    { type: 'user_message' | 'assistant_message' | 'reasoning' }
+  >
+  private tools = new Map<string, ToolCall>()
+  private running = new Map<
+    string,
+    {
+      item: Extract<ProviderTimelineItem, { type: 'tool_call' }>
+      startedAt: number
+    }
+  >()
+  private prefix: string
+  private lastUserChunkWasImage = false
+  constructor(prefix: string) {
+    this.prefix = prefix
+  }
+  boundary() {
+    this.message = undefined
+    this.lastUserChunkWasImage = false
+  }
+  track(item: ProviderTimelineItem) {
+    if (item.type !== 'tool_call') return
+    if (item.status === 'running') {
+      const previous = this.running.get(item.id)
+      this.running.set(item.id, {
+        item,
+        startedAt: previous?.startedAt ?? Date.now(),
+      })
+    } else this.running.delete(item.id)
+  }
+  /**
+   * Running tools in the exact state the timeline renders. The tool clock is driven from here,
+   * so it cannot drift from the visible tool status.
+   */
+  runningTools(): ReadonlyArray<{
+    id: string
+    name: string
+    startedAt: number
+  }> {
+    return [...this.running.values()].map(({ item, startedAt }) => ({
+      id: item.id,
+      name: item.name,
+      startedAt,
+    }))
+  }
+  toolCallSnapshot(callId: string): Readonly<ToolCall> | undefined {
+    return this.tools.get(callId)
+  }
+  isRunning(id: string): boolean {
+    return this.running.has(id)
+  }
+  terminalize(
+    status: 'completed' | 'canceled' | 'failed',
+    error = 'Tool did not finish',
+    denied?: ReadonlySet<string>,
+    options: {
+      runningFails?: boolean
+      runningError?: string
+      runningErrorFor?: (tool: {
+        id: string
+        name: string
+      }) => string | undefined
+    } = {},
+  ): ProviderTimelineItem[] {
+    const items = [...this.running.values()].map(({ item }) => {
+      const isDenied = Boolean(item.callId && denied?.has(item.callId))
+      const nextStatus = isDenied ? ('canceled' as const) : status
+      // Fail-closed by default: a still-running tool at turn end is missing proof, not success.
+      const resolvedStatus =
+        nextStatus === 'completed' && options.runningFails !== false
+          ? ('failed' as const)
+          : nextStatus
+      if (item.callId) {
+        const prev = this.tools.get(item.callId)
+        if (prev) {
+          setBounded(
+            this.tools,
+            item.callId,
+            {
+              ...prev,
+              status: (resolvedStatus === 'canceled'
+                ? 'cancelled'
+                : resolvedStatus) as ToolCall['status'],
+            },
+            TOOL_SNAPSHOT_LIMIT,
+          )
+        }
+      }
+      if (resolvedStatus === 'failed')
+        return {
+          ...item,
+          status: 'failed' as const,
+          error:
+            options.runningErrorFor?.(item) ?? options.runningError ?? error,
+        }
+      return { ...item, status: resolvedStatus, error: null }
+    })
+    this.running.clear()
+    return items
+  }
+  update(
+    update: SessionUpdate,
+    denied?: ReadonlySet<string>,
+  ): ProviderTimelineItem | undefined {
+    if (
+      update.sessionUpdate === 'user_message_chunk' ||
+      update.sessionUpdate === 'agent_message_chunk' ||
+      update.sessionUpdate === 'agent_thought_chunk'
+    ) {
+      const isUser = update.sessionUpdate === 'user_message_chunk'
+      const isImage = isUser && update.content.type === 'image'
+      if (update.content.type !== 'text' && !isImage) return
+      const type = isUser
+        ? 'user_message'
+        : update.sessionUpdate === 'agent_message_chunk'
+          ? 'assistant_message'
+          : 'reasoning'
+      if (this.message?.type !== type) {
+        this.lastUserChunkWasImage = false
+        this.message = {
+          id: `${this.prefix}:message:${++this.sequence}`,
+          type,
+          text: '',
+        }
+      }
+      const prev = this.message!
+      const chunk = isImage
+        ? '[image]'
+        : (update.content as Extract<typeof update.content, { type: 'text' }>)
+            .text
+      const separator =
+        isUser &&
+        prev.text &&
+        chunk &&
+        (isImage || this.lastUserChunkWasImage) &&
+        !prev.text.endsWith('\n') &&
+        !chunk.startsWith('\n')
+          ? '\n'
+          : ''
+      this.lastUserChunkWasImage = isImage
+      this.message = {
+        ...prev,
+        text: prev.text + separator + chunk,
+      }
+      return this.message
+    }
+    this.boundary()
+    if (
+      update.sessionUpdate === 'tool_call' ||
+      update.sessionUpdate === 'tool_call_update'
+    ) {
+      const old =
+        update.sessionUpdate === 'tool_call_update'
+          ? this.tools.get(update.toolCallId)
+          : undefined
+      if (
+        !old &&
+        update.sessionUpdate === 'tool_call_update' &&
+        update.status == null &&
+        update.title == null &&
+        str(record(update).name) === undefined
+      ) {
+        return undefined
+      }
+      const oldStatus = str((old as { status?: unknown } | undefined)?.status)
+      const incomingStatus = str((update as { status?: unknown }).status)
+      const preserveStatus =
+        update.sessionUpdate === 'tool_call_update' &&
+        isTerminalToolStatus(oldStatus) &&
+        !isTerminalToolStatus(incomingStatus)
+      const oldPlanTool =
+        old !== undefined
+          ? classifyPlanModeTool(str(record(old).name), old.title, old.kind)
+          : undefined
+      const nextPlanTool = classifyPlanModeTool(
+        str(record(update).name),
+        update.title,
+        // Permit unnamed updates; preservePlanMode below requires an existing plan tool.
+        'switch_mode',
+      )
+      const preservePlanMode =
+        update.sessionUpdate === 'tool_call_update' &&
+        (oldPlanTool === 'exit_plan_mode' || oldPlanTool === 'switch_mode') &&
+        str(record(old).name) === undefined &&
+        (nextPlanTool === 'exit_plan_mode' || nextPlanTool === 'switch_mode') &&
+        (update.kind == null ||
+          update.kind === 'other' ||
+          update.kind === 'switch_mode') &&
+        (old?.kind == null ||
+          old.kind === 'other' ||
+          old.kind === 'switch_mode')
+      const tool = boundToolCallPayload({
+        ...old,
+        // ACP v1 raw input/output null is equivalent to omission, not a clear.
+        ...Object.fromEntries(
+          Object.entries(update).filter(([, value]) => value != null),
+        ),
+        ...(preserveStatus ? { status: old!.status } : {}),
+        ...(preservePlanMode ? { kind: 'switch_mode' as const } : {}),
+      } as ToolCall)
+      setBounded(this.tools, update.toolCallId, tool, TOOL_SNAPSHOT_LIMIT)
+      const base = {
+        type: 'tool_call' as const,
+        id: `${this.prefix}:tool:${tool.toolCallId}`,
+        callId: tool.toolCallId,
+        name: cleanToolName(
+          str(record(tool).name) ??
+            tool.title ??
+            str(record(old).name) ??
+            old?.title ??
+            'Tool',
+        ),
+        detail: toolDetail(tool),
+      }
+      const rawStatus = str((tool as { status?: unknown }).status)
+      const isDenied = denied?.has(tool.toolCallId) === true
+      const item: Extract<ProviderTimelineItem, { type: 'tool_call' }> =
+        isDenied &&
+        (tool.status === 'failed' ||
+          rawStatus === 'cancelled' ||
+          rawStatus === 'canceled')
+          ? {
+              ...base,
+              status: 'canceled',
+              error: null,
+            }
+          : tool.status === 'failed'
+            ? {
+                ...base,
+                status: 'failed',
+                error:
+                  extractToolContentText(tool) ??
+                  nonEmptyRawOutput(tool.rawOutput) ??
+                  'Tool failed',
+              }
+            : rawStatus === 'cancelled' || rawStatus === 'canceled'
+              ? {
+                  ...base,
+                  status: 'canceled',
+                  error: null,
+                }
+              : {
+                  ...base,
+                  status: tool.status === 'completed' ? 'completed' : 'running',
+                  error: null,
+                }
+      this.track(item)
+      return item
+    }
+    if (update.sessionUpdate === 'plan')
+      return {
+        type: 'todo',
+        id: `${this.prefix}:plan`,
+        items: update.entries.map((e) => ({
+          text: e.content,
+          completed: e.status === 'completed',
+          status: e.status,
+        })),
+      }
+  }
+}

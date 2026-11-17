@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Purpose: Git post-checkout hook (agent bidirectional sync retired; .claude/agents/ is local SSOT).
+exit 0

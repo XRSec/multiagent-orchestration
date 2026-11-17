@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "scraped_at": "2026-11-17T01:23:56.530Z",
+    "total_raw": 1284,
+    "total_cleaned": 972,
+    "sentiment_score": 72,
+    "sentiment_summary": "情绪总体偏向极度亢奋与技术崇拜（Starship 筷子夹火箭成功、Solana 1.0 发布、Qwen4-Max 发布），但伴随强烈的系统性焦虑与黑天鹅动荡（NVIDIA 董事会风波与黄仁勋退位传言、加州起诉 OpenAI、美主要银行系统大面积宕机）。"
+  },
+  "top3_narratives": [
+    {
+      "rank": 1,
+      "title": "SpaceX Starship 筷子夹火箭历史性突破与 V4 扩容蓝图",
+      "heat_score": 360000,
+      "description": "Ship 42 完成首次筷子夹火箭抓取并顺利返回，马斯克确认防热盾和发动机完好，并首次披露 Starship V4 蓝图（长度达 70 米，推进剂装载量提升 60%，增设 3 台猛禽真空发动机至 9 台）。"
+    },
+    {
+      "rank": 2,
+      "title": "NVIDIA 权力震荡与量子算力突破",
+      "heat_score": 280000,
+      "description": "前机器人工程师 Darrell Dai 爆火长文拉开序幕，随后爆发黄仁勋提前向继承人转移数十亿资产、卸任 CEO 及董事会内讧传言，股东与社区激烈捍卫黄仁勋；同时 NVIDIA 宣布将 12 周计算任务缩短至 45 分钟的量子计算重大突破。"
+    },
+    {
+      "rank": 3,
+      "title": "Solana 1.0 正式版发布与 Zelle 链上百亿美元级隐私结算破局",
+      "heat_score": 120000,
+      "description": "Solana 正式摘掉 beta 标签迈入 1.0 时代；全美支付巨头 Zelle 在 Breakpoint 现场用 ZelleUSD ($ZLUSD) 成功完成首笔 125 万美元隐私转账，传统金融万亿级通道正实质性融入 Solana。"
+    }
+  ]
+}

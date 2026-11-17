@@ -1,0 +1,323 @@
+diff --git a/packages/server/src/server/agent/providers/acp-agent.test.ts b/packages/server/src/server/agent/providers/acp-agent.test.ts
+index b94a6de940..acdd9177eb 100644
+--- a/packages/server/src/server/agent/providers/acp-agent.test.ts
++++ b/packages/server/src/server/agent/providers/acp-agent.test.ts
+@@ -221,6 +221,8 @@ function createSessionWithConfig(
+     modeId?: string | null;
+     model?: string | null;
+     providerOptions?: Record<string, unknown>;
++    systemPrompt?: string;
++    daemonAppendSystemPrompt?: string;
+   } = {},
+   logger: ReturnType<typeof createTestLogger> = createTestLogger(),
+ ): ACPAgentSession {
+@@ -231,6 +233,10 @@ function createSessionWithConfig(
+       modeId: config.modeId ?? undefined,
+       model: config.model ?? undefined,
+       providerOptions: config.providerOptions,
++      ...(config.systemPrompt !== undefined ? { systemPrompt: config.systemPrompt } : {}),
++      ...(config.daemonAppendSystemPrompt !== undefined
++        ? { daemonAppendSystemPrompt: config.daemonAppendSystemPrompt }
++        : {}),
+     },
+     {
+       provider: config.provider ?? "claude-acp",
+@@ -3854,6 +3860,231 @@ describe("ACPAgentSession", () => {
+       expect.objectContaining({ type: "turn_completed", turnId }),
+     ]);
+   }, 3_000);
++
++  test("startTurn prepends combined systemPrompt and daemonAppendSystemPrompt only on the first turn without polluting user message timeline", async () => {
++    const session = createSessionWithConfig({
++      systemPrompt: "  Agent instructions.  ",
++      daemonAppendSystemPrompt: "  Daemon instructions.  ",
++    });
++    const events: AgentStreamEvent[] = [];
++    const promptResolvers: Array<(value: PromptResponse) => void> = [];
++    const prompt = vi.fn(
++      () =>
++        new Promise<PromptResponse>((resolve) => {
++          promptResolvers.push(resolve);
++        }),
++    );
++
++    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
++    asInternals<ACPSessionInternals>(session).connection = openPromptConnection(prompt);
++    session.subscribe((event) => {
++      events.push(event);
++    });
++
++    const firstTurn = await session.startTurn("hello", { clientMessageId: "msg-client-1" });
++    await session.sessionUpdate({
++      sessionId: "session-1",
++      update: {
++        sessionUpdate: "user_message_chunk",
++        messageId: "msg-provider-1",
++        content: {
++          type: "text",
++          text: "<system_instructions>\nAgent instructions.\n\nDaemon instructions.\n</system_instructions>\n\nhello",
++        },
++      } as SessionUpdate,
++    });
++
++    expect(prompt).toHaveBeenNthCalledWith(1, {
++      sessionId: "session-1",
++      messageId: "msg-client-1",
++      prompt: [
++        {
++          type: "text",
++          text: "<system_instructions>\nAgent instructions.\n\nDaemon instructions.\n</system_instructions>\n\n",
++        },
++        { type: "text", text: "hello" },
++      ],
++    });
++
++    promptResolvers[0]!({ stopReason: "end_turn" });
++    await Promise.resolve();
++    await Promise.resolve();
++
++    const secondTurn = await session.startTurn("follow-up", { clientMessageId: "msg-client-2" });
++    expect(prompt).toHaveBeenNthCalledWith(2, {
++      sessionId: "session-1",
++      messageId: "msg-client-2",
++      prompt: [{ type: "text", text: "follow-up" }],
++    });
++
++    promptResolvers[1]!({ stopReason: "end_turn" });
++    await Promise.resolve();
++    await Promise.resolve();
++
++    expect(
++      events.filter((event) => event.type === "timeline" && event.item.type === "user_message"),
++    ).toEqual([
++      {
++        type: "timeline",
++        provider: "claude-acp",
++        turnId: firstTurn.turnId,
++        item: {
++          type: "user_message",
++          text: "hello",
++          messageId: "msg-client-1",
++          clientMessageId: "msg-client-1",
++        },
++      },
++      {
++        type: "timeline",
++        provider: "claude-acp",
++        turnId: secondTurn.turnId,
++        item: {
++          type: "user_message",
++          text: "follow-up",
++          messageId: "msg-client-2",
++          clientMessageId: "msg-client-2",
++        },
++      },
++    ]);
++  });
++
++  test("startTurn ignores whitespace-only system prompts and handles a single prompt source", async () => {
++    const daemonOnlyPrompt = vi.fn(async () => ({ stopReason: "end_turn" }) as PromptResponse);
++    const daemonOnlySession = createSessionWithConfig({
++      systemPrompt: "   \n  ",
++      daemonAppendSystemPrompt: "  Daemon only.  ",
++    });
++    asInternals<ACPSessionInternals>(daemonOnlySession).sessionId = "session-1";
++    asInternals<ACPSessionInternals>(daemonOnlySession).connection =
++      openPromptConnection(daemonOnlyPrompt);
++
++    await daemonOnlySession.startTurn("hello", { clientMessageId: "msg-1" });
++    expect(daemonOnlyPrompt).toHaveBeenCalledWith({
++      sessionId: "session-1",
++      messageId: "msg-1",
++      prompt: [
++        {
++          type: "text",
++          text: "<system_instructions>\nDaemon only.\n</system_instructions>\n\n",
++        },
++        { type: "text", text: "hello" },
++      ],
++    });
++
++    const blankPrompt = vi.fn(async () => ({ stopReason: "end_turn" }) as PromptResponse);
++    const blankSession = createSessionWithConfig({
++      systemPrompt: "   ",
++      daemonAppendSystemPrompt: "\t\n ",
++    });
++    asInternals<ACPSessionInternals>(blankSession).sessionId = "session-2";
++    asInternals<ACPSessionInternals>(blankSession).connection = openPromptConnection(blankPrompt);
++
++    await blankSession.startTurn("hello", { clientMessageId: "msg-2" });
++    expect(blankPrompt).toHaveBeenCalledWith({
++      sessionId: "session-2",
++      messageId: "msg-2",
++      prompt: [{ type: "text", text: "hello" }],
++    });
++  });
++
++  test("startTurn prepends system instructions before multi-block image prompts", async () => {
++    const session = createSessionWithConfig({
++      systemPrompt: "Inspect attachments carefully.",
++    });
++    const events: AgentStreamEvent[] = [];
++    const prompt = vi.fn(async () => ({ stopReason: "end_turn" }) as PromptResponse);
++    asInternals<ACPSessionInternals>(session).sessionId = "session-1";
++    asInternals<ACPSessionInternals>(session).connection = openPromptConnection(prompt);
++    session.subscribe((event) => events.push(event));
++
++    await session.startTurn(
++      [
++        { type: "text", text: "describe" },
++        { type: "image", data: "AA==", mimeType: "image/png" },
++      ],
++      { clientMessageId: "msg-img-1" },
++    );
++
++    expect(prompt).toHaveBeenCalledWith({
++      sessionId: "session-1",
++      messageId: "msg-img-1",
++      prompt: [
++        {
++          type: "text",
++          text: "<system_instructions>\nInspect attachments carefully.\n</system_instructions>\n\n",
++        },
++        { type: "text", text: "describe" },
++        { type: "image", data: "AA==", mimeType: "image/png" },
++      ],
++    });
++    expect(
++      events.filter((event) => event.type === "timeline" && event.item.type === "user_message"),
++    ).toEqual([
++      expect.objectContaining({
++        type: "timeline",
++        item: expect.objectContaining({
++          type: "user_message",
++          text: "describe",
++        }),
++      }),
++    ]);
++  });
++
++  test("initializeNewSession resets systemPromptInjected so a fresh underlying ACP session receives instructions again", async () => {
++    const session = createSessionWithConfig({
++      systemPrompt: "Fresh session instructions.",
++    });
++    const prompt = vi.fn(async () => ({ stopReason: "end_turn" }) as PromptResponse);
++    const signal = new AbortController().signal;
++    const child = createProbeChildStub();
++
++    vi.spyOn(
++      session as unknown as { spawnProcess: () => Promise<SpawnedACPProcess> },
++      "spawnProcess",
++    ).mockResolvedValue({
++      child,
++      connection: {
++        newSession: vi.fn().mockResolvedValue({ sessionId: "session-fresh" }),
++        prompt,
++        signal,
++      } as unknown as ClientSideConnection,
++      initialize: { protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} },
++    });
++
++    asInternals<ACPSessionInternals>(session).sessionId = "session-initial";
++    asInternals<ACPSessionInternals>(session).connection = openPromptConnection(prompt);
++
++    await session.startTurn("turn-1", { clientMessageId: "msg-1" });
++    await Promise.resolve();
++    await Promise.resolve();
++
++    await session.startTurn("turn-2", { clientMessageId: "msg-2" });
++    await Promise.resolve();
++    await Promise.resolve();
++    expect(prompt).toHaveBeenNthCalledWith(2, {
++      sessionId: "session-initial",
++      messageId: "msg-2",
++      prompt: [{ type: "text", text: "turn-2" }],
++    });
++
++    await session.initializeNewSession();
++    await session.startTurn("turn-3", { clientMessageId: "msg-3" });
++    await Promise.resolve();
++    await Promise.resolve();
++
++    expect(prompt).toHaveBeenNthCalledWith(3, {
++      sessionId: "session-fresh",
++      messageId: "msg-3",
++      prompt: [
++        {
++          type: "text",
++          text: "<system_instructions>\nFresh session instructions.\n</system_instructions>\n\n",
++        },
++        { type: "text", text: "turn-3" },
++      ],
++    });
++  });
+ });
+ 
+ interface ACPCloseInternals {
+diff --git a/packages/server/src/server/agent/providers/acp-agent.ts b/packages/server/src/server/agent/providers/acp-agent.ts
+index 33664f7ad8..49e31614d1 100644
+--- a/packages/server/src/server/agent/providers/acp-agent.ts
++++ b/packages/server/src/server/agent/providers/acp-agent.ts
+@@ -125,6 +125,7 @@ import {
+   type ProviderRuntimeSettings,
+ } from "../provider-launch-config.js";
+ import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
++import { composeSystemPromptParts } from "../system-prompt.js";
+ import { appendOrReplaceGrowingAssistantMessage, runProviderTurn } from "./provider-runner.js";
+ import { resolveResumeProcessCwd } from "./resume-process-cwd.js";
+ import {
+@@ -1814,6 +1815,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
+   private historyRuntimeReleased = false;
+   private replayingHistory = false;
+   private bootstrapThreadEventPending = false;
++  private systemPromptInjected = false;
+   private readonly terminateProcess: ProcessTerminator;
+ 
+   constructor(config: AgentSessionConfig, options: ACPAgentSessionOptions) {
+@@ -1884,6 +1886,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
+         }),
+       );
+       this.sessionId = response.sessionId;
++      this.systemPromptInjected = false;
+       this.bootstrapThreadEventPending = true;
+       this.applySessionState(response);
+       for (const update of this.earlySessionUpdates.splice(0)) {
+@@ -1914,6 +1917,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
+       this.connection = spawned.connection;
+       this.agentCapabilities = spawned.initialize.agentCapabilities ?? null;
+       this.sessionId = handle.sessionId;
++      this.systemPromptInjected = false;
+       this.bootstrapThreadEventPending = true;
+ 
+       const sessionCapabilities = this.agentCapabilities?.sessionCapabilities;
+@@ -2032,6 +2036,21 @@ export class ACPAgentSession implements AgentSession, ACPClient {
+     this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+     this.emitSubmittedUserMessage(prompt, messageId, turnId, options?.clientMessageId);
+ 
++    const promptBlocks = toACPContentBlocks(prompt);
++    if (!this.systemPromptInjected) {
++      this.systemPromptInjected = true;
++      const combinedSystemPrompt = composeSystemPromptParts(
++        this.config.systemPrompt,
++        this.config.daemonAppendSystemPrompt,
++      );
++      if (combinedSystemPrompt) {
++        promptBlocks.unshift({
++          type: "text",
++          text: `<system_instructions>\n${combinedSystemPrompt}\n</system_instructions>\n\n`,
++        });
++      }
++    }
++
+     const connection = this.connection;
+     const child = this.child;
+     const failOnDisconnect = () => void this.failDisconnectedTurn(turnId, child);
+@@ -2040,7 +2059,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
+       .prompt({
+         sessionId: this.sessionId,
+         messageId,
+-        prompt: toACPContentBlocks(prompt),
++        prompt: promptBlocks,
+       })
+       .then((response) => {
+         this.handlePromptResponse(response, turnId);

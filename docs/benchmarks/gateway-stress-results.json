@@ -1,0 +1,48 @@
+{
+  "timestamp": "2026-11-09T23:05:16.960Z",
+  "system": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpus": 10,
+    "nodeVersion": "v26.10.0"
+  },
+  "scenarios": {
+    "connectionThroughput": {
+      "10_clients": {
+        "clients": 10,
+        "timeMs": 7.8,
+        "avgMs": 0.78
+      },
+      "50_clients": {
+        "clients": 50,
+        "timeMs": 22.54,
+        "avgMs": 0.45
+      },
+      "100_clients": {
+        "clients": 100,
+        "timeMs": 41.82,
+        "avgMs": 0.42
+      }
+    },
+    "invokeLatency": {
+      "totalPings": 1000,
+      "p50Ms": 1,
+      "p95Ms": 2,
+      "p99Ms": 3,
+      "meanMs": 1.15
+    },
+    "pushFanout": {
+      "subscribers": 30,
+      "messagesPublished": 500,
+      "totalDelivered": 15000,
+      "deliveryRate": "100.0%",
+      "elapsedMs": 3221.19
+    },
+    "backpressure": {
+      "maxBufferedBytes": 67108864,
+      "maxBufferedMiB": 64,
+      "verified": true
+    }
+  },
+  "errors": []
+}

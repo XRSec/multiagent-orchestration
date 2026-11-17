@@ -1,0 +1,167 @@
+/** Shared primitives, type guards, bounded caches, and formatting helpers. */
+
+// Paseo's server bundler forbids importing root files outside client/, server/, or shared/;
+// tests/index.test.ts enforces parity with package.json#version.
+export const PACKAGE_VERSION = '0.1.1'
+
+export const sessionIdPattern =
+  /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
+
+/** Whether a filesystem error indicates a missing file or non-directory path component. */
+export function isMissingError(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code
+  return code === 'ENOENT' || code === 'ENOTDIR'
+}
+
+/** Validate that a native conversation ID is a bare UUID before building artifact paths. */
+export function assertSafeNativeId(
+  nativeId: string,
+  label = 'session ID',
+): void {
+  if (!sessionIdPattern.test(nativeId)) {
+    throw new Error(`Invalid ${label}: ${nativeId}`)
+  }
+}
+
+/** Drop agy's `default_api:` namespace from native tool names. */
+export function cleanToolName(name: string): string {
+  return name.replace(/^default_api:/, '')
+}
+
+/** Strip agy's outer ACP `Run <name>` title wrapper, then drop `default_api:`. */
+export function unwrapToolTitle(title: string): string {
+  return cleanToolName(title.replace(/^Run\s+/i, ''))
+}
+
+/** Normalize a tool identity from an explicit raw name or an ACP `Run <name>` title. */
+function normalizeToolCandidate(
+  explicitRawName: string | undefined,
+  title: string | null | undefined,
+): string {
+  return explicitRawName !== undefined
+    ? cleanToolName(explicitRawName)
+    : unwrapToolTitle(title ?? '')
+}
+
+/** Match native lifecycle identities, including agy's legacy ACP `Run` title. */
+export function isNativeToolName(
+  name: string,
+  expected:
+    | 'invoke_subagent'
+    | 'send_message'
+    | 'manage_subagents'
+    | 'manage_task'
+    | 'schedule',
+): boolean {
+  return unwrapToolTitle(name) === expected
+}
+
+/** Whether a native tool name is agy's interactive question tool. */
+export function isAskQuestionName(name: string): boolean {
+  return /^ask_(?:question|user)$/i.test(cleanToolName(name))
+}
+
+export type PlanModeToolName =
+  'switch_mode' | 'exit_plan_mode' | 'enter_plan_mode'
+
+/** Whether a tool name or ACP title explicitly identifies a non-native MCP tool. */
+function isForeignToolIdentity(
+  explicitRawName: string | undefined,
+  title: string | null | undefined,
+): boolean {
+  const raw = normalizeToolCandidate(explicitRawName, title)
+  if (/^mcp__|^call_mcp_tool$/i.test(raw)) return true
+  const colon = raw.indexOf(':')
+  if (colon <= 0) return false
+  const prefix = raw.slice(0, colon).toLowerCase()
+  return (
+    prefix !== 'contrib' &&
+    prefix !== 'default_api' &&
+    /^[a-z0-9_-]+:[a-z0-9_.-]+$/i.test(raw)
+  )
+}
+
+/**
+ * Classify agy's mode/plan handoff tools across raw names, `contrib:`, legacy `Run ` titles,
+ * and unnamed native `kind === 'switch_mode'` snapshots (rejecting foreign MCP identities).
+ */
+export function classifyPlanModeTool(
+  explicitRawName: string | undefined,
+  title: string | null | undefined,
+  kind?: string | null,
+): PlanModeToolName | undefined {
+  const match = normalizeToolCandidate(explicitRawName, title).match(
+    /^(?:contrib:)?(switch_mode|exit_plan_mode|enter_plan_mode)$/i,
+  )
+  if (match) return match[1].toLowerCase() as PlanModeToolName
+  if (
+    explicitRawName === undefined &&
+    kind === 'switch_mode' &&
+    !isForeignToolIdentity(explicitRawName, title)
+  )
+    return 'switch_mode'
+  return undefined
+}
+
+/** Narrow opaque protocol payloads before reading vendor fields. */
+export function record(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {}
+}
+
+export function str(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+export function num(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+export function nonnegative(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+}
+
+export function text(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+/** Copy defined string entries from `process.env` when constructing a launch override. */
+export function definedProcessEnv(): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (typeof value === 'string') env[key] = value
+  }
+  return env
+}
+
+/** Insert or refresh `key` in `map`, evicting oldest entries when exceeding `limit`. */
+export function setBounded<K, V>(
+  map: Map<K, V>,
+  key: K,
+  value: V,
+  limit: number,
+): void {
+  map.delete(key)
+  while (map.size >= limit) {
+    const oldest = map.keys().next()
+    if (oldest.done) break
+    map.delete(oldest.value)
+  }
+  map.set(key, value)
+}
+
+/** Extract a concise human-readable error message, preserving ACP `RequestError.data` details. */
+export function formatErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    const base = error.message
+    const data = (error as { data?: unknown }).data
+    const detail =
+      text(data) ?? text(record(data).details) ?? text(record(data).message)
+    if (detail && !base.includes(detail)) {
+      return `${base}: ${detail}`
+    }
+    return base
+  }
+  return String(error)
+}
