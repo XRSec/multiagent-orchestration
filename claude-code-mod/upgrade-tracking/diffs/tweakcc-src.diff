@@ -1,0 +1,189 @@
+# Unified Diff Archive: tweakcc-src
+# Base: git commit 9c7dfd6c75
+# Target: Customized tweakcc engine patches (HEAD)
+# Generated: 2026-11-17T16:45:55.610Z
+# Total Files: 2
+#
+# ===================================================================
+# File: claude-code-mod/tweakcc/src/installationDetection.ts
+# Commit Baseline: 9c7dfd6c75 -> HEAD
+# Description: Shim wrapper resolution (maybeResolveShimWrapper) for POSIX & Windows cmd-shims; detectFileTypeHeuristic non-node/bun fix
+# Original Size: 23480 bytes | Current Size: 26305 bytes | Delta: +2825 bytes
+# ===================================================================
+===================================================================
+--- a/claude-code-mod/tweakcc/src/installationDetection.ts	(9c7dfd6c75)
++++ b/claude-code-mod/tweakcc/src/installationDetection.ts	(HEAD)
+@@ -72,12 +72,17 @@
+   if (prefix[0] === 0x23 && prefix[1] === 0x21) {
+     // #!
+     const shebangLine = prefix.subarray(0, Math.min(256, prefix.length));
+     const shebangStr = shebangLine.toString('utf8').split('\n')[0];
+-    if (shebangStr.includes('node')) {
++    if (shebangStr.includes('node') || shebangStr.includes('bun')) {
+       debug('detectFileTypeHeuristic: Detected JavaScript via shebang');
+       return 'javascript';
+     }
++    // If it has a non-node/bun shebang (e.g. #!/bin/sh, #!/bin/bash), it is a shell script wrapper, NOT javascript
++    debug(
++      `detectFileTypeHeuristic: Ignoring non-node/bun shebang script (${shebangStr})`
++    );
++    return null;
+   }
+ 
+   // Check for binary magic numbers
+   if (prefix.length >= 4) {
+@@ -229,8 +234,74 @@
+   return binaryPath;
+ }
+ 
+ /**
++ * If the file at `filePath` is a shell script wrapper (e.g. pnpm / npm shim)
++ * or a Windows cmd-shim that specifies a target binary or cli.js, resolves
++ * to that target file path. Otherwise returns null.
++ */
++async function maybeResolveShimWrapper(
++  filePath: string,
++  prefix: Buffer
++): Promise<string | null> {
++  const isShebang =
++    prefix.length >= 2 && prefix[0] === 0x23 && prefix[1] === 0x21;
++  const prefixStr = prefix.subarray(0, 32).toString('utf8').toLowerCase();
++  const isWindowsCmd =
++    filePath.endsWith('.cmd') ||
++    filePath.endsWith('.bat') ||
++    prefixStr.startsWith('@echo') ||
++    prefixStr.startsWith('rem ');
++
++  if (!isShebang && !isWindowsCmd) {
++    return null;
++  }
++
++  try {
++    const stat = await fs.stat(filePath);
++    if (stat.size > 65536) {
++      return null;
++    }
++    const content = await fs.readFile(filePath, 'utf8');
++
++    // 1. Check for standard cmd-shim target comment (emitted by npm / pnpm)
++    const shimTargetMatch = content.match(/#\s*cmd-shim-target=(.+)$/m);
++    if (shimTargetMatch) {
++      const candidate = shimTargetMatch[1].trim();
++      if (await doesFileExist(candidate)) {
++        debug(
++          `maybeResolveShimWrapper: resolved cmd-shim-target -> ${candidate}`
++        );
++        return candidate;
++      }
++    }
++
++    // 2. Check for exec in shell script pointing to a target binary or cli.js
++    // Handles formats like:
++    // exec "$basedir_abs"/'../global/.../claude.exe' "$@"
++    // exec "/path/to/claude" "$@"
++    const execMatches = content.matchAll(
++      /exec\s+(?:(?:\$basedir_abs|\$basedir|\$\{basedir_abs\}|\$\{basedir\})\/)?['"]?([^'"\r\n]+)['"]?\s+"?\$@"?/g
++    );
++    const basedir = path.dirname(filePath);
++    for (const match of execMatches) {
++      const rawTarget = match[1].trim();
++      const candidates = [rawTarget, path.resolve(basedir, rawTarget)];
++      for (const cand of candidates) {
++        if (await doesFileExist(cand)) {
++          debug(`maybeResolveShimWrapper: resolved exec path -> ${cand}`);
++          return cand;
++        }
++      }
++    }
++  } catch (error) {
++    debug('maybeResolveShimWrapper: Error inspecting shim:', error);
++  }
++
++  return null;
++}
++
++/**
+  * Resolves a path to its installation type.
+  * Handles symlinks by resolving to target.
+  * Returns the kind and resolved path, or null if unrecognized.
+  */
+@@ -248,8 +319,17 @@
+       debug('resolvePathToInstallationType: Could not read file prefix');
+       return null;
+     }
+ 
++    // Check if this file is a shell script / cmd wrapper shim pointing to a target
++    const shimTarget = await maybeResolveShimWrapper(resolvedPath, prefix);
++    if (shimTarget && shimTarget !== resolvedPath) {
++      debug(
++        `resolvePathToInstallationType: resolved shim wrapper ${resolvedPath} -> ${shimTarget}`
++      );
++      return await resolvePathToInstallationType(shimTarget);
++    }
++
+     debug('resolvePathToInstallationType: Using heuristic file type detection');
+     const fileType = detectFileTypeHeuristic(prefix);
+ 
+     if (fileType === 'javascript') {
+
+
+# ===================================================================
+# File: claude-code-mod/tweakcc/src/patches/systemPrompts.ts
+# Commit Baseline: 9c7dfd6c75 -> HEAD
+# Description: Backtrack delimiter detection (findEnclosingDelimiter) for multi-line indented template literals
+# Original Size: 19851 bytes | Current Size: 20963 bytes | Delta: +1112 bytes
+# ===================================================================
+===================================================================
+--- a/claude-code-mod/tweakcc/src/patches/systemPrompts.ts	(9c7dfd6c75)
++++ b/claude-code-mod/tweakcc/src/patches/systemPrompts.ts	(HEAD)
+@@ -90,8 +90,39 @@
+     escaped ? pair : '\\\\'
+   );
+ 
+ /**
++ * Determines the enclosing string delimiter ('"', "'", or '`') for a match at `mIndex`.
++ * Fast-paths the immediate preceding character if it is already a quote;
++ * otherwise scans backward to find the opening delimiter of the enclosing string literal.
++ */
++const findEnclosingDelimiter = (content: string, mIndex: number): string => {
++  if (mIndex <= 0) return '';
++  const prevChar = content[mIndex - 1];
++  if (prevChar === '"' || prevChar === "'" || prevChar === '`') {
++    return prevChar;
++  }
++  for (let i = mIndex - 1; i >= 0; i--) {
++    const ch = content[i];
++    if (ch === '`') {
++      let backslashes = 0;
++      for (let j = i - 1; j >= 0 && content[j] === '\\'; j--) backslashes++;
++      if (backslashes % 2 === 0) return '`';
++    } else if (ch === '"' || ch === "'") {
++      let backslashes = 0;
++      for (let j = i - 1; j >= 0 && content[j] === '\\'; j--) backslashes++;
++      if (backslashes % 2 === 0) {
++        const between = content.slice(i + 1, mIndex);
++        if (!between.includes('\n') || between.includes('\\\n')) {
++          return ch;
++        }
++      }
++    }
++  }
++  return '';
++};
++
++/**
+  * Whether `body` compiles as a string literal with the given delimiter. The
+  * Function constructor only compiles its body; nothing is executed.
+  */
+ const literalParses = (delimiter: string, body: string): boolean => {
+@@ -291,9 +322,9 @@
+         }
+ 
+         // Check the delimiter character before this match to determine string type
+         const mIndex = m.index!;
+-        const delimiter = mIndex > 0 ? content[mIndex - 1] : '';
++        const delimiter = findEnclosingDelimiter(content, mIndex);
+ 
+         // For backtick-delimited prompts, `${...}` is live interpolation. A name
+         // the bundle never defines there (a typo in an edit, or a stale .md
+         // whose identifier was renamed upstream, #899) would throw
