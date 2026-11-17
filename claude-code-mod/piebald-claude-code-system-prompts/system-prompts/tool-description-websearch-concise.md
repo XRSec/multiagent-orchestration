@@ -1,6 +1,6 @@
 <!--
 name: "Tool Description: WebSearch (concise)"
-description: "Describes the concise WebSearch tool variant with US-only results, current-month guidance and domain filters, ending with either a required Sources list or, when web-search citations are enabled, a note that result text is untrusted"
+description: "Concise WebSearch description with US-only results, current-month guidance, domain filters, and citations/untrusted-content note"
 ccVersion: "2.1.295"
 variables:
   - "CURRENT_MONTH_YEAR"

@@ -1,6 +1,6 @@
 <!--
 name: "Skill: Run skill template"
-description: "Template file for the Run skill generator showing the frontmatter and section structure for a project-specific run skill"
+description: "Frontmatter and section template for generating a project-specific run skill"
 ccVersion: "2.1.246"
 -->
 ---
@@ -131,7 +131,7 @@ NOTE ON THE FRONTMATTER ABOVE:
 - Replace <unit-name> in both `name:` and `description:`. The `name:`
   becomes the slash command (/run-<unit-name>) and must match the
   directory name.
-- The `description:` is what Claude scans to decide whether to load this
+- The `description:` is what the agent scans to decide whether to load this
   skill automatically. Keep the verbs - "start," "run," "build," "test,"
   "screenshot" - they're what an asking agent will actually type.
 

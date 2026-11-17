@@ -1,6 +1,6 @@
 <!--
 name: "Tool Description: PowerShell"
-description: "Describes the PowerShell command execution tool with syntax guidance, timeout settings, and instructions to prefer specialized tools over PowerShell for file operations"
+description: "Executes PowerShell commands with edition-specific syntax, timeout, and tool-routing rules"
 ccVersion: "2.1.326"
 variables:
   - "RENDER_POWERSHELL_EDITION_GUIDANCE_FN"
@@ -18,86 +18,80 @@ variables:
   - "POWERSHELL_TOOL_NAME"
   - "SLEEP_AVOIDANCE_NOTE"
 -->
-Executes a given PowerShell command with optional timeout. Working directory persists between commands; shell state (variables, functions) does not.
+Executes a PowerShell command with optional timeout. Working directory persists between commands; shell state (variables, functions) does not.
 
-IMPORTANT: This tool is for terminal operations via PowerShell: git, npm, docker, and PS cmdlets. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
+Scope: Terminal operations only (git, npm, docker, PS cmdlets). Never use for file operations (reading, writing, editing, searching, finding)—use dedicated tools instead.
 
 ${RENDER_POWERSHELL_EDITION_GUIDANCE_FN(POWERSHELL_EDITION)}
 ${DETECTED_DEVELOPER_TOOLS_NOTE}
-Before executing the command, please follow these steps:
+Pre-execution rules:
+1. Directory verification: Before creating directories or files, run `Get-ChildItem` (or `ls`) to verify the parent directory.
+2. Command execution: Double-quote file paths containing spaces; capture command output.
 
-1. Directory Verification:
-   - If the command will create new directories or files, first use `Get-ChildItem` (or `ls`) to verify the parent directory exists and is the correct location
+PowerShell syntax rules:
+- Variables use `$` prefix (`$myVar = "value"`); escape character is backtick (`` ` ``), not backslash.
+- Use Verb-Noun cmdlets (`Get-ChildItem`, `Set-Location`, `New-Item`, `Remove-Item`); common aliases: `ls`, `cd`, `cat`, `rm`.
+- Give helper functions a unique Verb-Noun name (e.g. `Read-Doc`), including in script files; built-in aliases (`rd`, `rm`, `del`, `ri`, `sc`, `mv`, etc.) shadow functions with the same name silently.
+- Pipe `|` passes objects, not text; filter/transform with `Select-Object`, `Where-Object`, `ForEach-Object`.
+- String interpolation: `"Hello $name"` or `"Hello $($obj.Property)"`.
+- Registry paths use PSDrive prefixes (`HKLM:\SOFTWARE\...`, `HKCU:\...`), not raw `HKEY_LOCAL_MACHINE\...`.
+- Env vars: read `$env:NAME`, set `$env:NAME = "value"` (not `Set-Variable` or `export`).
+- Invoke native executables with spaces via call operator: `& "C:\Program Files\App\app.exe" arg1 arg2`.
 
-2. Command Execution:
-   - Always quote file paths that contain spaces with double quotes
-   - Capture the output of the command.
+Unix-to-PowerShell equivalents (Unix forms fail):
+| Unix | PowerShell Equivalent | Notes |
+|---|---|---|
+| `head` / `tail` | `Get-Content file -TotalCount N` / `-Tail N` | Piped: `\| Select-Object -First N` / `-Last N` |
+| `which` | `(Get-Command name).Source` | — |
+| `touch` | `if (-not (Test-Path path)) { New-Item -ItemType File path }` | Never use `New-Item -Force` on existing files (truncates content). |
+| `wc -l` | `(Get-Content file \| Measure-Object -Line).Lines` | — |
+| `mkdir -p` | `New-Item -ItemType Directory -Force path` | `-p` is invalid in PowerShell. |
+| `rm -rf` | `Remove-Item -Recurse -Force path` | — |
+| `ln -s` | `New-Item -ItemType SymbolicLink -Path link -Target target` | — |
+| `chmod` / `chown` | `icacls` (only if ACL changes are required) | Not applicable on Windows. |
+| `2>/dev/null` | `2>$null` | Stderr is already captured; usually unnecessary. |
+| `VAR=x cmd` | `$env:VAR = 'x'; cmd` | No inline env-var prefix. |
+| `if [ -f x ]`, `for x in *`, `` `cmd` `` | `if (Test-Path x)`, `foreach ($x in ...)`, `$(cmd)` | Bash control flow is a parser error. |
 
-PowerShell Syntax Notes:
-   - Variables use $ prefix: $myVar = "value"
-   - Escape character is backtick (`), not backslash
-   - Use Verb-Noun cmdlet naming: Get-ChildItem, Set-Location, New-Item, Remove-Item
-   - Common aliases: ls (Get-ChildItem), cd (Set-Location), cat (Get-Content), rm (Remove-Item)
-   - Give helper functions a new Verb-Noun name such as Read-Doc, also in script files. A built-in alias (rd, rm, del, ri, sc, mv and others) runs instead of a function with the same name, with no warning.
-   - Pipe operator | works similarly to bash but passes objects, not text
-   - Use Select-Object, Where-Object, ForEach-Object for filtering and transformation
-   - String interpolation: "Hello $name" or "Hello $($obj.Property)"
-   - Registry access uses PSDrive prefixes: `HKLM:\SOFTWARE\...`, `HKCU:\...` — NOT raw `HKEY_LOCAL_MACHINE\...`
-   - Environment variables: read with `$env:NAME`, set with `$env:NAME = "value"` (NOT `Set-Variable` or bash `export`)
-   - Call native exe with spaces in path via call operator: `& "C:\Program Files\App\app.exe" arg1 arg2`
+Exit-code note: `-ErrorAction SilentlyContinue` suppresses error output, but the cmdlet failure still exits 1. To make a cmdlet failure non-fatal, promote and catch it: `try { Cmdlet ... -ErrorAction Stop } catch {}` (without `-ErrorAction Stop`, non-terminating errors skip `catch` and exit 1).
 
-Unix commands that DO NOT exist in PowerShell — use the equivalent instead:
-   - head / tail → `Get-Content file -TotalCount N` / `-Tail N`; piped: `| Select-Object -First N` / `-Last N`
-   - which → `(Get-Command name).Source`
-   - touch → `if (-not (Test-Path path)) { New-Item -ItemType File path }` (NEVER use `New-Item -Force` on a file — it truncates existing content)
-   - wc -l → `(Get-Content file | Measure-Object -Line).Lines`
-   - mkdir -p → `New-Item -ItemType Directory -Force path` (`-p` is not a PowerShell flag)
-   - rm -rf → `Remove-Item -Recurse -Force path`
-   - ln -s → `New-Item -ItemType SymbolicLink -Path link -Target target`
-   - chmod / chown → not applicable on Windows; use `icacls` only if ACL changes are required
-   - 2>/dev/null → `2>$null` (but stderr is captured for you — usually unnecessary)
-   - VAR=x cmd → `$env:VAR = 'x'; cmd` (PowerShell has no inline env-var prefix)
-   - Bash control flow (`if [ -f x ]`, `for x in *`, backtick ``cmd`` substitution) is a parser error — use `if (Test-Path x)`, `foreach ($x in ...)`, `$(cmd)`
+Interactive/blocking commands (runs with `-NonInteractive`, stdin attached to null; console prompts read EOF/error, GUI prompts block until timeout):
+- Never use `Read-Host`, `Get-Credential`, `Out-GridView`, `$Host.UI.PromptForChoice`, or `pause`.
+- Pass `-Confirm:$false` to destructive cmdlets (`Remove-Item`, `Stop-Process`, `Clear-Content`) when proceeding; add `-Force` for read-only/hidden items.
+- Never run `git rebase -i`, `git add -i`, or commands opening an interactive editor.
 
-Exit-code note: `-ErrorAction SilentlyContinue` suppresses error OUTPUT but the cmdlet failure still causes this tool to report exit 1. To make a cmdlet failure truly non-fatal, promote it to terminating and swallow it: `try { Cmdlet ... -ErrorAction Stop } catch {}` (without `-ErrorAction Stop`, non-terminating errors skip the `catch` and still exit 1).
-
-Interactive and blocking commands (this tool runs with -NonInteractive and stdin attached to the null device — console prompts read EOF or error immediately; GUI prompts can still block until timeout):
-   - NEVER use `Read-Host`, `Get-Credential`, `Out-GridView`, `$Host.UI.PromptForChoice`, or `pause`
-   - Destructive cmdlets (`Remove-Item`, `Stop-Process`, `Clear-Content`, etc.) may prompt for confirmation. Add `-Confirm:$false` when you intend the action to proceed. Use `-Force` for read-only/hidden items.
-   - Never use `git rebase -i`, `git add -i`, or other commands that open an interactive editor
-
-Passing multiline strings (commit messages, file content) to native executables:
-   - Use a single-quoted here-string so PowerShell does not expand `$` or backticks inside. The closing `'@` MUST be at column 0 (no leading whitespace) on its own line — indenting it is a parse error:
+Multiline strings (commit messages, file content) for native executables:
+- Use a single-quoted here-string (`@'...'@`) so `$` and backticks are literal. Closing `'@` must sit at column 0 (no leading whitespace):
 <example>
 git commit -m @'
 Commit message here.
 Second line with $literal dollar signs.
 '@
 </example>
-   - Use `@'...'@` (single-quoted, literal) not `@"..."@` (double-quoted, interpolated) unless you need variable expansion
-   - For arguments containing `-`, `@`, or other characters PowerShell parses as operators, use the stop-parsing token: `git log --% --format=%H`
+- Use `@'...'@` over `@"..."@` unless variable expansion is required.
+- For arguments containing `-`, `@`, or operator characters, use stop-parsing: `git log --% --format=%H`.
 
 Usage notes:
-  - The command argument is required.
-  - You can specify an optional timeout in milliseconds (up to ${MAX_TIMEOUT_MS_FN()}ms / ${MAX_TIMEOUT_MS_FN()/60000} minutes for a foreground command). If not specified, commands will timeout after ${DEFAULT_TIMEOUT_MS_FN()}ms (${DEFAULT_TIMEOUT_MS_FN()/60000} minutes).
-  - It is very helpful if you write a clear, concise description of what this command does.
-  - If the output exceeds ${MAX_OUTPUT_CHARS_FN()} characters, output will be truncated before being returned to you.
+  - The `command` argument is required.
+  - Optional timeout in ms (max ${MAX_TIMEOUT_MS_FN()}ms / ${MAX_TIMEOUT_MS_FN()/60000} minutes for foreground; default ${DEFAULT_TIMEOUT_MS_FN()}ms / ${DEFAULT_TIMEOUT_MS_FN()/60000} minutes).
+  - Provide a clear, concise command description.
+  - Output exceeding ${MAX_OUTPUT_CHARS_FN()} characters is truncated.
 ${BACKGROUND_EXECUTION_NOTE?BACKGROUND_EXECUTION_NOTE+`
-`:""}  - Avoid using PowerShell to run commands that have dedicated tools, unless explicitly instructed:
-    - File search: Use ${GLOB_TOOL_NAME} (NOT Get-ChildItem -Recurse)
-    - Content search: Use ${GREP_TOOL_NAME} (NOT Select-String)
-    - Read files: Use ${READ_TOOL_NAME} (NOT Get-Content)
-    - Edit files: Use ${EDIT_TOOL_NAME}
-    - Write files: Use ${WRITE_TOOL_NAME} (NOT Set-Content/Out-File)
-    - Communication: Output text directly (NOT Write-Output/Write-Host)
-  - When issuing multiple commands:
-    - If the commands are independent and can run in parallel, make multiple ${POWERSHELL_TOOL_NAME} tool calls in a single message.
-    - If the commands depend on each other and must run sequentially, chain them in a single ${POWERSHELL_TOOL_NAME} call (see edition-specific chaining syntax above).
-    - Use `;` only when you need to run commands sequentially but don't care if earlier commands fail.
-    - DO NOT use newlines to separate commands (newlines are ok in quoted strings and here-strings)
-  - Do NOT prefix commands with `cd` or `Set-Location` -- the working directory is already set to the correct project directory automatically.${SLEEP_AVOIDANCE_NOTE?`
+`:""}  - Dedicated tool routing (use unless explicitly instructed otherwise):
+    - File search: ${GLOB_TOOL_NAME} (not `Get-ChildItem -Recurse`)
+    - Content search: ${GREP_TOOL_NAME} (not `Select-String`)
+    - Read files: ${READ_TOOL_NAME} (not `Get-Content`)
+    - Edit files: ${EDIT_TOOL_NAME}
+    - Write files: ${WRITE_TOOL_NAME} (not `Set-Content`/`Out-File`)
+    - Communication: Output text directly (not `Write-Output`/`Write-Host`)
+  - Multiple commands:
+    - Independent: make parallel ${POWERSHELL_TOOL_NAME} calls in one turn.
+    - Sequential dependent: chain in a single ${POWERSHELL_TOOL_NAME} call (see edition-specific syntax above).
+    - Sequential ignoring prior failure: separate with `;`.
+    - Never separate commands with newlines (newlines are valid only inside quoted strings and here-strings).
+  - Never prefix commands with `cd` or `Set-Location`—the working directory is already set to the project directory.${SLEEP_AVOIDANCE_NOTE?`
 `+SLEEP_AVOIDANCE_NOTE:""}
-  - For git commands:
-    - Prefer to create a new commit rather than amending an existing commit.
-    - Before running destructive operations (e.g., git reset --hard, git push --force, git checkout --), consider whether there is a safer alternative that achieves the same goal. Only use destructive operations when they are truly the best approach.
-    - Never skip hooks (--no-verify) or bypass signing (--no-gpg-sign, -c commit.gpgsign=false) unless the user has explicitly asked for it. If a hook fails, investigate and fix the underlying issue.
+  - Git rules:
+    - Prefer creating a new commit over amending an existing commit.
+    - Before destructive operations (`git reset --hard`, `git push --force`, `git checkout --`), evaluate safer alternatives first.
+    - Never skip hooks (`--no-verify`) or bypass signing (`--no-gpg-sign`, `-c commit.gpgsign=false`) unless explicitly requested. If a hook fails, investigate and fix the underlying issue.

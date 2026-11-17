@@ -3,24 +3,22 @@ name: "Tool Description: Task Get"
 description: "Retrieve a task by ID with full details and comments"
 ccVersion: "2.1.173"
 -->
-Use this tool to retrieve a task by its ID from the task list.
+Retrieve a task by ID from the task list.
 
-## When to Use This Tool
+## When to Use
 
-- When you need the full description and context before starting work on a task
-- To understand task dependencies (what it blocks, what blocks it)
-- After being assigned a task, to get complete requirements
+- Before starting work on a task, to get its full description and requirements
+- To inspect task dependencies (`blocks`, `blockedBy`)
 
 ## Output
 
-Returns full task details:
 - **subject**: Task title
 - **description**: Detailed requirements and context
-- **status**: 'pending', 'in_progress', or 'completed'
-- **blocks**: Tasks waiting on this one to complete
+- **status**: `'pending'`, `'in_progress'`, or `'completed'`
+- **blocks**: Tasks waiting on this one
 - **blockedBy**: Tasks that must complete before this one can start
 
-## Tips
+## Rules
 
-- After fetching a task, verify its blockedBy list is empty before beginning work.
-- Use TaskList to see all tasks in summary form.
+- Verify `blockedBy` is empty before starting work.
+- Use `TaskList` for a summary of all tasks.
