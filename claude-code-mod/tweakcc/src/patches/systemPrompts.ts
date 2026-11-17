@@ -91,6 +91,37 @@ const escapeLiteralBackslashes = (str: string): string =>
   );
 
 /**
+ * Determines the enclosing string delimiter ('"', "'", or '`') for a match at `mIndex`.
+ * Fast-paths the immediate preceding character if it is already a quote;
+ * otherwise scans backward to find the opening delimiter of the enclosing string literal.
+ */
+const findEnclosingDelimiter = (content: string, mIndex: number): string => {
+  if (mIndex <= 0) return '';
+  const prevChar = content[mIndex - 1];
+  if (prevChar === '"' || prevChar === "'" || prevChar === '`') {
+    return prevChar;
+  }
+  for (let i = mIndex - 1; i >= 0; i--) {
+    const ch = content[i];
+    if (ch === '`') {
+      let backslashes = 0;
+      for (let j = i - 1; j >= 0 && content[j] === '\\'; j--) backslashes++;
+      if (backslashes % 2 === 0) return '`';
+    } else if (ch === '"' || ch === "'") {
+      let backslashes = 0;
+      for (let j = i - 1; j >= 0 && content[j] === '\\'; j--) backslashes++;
+      if (backslashes % 2 === 0) {
+        const between = content.slice(i + 1, mIndex);
+        if (!between.includes('\n') || between.includes('\\\n')) {
+          return ch;
+        }
+      }
+    }
+  }
+  return '';
+};
+
+/**
  * Whether `body` compiles as a string literal with the given delimiter. The
  * Function constructor only compiles its body; nothing is executed.
  */
@@ -292,7 +323,7 @@ export const applySystemPrompts = async (
 
         // Check the delimiter character before this match to determine string type
         const mIndex = m.index!;
-        const delimiter = mIndex > 0 ? content[mIndex - 1] : '';
+        const delimiter = findEnclosingDelimiter(content, mIndex);
 
         // For backtick-delimited prompts, `${...}` is live interpolation. A name
         // the bundle never defines there (a typo in an edit, or a stale .md

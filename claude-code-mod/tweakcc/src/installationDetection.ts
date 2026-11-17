@@ -73,10 +73,15 @@ function detectFileTypeHeuristic(
     // #!
     const shebangLine = prefix.subarray(0, Math.min(256, prefix.length));
     const shebangStr = shebangLine.toString('utf8').split('\n')[0];
-    if (shebangStr.includes('node')) {
+    if (shebangStr.includes('node') || shebangStr.includes('bun')) {
       debug('detectFileTypeHeuristic: Detected JavaScript via shebang');
       return 'javascript';
     }
+    // If it has a non-node/bun shebang (e.g. #!/bin/sh, #!/bin/bash), it is a shell script wrapper, NOT javascript
+    debug(
+      `detectFileTypeHeuristic: Ignoring non-node/bun shebang script (${shebangStr})`
+    );
+    return null;
   }
 
   // Check for binary magic numbers
@@ -230,6 +235,72 @@ async function maybeResolveNixWrapper(binaryPath: string): Promise<string> {
 }
 
 /**
+ * If the file at `filePath` is a shell script wrapper (e.g. pnpm / npm shim)
+ * or a Windows cmd-shim that specifies a target binary or cli.js, resolves
+ * to that target file path. Otherwise returns null.
+ */
+async function maybeResolveShimWrapper(
+  filePath: string,
+  prefix: Buffer
+): Promise<string | null> {
+  const isShebang =
+    prefix.length >= 2 && prefix[0] === 0x23 && prefix[1] === 0x21;
+  const prefixStr = prefix.subarray(0, 32).toString('utf8').toLowerCase();
+  const isWindowsCmd =
+    filePath.endsWith('.cmd') ||
+    filePath.endsWith('.bat') ||
+    prefixStr.startsWith('@echo') ||
+    prefixStr.startsWith('rem ');
+
+  if (!isShebang && !isWindowsCmd) {
+    return null;
+  }
+
+  try {
+    const stat = await fs.stat(filePath);
+    if (stat.size > 65536) {
+      return null;
+    }
+    const content = await fs.readFile(filePath, 'utf8');
+
+    // 1. Check for standard cmd-shim target comment (emitted by npm / pnpm)
+    const shimTargetMatch = content.match(/#\s*cmd-shim-target=(.+)$/m);
+    if (shimTargetMatch) {
+      const candidate = shimTargetMatch[1].trim();
+      if (await doesFileExist(candidate)) {
+        debug(
+          `maybeResolveShimWrapper: resolved cmd-shim-target -> ${candidate}`
+        );
+        return candidate;
+      }
+    }
+
+    // 2. Check for exec in shell script pointing to a target binary or cli.js
+    // Handles formats like:
+    // exec "$basedir_abs"/'../global/.../claude.exe' "$@"
+    // exec "/path/to/claude" "$@"
+    const execMatches = content.matchAll(
+      /exec\s+(?:(?:\$basedir_abs|\$basedir|\$\{basedir_abs\}|\$\{basedir\})\/)?['"]?([^'"\r\n]+)['"]?\s+"?\$@"?/g
+    );
+    const basedir = path.dirname(filePath);
+    for (const match of execMatches) {
+      const rawTarget = match[1].trim();
+      const candidates = [rawTarget, path.resolve(basedir, rawTarget)];
+      for (const cand of candidates) {
+        if (await doesFileExist(cand)) {
+          debug(`maybeResolveShimWrapper: resolved exec path -> ${cand}`);
+          return cand;
+        }
+      }
+    }
+  } catch (error) {
+    debug('maybeResolveShimWrapper: Error inspecting shim:', error);
+  }
+
+  return null;
+}
+
+/**
  * Resolves a path to its installation type.
  * Handles symlinks by resolving to target.
  * Returns the kind and resolved path, or null if unrecognized.
@@ -247,6 +318,15 @@ export async function resolvePathToInstallationType(
     if (!prefix) {
       debug('resolvePathToInstallationType: Could not read file prefix');
       return null;
+    }
+
+    // Check if this file is a shell script / cmd wrapper shim pointing to a target
+    const shimTarget = await maybeResolveShimWrapper(resolvedPath, prefix);
+    if (shimTarget && shimTarget !== resolvedPath) {
+      debug(
+        `resolvePathToInstallationType: resolved shim wrapper ${resolvedPath} -> ${shimTarget}`
+      );
+      return await resolvePathToInstallationType(shimTarget);
     }
 
     debug('resolvePathToInstallationType: Using heuristic file type detection');
