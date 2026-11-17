@@ -81,7 +81,7 @@ const BotAvatarSchema = z.object({
 export type BotAvatar = z.infer<typeof BotAvatarSchema>;
 
 /** A skill folder in the shared library. `id` is the folder name and the name bots see. */
-const LibrarySkillSchema = z.object({
+export const LibrarySkillSchema = z.object({
   id: z.string(),
   description: z.string().default(""),
   /** Where it came from: "github.com/owner/repo/path", a SKILL.md link, or "" when written here. */
@@ -110,7 +110,7 @@ export const McpToolSchema = z.object({ name: z.string(), description: z.string(
 export type McpTool = z.infer<typeof McpToolSchema>;
 
 /** An MCP server in the shared library. `name` is the key agents see ("server/tool"). */
-const LibraryMcpServerSchema = z.object({
+export const LibraryMcpServerSchema = z.object({
   id: z.string(),
   name: z.string(),
   description: z.string().default(""),
@@ -127,12 +127,28 @@ const LibraryMcpServerSchema = z.object({
 export type LibraryMcpServer = z.infer<typeof LibraryMcpServerSchema>;
 
 /** Skills and MCP servers kept once and switched on per bot. */
-const LibrarySchema = z.object({
+export const LibrarySchema = z.object({
   skills: z.array(LibrarySkillSchema).default([]),
   mcpServers: z.array(LibraryMcpServerSchema).default([]),
 });
 export type Library = z.infer<typeof LibrarySchema>;
 export const EMPTY_LIBRARY: Library = { skills: [], mcpServers: [] };
+
+/**
+ * Strips inline library (skills and mcpServers) from settings so bots.json only
+ * stores references (skillIds, mcpServerIds).
+ */
+export function stripLibraryInSettings<T extends { library?: Library }>(values: T): T {
+  const { library: _omitted, ...rest } = values;
+  return rest as T;
+}
+
+/**
+ * Strips soul from bot object so bots.json only stores decoupled soul references.
+ */
+export function stripSoulInSettings<T extends { soul?: string }>(bot: T): T {
+  return { ...bot, soul: "" };
+}
 
 export const RoutineScheduleSchema = z.discriminatedUnion("kind", [
   /** Local time "HH:MM" on the given weekdays (0 = Sunday). */

@@ -3,6 +3,8 @@ import type { PluginSettings } from "@getpaseo/plugin/server";
 import { BOT_LABEL, EMPTY_LIBRARY, type Bot, type BotSettingsValues, type botSettings, type Library } from "../shared/bot";
 import { ROUTINE_LABEL } from "../shared/chat";
 import { readBotSoul } from "./souls";
+import { listAllLibrarySkills, writeSkillMetadata } from "./library";
+import { listAllMcpServers, writeMcpServer } from "./mcp-servers";
 import type { RoutineService } from "./routine-service";
 
 // What every server feature needs: the saved settings (read-only on the
@@ -58,13 +60,35 @@ export class BotsHost {
     return this.api;
   }
 
-  async values(): Promise<BotSettingsValues | null> {
+  async rawValues(): Promise<BotSettingsValues | null> {
     const state = await this.settings.read();
     return state.status === "ready" ? state.values : null;
   }
 
+  async values(): Promise<BotSettingsValues | null> {
+    const state = await this.settings.read();
+    if (state.status !== "ready") return null;
+    const library = await this.library();
+    state.values.library = library;
+    return state.values;
+  }
+
   async library(): Promise<Library> {
-    return (await this.values())?.library ?? EMPTY_LIBRARY;
+    const [diskSkills, diskMcpServers] = await Promise.all([
+      listAllLibrarySkills(),
+      listAllMcpServers(),
+    ]);
+    const state = await this.settings.read();
+    const rawLibrary = state.status === "ready" ? state.values.library : null;
+
+    // Use disk items if present; otherwise safely fall back to in-memory/legacy items
+    const skills = diskSkills.length > 0 ? diskSkills : (rawLibrary?.skills ?? []);
+    const mcpServers = diskMcpServers.length > 0 ? diskMcpServers : (rawLibrary?.mcpServers ?? []);
+
+    return {
+      skills,
+      mcpServers,
+    };
   }
 
   async bots(): Promise<Bot[]> {

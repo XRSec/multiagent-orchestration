@@ -18,7 +18,8 @@ import { TASK_CARD, TaskCardSchema } from "./shared/task-card";
 import { requestIntent } from "./client/intent";
 import { initPluginI18n, tMsg, translateNow } from "./client/i18n";
 import { RoutinesScreen } from "./client/RoutinesScreen";
-import { PaseoBotsSidebar } from "./client/PaseoSidebar";
+import { PaseoBotsSidebar, PaseoWorkflowsSidebar } from "./client/PaseoSidebar";
+import { WorkflowsScreen } from "./client/WorkflowsScreen";
 import { BackBar } from "./client/library/parts";
 import { useTypeScale } from "./client/typography";
 import { installTooltips } from "./client/ui/Tooltip";
@@ -133,6 +134,7 @@ export default function contribute(client: PluginClientContext) {
     registerBotScreen(client, screen);
   }
   client.addSidebarHeaderItem({ id: "bots", title: tMsg("plugin.title"), Component: PaseoBotsSidebar });
+  client.addSidebarHeaderItem({ id: "workflows", title: tMsg("workflows.sidebarTitle"), Component: PaseoWorkflowsSidebar });
   const backToBots = () => client.openScreen({ screenId: BOTS_SCREEN });
   // Existing open tabs/bookmarks from the removed settings page return to Bots.
   function PreviousSettingsRoute() {
@@ -141,6 +143,8 @@ export default function contribute(client: PluginClientContext) {
   }
   client.addScreen({ id: "bot-preferences", title: tMsg("plugin.title"), Component: PreviousSettingsRoute });
   client.addScreen({ id: "bot-routines", title: tMsg("plugin.title"), Component: (props) => <BotsPage props={props} title="Routines" onBack={backToBots}><RoutinesScreen {...props} openScreen={(input) => client.openScreen(input)} /></BotsPage> });
+  client.addScreen({ id: "workflows", title: tMsg("workflows.sidebarTitle"), Component: (props) => <BotsPage props={props} title="Workflows" onBack={backToBots}><WorkflowsScreen {...props} openScreen={(input) => client.openScreen(input)} /></BotsPage> });
+  client.addScreen({ id: "bot-workflows", title: tMsg("workflows.sidebarTitle"), Component: (props) => <BotsPage props={props} title="Workflows" onBack={backToBots}><WorkflowsScreen {...props} openScreen={(input) => client.openScreen(input)} /></BotsPage> });
   client.addCommandCenterItem({
     id: "open-bots",
     title: tMsg("plugin.openBots"),
@@ -149,6 +153,16 @@ export default function contribute(client: PluginClientContext) {
     context: "global",
     onSelect({ openScreen }) {
       openScreen({ screenId: BOTS_SCREEN });
+    },
+  });
+  client.addCommandCenterItem({
+    id: "open-workflows",
+    title: tMsg("workflows.openWorkflows"),
+    icon: "GitBranch",
+    keywords: ["workflow", "pipeline", "dag", "工作流", "流水线"],
+    context: "global",
+    onSelect({ openScreen }) {
+      openScreen({ screenId: "workflows" });
     },
   });
   client.addCommandCenterItem({
@@ -235,7 +249,13 @@ export default function contribute(client: PluginClientContext) {
   client.addTimelineRenderer({
     ...TASK_CARD,
     schema: TaskCardSchema,
-    Component: ({ item, theme }) => <TaskCardView colors={theme.colors} card={item.data} />,
+    Component: ({ item, theme }) => (
+      <TaskCardView
+        colors={theme.colors}
+        card={item.data}
+        onOpenChat={(botId, chatId) => client.openScreen({ screenId: "bot-chat", params: { botId, chatId } })}
+      />
+    ),
   });
   return () => {
     removeLauncherButtons();

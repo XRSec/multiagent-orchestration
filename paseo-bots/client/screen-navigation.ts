@@ -2,7 +2,7 @@ import type { PluginOpenScreenInput, PluginScreenLocation, PluginScreenParams } 
 import type { LibraryTarget } from "./navigation";
 import { newUuid } from "../shared/uuid";
 
-export type BotScreen = "bots" | "bot-chat" | "bot-settings" | "bot-section" | "bot-library" | "bot-library-item" | "bot-teams";
+export type BotScreen = "bots" | "bot-chat" | "bot-settings" | "bot-section" | "bot-library" | "bot-library-item" | "bot-teams" | "workflows" | "bot-workflows";
 
 export const BOT_SCREENS: { id: BotScreen; title: string }[] = [
   { id: "bots", title: "Bots" },
@@ -57,7 +57,12 @@ export function parentScreen(screen: BotScreen, params: PluginScreenParams): { l
     return { label: "Bot settings", target: { screenId: "bot-settings", params: { botId: params.botId, title: "Bot settings" } } };
   }
   if (screen === "bot-library-item") return { label: "Skills & Tools", target: { screenId: "bot-library" } };
+  if (screen === "workflows" || screen === "bot-workflows") return { label: "Workflows", target: { screenId: "workflows" } };
   return { label: "Bots", target: { screenId: "bots" } };
+}
+
+export function workflowsScreen(): PluginOpenScreenInput {
+  return { screenId: "workflows" };
 }
 
 export function libraryScreen(target: LibraryTarget | null, title?: string): PluginOpenScreenInput {

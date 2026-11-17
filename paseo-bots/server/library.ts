@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, readlink, rename, rm, symlink, unlink, writeFile } from "node:fs/promises";
-import { dirname, join, posix, relative, sep } from "node:path";
-import type { LibrarySkill } from "../shared/bot";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { lstat, mkdir, readFile, readdir, readlink, rename, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
+import { dirname, join, posix, relative, resolve, sep } from "node:path";
+import { LibrarySkillSchema, type LibrarySkill } from "../shared/bot";
 import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName } from "../shared/skills";
 import { botDataPath, botsHomePath, pluginDataPath } from "./bot-home";
 import { atomicWrite, ensureRealDirectory, missingFile, readRegularText, safeFileParts } from "./files";
@@ -17,13 +18,236 @@ const MAX_LISTED_FILES = 100;
 
 export type ImportedSkill = Pick<LibrarySkill, "id" | "description" | "source">;
 
-function librarySkillsPath(): string {
+export function resolveSkillsDir(customDir?: string): string {
+  if (customDir) return customDir;
+  if (process.env.PASEO_BOTS_SKILLS_DIR) return process.env.PASEO_BOTS_SKILLS_DIR;
+  if (process.env.PASEO_BOTS_DATA_DIR) return join(process.env.PASEO_BOTS_DATA_DIR, "library", "skills");
+  if (process.env.PASEO_HOME) return join(pluginDataPath(), "library", "skills");
+
+  const repoCandidate = resolve(__dirname, "../../paseo-bots-plugin-data/library/skills");
+  if (existsSync(repoCandidate)) return repoCandidate;
+
+  const cwdParentCandidate = resolve(process.cwd(), "..", "paseo-bots-plugin-data", "library", "skills");
+  if (existsSync(cwdParentCandidate)) return cwdParentCandidate;
+
+  const cwdCandidate = resolve(process.cwd(), "paseo-bots-plugin-data", "library", "skills");
+  if (existsSync(cwdCandidate)) return cwdCandidate;
+
   return join(pluginDataPath(), "library", "skills");
 }
 
-export function librarySkillPath(id: string): string {
+export function librarySkillsPath(customDir?: string): string {
+  return resolveSkillsDir(customDir);
+}
+
+export function librarySkillPath(id: string, customDir?: string): string {
   if (!/^[A-Za-z0-9._-]{1,128}$/.test(id) || id === "." || id === "..") throw new Error("A skill name must be 1–128 letters, numbers, dots, dashes or underscores, and cannot be '.' or '..'.");
-  return join(librarySkillsPath(), id);
+  return join(librarySkillsPath(customDir), id);
+}
+
+/**
+ * Reads skill metadata asynchronously from metadata.json and/or SKILL.md frontmatter.
+ */
+export async function readSkillMetadata(id: string, customDir?: string): Promise<LibrarySkill | null> {
+  const dir = librarySkillPath(id, customDir);
+  let metaJson: Partial<LibrarySkill> | null = null;
+  const metaPath = join(dir, "metadata.json");
+  try {
+    const raw = await readFile(metaPath, "utf8");
+    metaJson = JSON.parse(raw);
+  } catch {}
+
+  let skillMdText: string | null = null;
+  const skillMdPath = join(dir, "SKILL.md");
+  try {
+    skillMdText = await readFile(skillMdPath, "utf8");
+  } catch {}
+
+  if (!metaJson && skillMdText === null) {
+    return null;
+  }
+
+  const frontmatter = skillMdText ? parseSkillFrontmatter(skillMdText) : null;
+  let birthtimeStr: string | null = null;
+  let mtimeStr: string | null = null;
+  try {
+    const st = await stat(skillMdPath).catch(() => stat(metaPath));
+    birthtimeStr = st.birthtime.toISOString();
+    mtimeStr = st.mtime.toISOString();
+  } catch {}
+
+  const now = new Date().toISOString();
+  const effectiveId = metaJson?.id || frontmatter?.name || id;
+  const effectiveDescription = metaJson?.description ?? frontmatter?.description ?? "";
+  const effectiveSource = metaJson?.source ?? "";
+  const effectiveEnabled = metaJson?.enabled ?? true;
+  const effectiveReviewedSha =
+    metaJson?.reviewedSha !== undefined
+      ? metaJson.reviewedSha
+      : (skillMdText ? sha256(skillMdText) : null);
+  const effectiveCreatedAt = metaJson?.createdAt ?? birthtimeStr ?? now;
+  const effectiveUpdatedAt = metaJson?.updatedAt ?? mtimeStr ?? now;
+
+  const result: LibrarySkill = {
+    id: effectiveId,
+    description: effectiveDescription,
+    source: effectiveSource,
+    enabled: effectiveEnabled,
+    reviewedSha: effectiveReviewedSha,
+    createdAt: effectiveCreatedAt,
+    updatedAt: effectiveUpdatedAt,
+  };
+  return LibrarySkillSchema.parse(result);
+}
+
+/**
+ * Reads skill metadata synchronously from metadata.json and/or SKILL.md frontmatter.
+ */
+export function readSkillMetadataSync(id: string, customDir?: string): LibrarySkill | null {
+  const dir = librarySkillPath(id, customDir);
+  let metaJson: Partial<LibrarySkill> | null = null;
+  const metaPath = join(dir, "metadata.json");
+  try {
+    const raw = readFileSync(metaPath, "utf8");
+    metaJson = JSON.parse(raw);
+  } catch {}
+
+  let skillMdText: string | null = null;
+  const skillMdPath = join(dir, "SKILL.md");
+  try {
+    skillMdText = readFileSync(skillMdPath, "utf8");
+  } catch {}
+
+  if (!metaJson && skillMdText === null) {
+    return null;
+  }
+
+  const frontmatter = skillMdText ? parseSkillFrontmatter(skillMdText) : null;
+  let birthtimeStr: string | null = null;
+  let mtimeStr: string | null = null;
+  try {
+    let st: any;
+    try {
+      st = statSync(skillMdPath);
+    } catch {
+      st = statSync(metaPath);
+    }
+    birthtimeStr = st.birthtime.toISOString();
+    mtimeStr = st.mtime.toISOString();
+  } catch {}
+
+  const now = new Date().toISOString();
+  const effectiveId = metaJson?.id || frontmatter?.name || id;
+  const effectiveDescription = metaJson?.description ?? frontmatter?.description ?? "";
+  const effectiveSource = metaJson?.source ?? "";
+  const effectiveEnabled = metaJson?.enabled ?? true;
+  const effectiveReviewedSha =
+    metaJson?.reviewedSha !== undefined
+      ? metaJson.reviewedSha
+      : (skillMdText ? sha256(skillMdText) : null);
+  const effectiveCreatedAt = metaJson?.createdAt ?? birthtimeStr ?? now;
+  const effectiveUpdatedAt = metaJson?.updatedAt ?? mtimeStr ?? now;
+
+  const result: LibrarySkill = {
+    id: effectiveId,
+    description: effectiveDescription,
+    source: effectiveSource,
+    enabled: effectiveEnabled,
+    reviewedSha: effectiveReviewedSha,
+    createdAt: effectiveCreatedAt,
+    updatedAt: effectiveUpdatedAt,
+  };
+  return LibrarySkillSchema.parse(result);
+}
+
+/**
+ * Writes skill metadata JSON asynchronously.
+ */
+export async function writeSkillMetadata(skill: LibrarySkill, customDir?: string): Promise<string> {
+  const dir = librarySkillPath(skill.id, customDir);
+  await mkdir(dir, { recursive: true });
+  const metaPath = join(dir, "metadata.json");
+  const content = JSON.stringify(skill, null, 2) + "\n";
+  await writeFile(metaPath, content, "utf8");
+  return metaPath;
+}
+
+/**
+ * Writes skill metadata JSON synchronously.
+ */
+export function writeSkillMetadataSync(skill: LibrarySkill, customDir?: string): string {
+  const dir = librarySkillPath(skill.id, customDir);
+  mkdirSync(dir, { recursive: true });
+  const metaPath = join(dir, "metadata.json");
+  const content = JSON.stringify(skill, null, 2) + "\n";
+  writeFileSync(metaPath, content, "utf8");
+  return metaPath;
+}
+
+/**
+ * Deletes skill metadata JSON asynchronously.
+ */
+export async function deleteSkillMetadata(id: string, customDir?: string): Promise<boolean> {
+  const dir = librarySkillPath(id, customDir);
+  const metaPath = join(dir, "metadata.json");
+  try {
+    await rm(metaPath, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Deletes skill metadata JSON synchronously.
+ */
+export function deleteSkillMetadataSync(id: string, customDir?: string): boolean {
+  const dir = librarySkillPath(id, customDir);
+  const metaPath = join(dir, "metadata.json");
+  try {
+    rmSync(metaPath, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Lists all decoupled library skills asynchronously by inspecting skill folders.
+ */
+export async function listAllLibrarySkills(customDir?: string): Promise<LibrarySkill[]> {
+  const root = librarySkillsPath(customDir);
+  try {
+    const entries = await readdir(root, { withFileTypes: true });
+    const skills: LibrarySkill[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const meta = await readSkillMetadata(entry.name, customDir);
+      if (meta) skills.push(meta);
+    }
+    return skills.sort((a, b) => a.id.localeCompare(b.id));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Lists all decoupled library skills synchronously by inspecting skill folders.
+ */
+export function listAllLibrarySkillsSync(customDir?: string): LibrarySkill[] {
+  const root = librarySkillsPath(customDir);
+  try {
+    const entries = readdirSync(root, { withFileTypes: true });
+    const skills: LibrarySkill[] = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const meta = readSkillMetadataSync(entry.name, customDir);
+      if (meta) skills.push(meta);
+    }
+    return skills.sort((a, b) => a.id.localeCompare(b.id));
+  } catch {
+    return [];
+  }
 }
 
 async function fetchText(url: string, limit = MAX_FILE_BYTES): Promise<string> {
@@ -70,6 +294,17 @@ async function saveSkill(files: Map<string, string>, source: string, fallbackNam
   const meta = parseSkillFrontmatter(files.get("SKILL.md")!);
   const id = sanitizeSkillName(meta.name ?? fallbackName);
   const dir = librarySkillPath(id);
+  const now = new Date().toISOString();
+  const skillMd = files.get("SKILL.md")!;
+  const metadata: LibrarySkill = {
+    id,
+    description: meta.description ?? "",
+    source,
+    enabled: true,
+    reviewedSha: sha256(skillMd),
+    createdAt: now,
+    updatedAt: now,
+  };
   await changeSkill(id, async () => {
     await mkdir(librarySkillsPath(), { recursive: true });
     const staged = join(librarySkillsPath(), `.import-${randomUUID()}`);
@@ -81,6 +316,7 @@ async function saveSkill(files: Map<string, string>, source: string, fallbackNam
         await mkdir(dirname(target), { recursive: true });
         await writeFile(target, text, { encoding: "utf8", mode: 0o600 });
       }
+      await writeFile(join(staged, "metadata.json"), JSON.stringify(metadata, null, 2) + "\n", { encoding: "utf8", mode: 0o600 });
       try { await rename(dir, backup); backedUp = true; } catch (error) { if (!missingFile(error)) throw error; }
       try { await rename(staged, dir); } catch (error) {
         if (backedUp) { await rename(backup, dir); backedUp = false; }
@@ -153,7 +389,7 @@ async function listFiles(root: string): Promise<string[]> {
       if (files.length >= MAX_LISTED_FILES) return;
       const path = join(dir, entry.name);
       if (entry.isDirectory()) await walk(path);
-      else if (entry.isFile()) files.push(relative(root, path).split(sep).join("/"));
+      else if (entry.isFile() && entry.name !== "metadata.json") files.push(relative(root, path).split(sep).join("/"));
     }
   };
   await walk(root);
@@ -180,11 +416,25 @@ export async function readSkill({ id }: { id: string }) {
 export async function writeSkill({ id, text }: { id: string; text: string }) {
   const dir = librarySkillPath(id);
   if (Buffer.byteLength(text, "utf8") > MAX_FILE_BYTES) throw new Error("A skill file must be at most 512 KB.");
+  const sha = sha256(text);
+  const frontmatter = parseSkillFrontmatter(text);
   await changeSkill(id, async () => {
     await ensureRealDirectory(dir);
     await atomicWrite(join(dir, "SKILL.md"), text);
+    const existing = await readSkillMetadata(id);
+    const now = new Date().toISOString();
+    const updated: LibrarySkill = {
+      id,
+      description: frontmatter.description ?? existing?.description ?? "",
+      source: existing?.source ?? "",
+      enabled: existing?.enabled ?? true,
+      reviewedSha: sha,
+      createdAt: existing?.createdAt ?? now,
+      updatedAt: now,
+    };
+    await writeSkillMetadata(updated);
   });
-  return { description: parseSkillFrontmatter(text).description ?? "", sha: sha256(text) };
+  return { description: frontmatter.description ?? "", sha };
 }
 
 export async function deleteSkill({ id }: { id: string }) {

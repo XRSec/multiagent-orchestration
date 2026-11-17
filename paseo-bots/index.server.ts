@@ -8,8 +8,9 @@ import { MemoryCurator } from "./server/memory-curator";
 import { systemPrompt } from "./server/prompt";
 import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
-import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill } from "./server/library";
+import { deleteSkill, importSkills, migrateBotSkills, readSkill, writeSkill, readSkillMetadata, writeSkillMetadata } from "./server/library";
 import { readBotSoul, writeBotSoul } from "./server/souls";
+import { deleteMcpServer, listAllMcpServers, readMcpServer, writeMcpServer } from "./server/mcp-servers";
 import { probeMcpServer } from "./server/mcp-probe";
 import { mcpSources } from "./server/mcp-sources";
 import { McpOAuth } from "./server/mcp-oauth";
@@ -59,6 +60,10 @@ import {
   memoryWriteRpc,
   mountRpc,
   mcpProbeRpc,
+  mcpServerDeleteRpc,
+  mcpServerListRpc,
+  mcpServerReadRpc,
+  mcpServerWriteRpc,
   mcpSourcesRpc,
   proposalAcceptRpc,
   proposalDismissRpc,
@@ -80,6 +85,8 @@ import {
   routineWebhookRpc,
   skillDeleteRpc,
   skillImportRpc,
+  skillMetadataReadRpc,
+  skillMetadataWriteRpc,
   skillReadRpc,
   skillWriteRpc,
   soulReadRpc,
@@ -99,38 +106,39 @@ export default function contribute(server: PluginServerContext) {
     .then(migrateBotSkills)
     .catch((error: unknown) => console.error("paseo-bots: couldn't prepare the Bots folder", error));
   const settings = server.registerSettings(botSettings);
-  const library = async () => {
-    const state = await settings.read();
-    return state.status === "ready" ? (state.values.library ?? EMPTY_LIBRARY) : EMPTY_LIBRARY;
-  };
   const host = new BotsHost(settings);
+  const library = async () => {
+    return host.library();
+  };
   let agySyncQueue = Promise.resolve();
   const queueAgySync = (values: BotSettingsValues, phase: string) => {
     agySyncQueue = agySyncQueue
-      .then(() =>
-        syncAllBotsToAgy(values.bots, {
+      .then(async () => {
+        const lib = await host.library();
+        return syncAllBotsToAgy(values.bots, {
           resolveBody: async (bot) => {
-            const { systemPrompt: body } = await systemPrompt({ bot, local: true, syncAgy: false, syncClaude: false }, values.library ?? EMPTY_LIBRARY, host.paseo, values);
+            const { systemPrompt: body } = await systemPrompt({ bot, local: true, syncAgy: false, syncClaude: false }, lib, host.paseo, values);
             return body;
           },
-        }),
-      )
+        });
+      })
       .then(() => undefined)
       .catch((error: unknown) => console.error(`paseo-bots: couldn't sync agy agents (${phase})`, error));
   };
   let claudeSyncQueue = Promise.resolve();
   const queueClaudeSync = (values: BotSettingsValues, phase: string) => {
     claudeSyncQueue = claudeSyncQueue
-      .then(() =>
-        syncAllBotsToClaude(values.bots, {
+      .then(async () => {
+        const lib = await host.library();
+        return syncAllBotsToClaude(values.bots, {
           resolveBody: async (bot) => {
-            const { systemPrompt: body } = await systemPrompt({ bot, local: true, syncAgy: false, syncClaude: false }, values.library ?? EMPTY_LIBRARY, host.paseo, values);
+            const { systemPrompt: body } = await systemPrompt({ bot, local: true, syncAgy: false, syncClaude: false }, lib, host.paseo, values);
             return body;
           },
-          resolveSkills: (bot) => botSkills(bot, values.library ?? EMPTY_LIBRARY).map((s) => s.id),
-          resolveMcpServers: (bot) => mcpServersRecord(botMcpServers(bot, values.library ?? EMPTY_LIBRARY)),
-        }),
-      )
+          resolveSkills: (bot) => botSkills(bot, lib).map((s) => s.id),
+          resolveMcpServers: (bot) => mcpServersRecord(botMcpServers(bot, lib)),
+        });
+      })
       .then(() => undefined)
       .catch((error: unknown) => console.error(`paseo-bots: couldn't sync claude agents (${phase})`, error));
   };
@@ -209,11 +217,54 @@ export default function contribute(server: PluginServerContext) {
     return { ok: true };
   });
   server.handle(mcpProbeRpc, async ({ config, serverId }) => {
-    if (config.type === "stdio" || !config.oauth) return probeMcpServer({ config });
-    if (!serverId) return { ok: false as const, error: "Save this OAuth server before testing it." };
-    const saved = await oauth.server(serverId);
-    if (JSON.stringify(saved.config) !== JSON.stringify(config)) return { ok: false as const, error: "The connection changed. Wait for it to save before testing." };
-    return probeMcpServer({ config: await oauthProxy.mount(serverId, "probe", "probe") });
+    let result: { ok: true; tools: import("./shared/bot").McpTool[] } | { ok: false; error: string };
+    if (config.type === "stdio" || !config.oauth) {
+      result = await probeMcpServer({ config });
+    } else {
+      if (!serverId) return { ok: false as const, error: "Save this OAuth server before testing it." };
+      const saved = await oauth.server(serverId);
+      if (JSON.stringify(saved.config) !== JSON.stringify(config)) return { ok: false as const, error: "The connection changed. Wait for it to save before testing." };
+      result = await probeMcpServer({ config: await oauthProxy.mount(serverId, "probe", "probe") });
+    }
+    if (serverId) {
+      const existing = await readMcpServer(serverId);
+      if (existing) {
+        const checkedAt = new Date().toISOString();
+        const updated = {
+          ...existing,
+          tools: result.ok ? result.tools : existing.tools,
+          checkError: result.ok ? null : result.error,
+          checkedAt,
+          updatedAt: checkedAt,
+        };
+        await writeMcpServer(updated);
+      }
+    }
+    return result;
+  });
+  server.handle(mcpServerReadRpc, async ({ id }) => {
+    const server = await readMcpServer(id);
+    return { server };
+  });
+  server.handle(mcpServerWriteRpc, async ({ server: mcpServer }) => {
+    const path = await writeMcpServer(mcpServer);
+    return { ok: true, path };
+  });
+  server.handle(mcpServerDeleteRpc, async ({ id }) => {
+    const ok = await deleteMcpServer(id);
+    return { ok };
+  });
+  server.handle(mcpServerListRpc, async () => {
+    const servers = await listAllMcpServers();
+    return { servers };
+  });
+  server.handle(skillMetadataWriteRpc, async ({ skill }) => {
+    await writeSkillMetadata(skill);
+    return { ok: true };
+  });
+  server.handle(skillMetadataReadRpc, async ({ id }) => {
+    const skill = await readSkillMetadata(id);
+    return { skill };
   });
   server.handle(mcpOAuthStatusRpc, ({ serverId }) => oauth.status(serverId));
   server.handle(mcpOAuthStartRpc, ({ serverId, ...input }) => oauth.start(serverId, input));

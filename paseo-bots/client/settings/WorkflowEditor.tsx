@@ -1,9 +1,17 @@
+/**
+ * Purpose: Visual workflow editor with real-time DAG pipeline preview and template presets.
+ * Context: Rendered in WorkflowsScreen and PartnerSettingsModal.
+ * Usage: <WorkflowListEditor colors={colors} workflows={workflows} bots={bots} onChange={...} />
+ * Prerequisites: validateWorkflowDAG, WORKFLOW_TEMPLATES, WorkflowPipelinePreview.
+ */
+
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon, SettingsAction, SettingsCard, SettingsRow, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { Bot } from "../../shared/bot";
 import { newUuid } from "../../shared/uuid";
+import { instantiateWorkflowTemplate, WORKFLOW_TEMPLATES, type WorkflowTemplate } from "../../shared/workflow-templates";
 import {
   validateWorkflowDAG,
   type WorkflowDefinition,
@@ -13,6 +21,7 @@ import {
 import { useT } from "../i18n";
 import { Button, InputField, StatusBadge, TextAreaField } from "../panel/controls";
 import { ui } from "../typography";
+import { WorkflowPipelinePreview } from "./WorkflowPipelinePreview";
 
 type Colors = PluginTheme["colors"];
 
@@ -62,20 +71,35 @@ export function WorkflowListEditor({
   const liveBots = useMemo(() => bots.filter((b) => !b.archived), [bots]);
   const [editing, setEditing] = useState<WorkflowDefinition | null>(null);
   const [isNew, setIsNew] = useState(false);
+  const [activeStageId, setActiveStageId] = useState<string | null>(null);
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
 
   const dagCheck = useMemo(() => (editing ? validateWorkflowDAG(editing.stages) : null), [editing]);
 
   const startNew = () => {
     setIsNew(true);
-    setEditing(makeDefaultWorkflow(liveBots));
+    setShowTemplatePicker(false);
+    const initial = makeDefaultWorkflow(liveBots);
+    setEditing(initial);
+    setActiveStageId(initial.stages[0]?.id ?? null);
+  };
+
+  const applyTemplate = (tpl: WorkflowTemplate) => {
+    setIsNew(true);
+    setShowTemplatePicker(false);
+    const instantiated = instantiateWorkflowTemplate(tpl, liveBots);
+    setEditing(instantiated);
+    setActiveStageId(instantiated.stages[0]?.id ?? null);
   };
 
   const startEdit = (wf: WorkflowDefinition) => {
     setIsNew(false);
+    setShowTemplatePicker(false);
     setEditing({
       ...wf,
       stages: wf.stages.map((s) => ({ ...s, dependsOn: [...s.dependsOn] })),
     });
+    setActiveStageId(wf.stages[0]?.id ?? null);
   };
 
   const saveDraft = () => {
@@ -144,46 +168,185 @@ export function WorkflowListEditor({
   const addStage = () => {
     setEditing((prev) => {
       if (!prev) return prev;
+      const newStage = makeDefaultStage(liveBots, prev.stages.length);
+      setActiveStageId(newStage.id);
       return {
         ...prev,
-        stages: [...prev.stages, makeDefaultStage(liveBots, prev.stages.length)],
+        stages: [...prev.stages, newStage],
       };
     });
   };
 
   return (
     <SettingsSection title={title} info={info}>
-      <SettingsCard>
-        {workflows.length === 0 && !editing ? (
-          <SettingsRow label={t("workflows.emptyTitle")} hint={t("workflows.emptyHint")} />
-        ) : null}
-
-        {workflows.map((wf) => (
-          <SettingsRow
-            key={wf.id}
-            label={wf.name}
-            hint={`${wf.id} · ${t("workflows.stagesCount", { count: wf.stages.length })}${wf.description ? ` · ${wf.description}` : ""}`}
+      {/* Graphical Empty State with 1-click Preset Templates (AC-2) */}
+      {workflows.length === 0 && !editing ? (
+        <View
+          style={{
+            padding: 20,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: colors.border,
+            backgroundColor: colors.surface1,
+            alignItems: "center",
+            gap: 14,
+          }}
+        >
+          <View
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              backgroundColor: colors.surface2,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Button colors={colors} size="xs" variant="outline" label={t("common.edit")} onPress={() => startEdit(wf)} />
-              <Button colors={colors} size="xs" variant="ghost" icon="Trash2" label={t("common.delete")} onPress={() => deleteWorkflow(wf.id)} />
+            <Icon name="GitBranch" size={24} color={colors.accent} />
+          </View>
+
+          <View style={{ alignItems: "center", gap: 4 }}>
+            <Text style={{ fontSize: ui(15), fontWeight: "600", color: colors.foreground, textAlign: "center" }}>
+              {t("workflows.emptyTitle")}
+            </Text>
+            <Text style={{ fontSize: ui(13), color: colors.foregroundMuted, textAlign: "center", maxWidth: 440 }}>
+              {t("workflows.emptyHint")}
+            </Text>
+          </View>
+
+          <View style={{ width: "100%", gap: 10, marginTop: 6 }}>
+            <Text style={{ fontSize: ui(12), fontWeight: "600", color: colors.foregroundMuted, textTransform: "uppercase" }}>
+              {t("workflows.starterTemplatesTitle")}
+            </Text>
+
+            <View style={{ gap: 8 }}>
+              {WORKFLOW_TEMPLATES.map((tpl) => (
+                <Pressable
+                  key={tpl.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Template ${tpl.name}`}
+                  onPress={() => applyTemplate(tpl)}
+                  style={{
+                    padding: 12,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: colors.border,
+                    backgroundColor: colors.surface0,
+                    gap: 6,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Icon name={tpl.icon} size={16} color={colors.accent} />
+                      <Text style={{ fontSize: ui(13), fontWeight: "600", color: colors.foreground }}>
+                        {tpl.name}
+                      </Text>
+                    </View>
+                    <Button colors={colors} size="xs" variant="default" label={t("workflows.useTemplate")} onPress={() => applyTemplate(tpl)} />
+                  </View>
+                  <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>
+                    {tpl.description}
+                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap", marginTop: 2 }}>
+                    <StatusBadge colors={colors} label={t("workflows.stagesCount", { count: tpl.stages.length })} variant="muted" />
+                    {tpl.tags.map((tag) => (
+                      <StatusBadge key={tag} colors={colors} label={tag} variant="muted" />
+                    ))}
+                  </View>
+                </Pressable>
+              ))}
             </View>
-          </SettingsRow>
-        ))}
+          </View>
 
-        {!editing ? (
-          <SettingsAction label={t("workflows.addWorkflow")} actionLabel={t("common.create")} onPress={startNew} />
-        ) : null}
-      </SettingsCard>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 8 }}>
+            <Button colors={colors} size="sm" variant="outline" icon="Plus" label={t("workflows.addCustomWorkflow")} onPress={startNew} />
+          </View>
+        </View>
+      ) : null}
 
-      {editing ? (
-        <View style={{ marginTop: 12, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1, gap: 12 }}>
+      {/* Existing Workflows List */}
+      {workflows.length > 0 && !editing ? (
+        <SettingsCard>
+          {workflows.map((wf) => (
+            <SettingsRow
+              key={wf.id}
+              label={wf.name}
+              hint={`${wf.id} · ${t("workflows.stagesCount", { count: wf.stages.length })}${wf.description ? ` · ${wf.description}` : ""}`}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Button colors={colors} size="xs" variant="outline" label={t("common.edit")} onPress={() => startEdit(wf)} />
+                <Button colors={colors} size="xs" variant="ghost" icon="Trash2" label={t("common.delete")} onPress={() => deleteWorkflow(wf.id)} />
+              </View>
+            </SettingsRow>
+          ))}
+
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 10 }}>
+            <Button colors={colors} size="xs" variant="ghost" icon="Layers" label={t("workflows.fromTemplate")} onPress={() => setShowTemplatePicker((v) => !v)} />
+            <Button colors={colors} size="xs" variant="default" icon="Plus" label={t("workflows.addWorkflow")} onPress={startNew} />
+          </View>
+        </SettingsCard>
+      ) : null}
+
+      {/* Template picker drawer when workflows already exist */}
+      {showTemplatePicker && !editing ? (
+        <View style={{ marginTop: 10, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1, gap: 10 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-            <Text style={{ fontSize: ui(14), fontWeight: "600", color: colors.foreground }}>
+            <Text style={{ fontSize: ui(13), fontWeight: "600", color: colors.foreground }}>
+              {t("workflows.starterTemplatesTitle")}
+            </Text>
+            <Button colors={colors} size="xs" variant="ghost" icon="X" label={t("common.close")} onPress={() => setShowTemplatePicker(false)} />
+          </View>
+          <View style={{ gap: 8 }}>
+            {WORKFLOW_TEMPLATES.map((tpl) => (
+              <Pressable
+                key={tpl.id}
+                accessibilityRole="button"
+                onPress={() => applyTemplate(tpl)}
+                style={{
+                  padding: 10,
+                  borderRadius: 6,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface0,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 8,
+                }}
+              >
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ fontSize: ui(13), fontWeight: "600", color: colors.foreground }}>
+                    {tpl.name}
+                  </Text>
+                  <Text numberOfLines={1} style={{ fontSize: ui(12), color: colors.foregroundMuted }}>
+                    {tpl.description}
+                  </Text>
+                </View>
+                <Button colors={colors} size="xs" variant="outline" label={t("workflows.useTemplate")} onPress={() => applyTemplate(tpl)} />
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
+      {/* Workflow Editor Form */}
+      {editing ? (
+        <View style={{ marginTop: 12, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1, gap: 14 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+            <Text style={{ fontSize: ui(15), fontWeight: "600", color: colors.foreground }}>
               {isNew ? t("workflows.newWorkflowTitle") : t("workflows.editWorkflowTitle")}
             </Text>
             <StatusBadge colors={colors} label={editing.id} variant="muted" />
           </View>
+
+          {/* AC-1: Live Visual Stage Pipeline Preview */}
+          <WorkflowPipelinePreview
+            colors={colors}
+            stages={editing.stages}
+            bots={liveBots}
+            activeStageId={activeStageId}
+            onSelectStage={(id) => setActiveStageId(id)}
+          />
 
           <SettingsCard>
             <InputField
@@ -202,28 +365,37 @@ export function WorkflowListEditor({
             />
           </SettingsCard>
 
-          <Text style={{ fontSize: ui(13), fontWeight: "600", color: colors.foreground }}>
-            {t("workflows.stagesHeader")}
-          </Text>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={{ fontSize: ui(13), fontWeight: "600", color: colors.foreground }}>
+              {t("workflows.stagesHeader")}
+            </Text>
+            <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>
+              {t("workflows.stagesCount", { count: editing.stages.length })}
+            </Text>
+          </View>
 
           {editing.stages.map((stage, idx) => {
             const otherStages = editing.stages.filter((s) => s.id !== stage.id);
+            const isSelected = stage.id === activeStageId;
+
             return (
               <View
                 key={`${idx}-${stage.id}`}
                 style={{
-                  padding: 10,
+                  padding: 12,
                   borderRadius: 8,
-                  borderWidth: 1,
-                  borderColor: colors.border,
+                  borderWidth: isSelected ? 1.5 : 1,
+                  borderColor: isSelected ? colors.accent : colors.border,
                   backgroundColor: colors.surface0,
-                  gap: 8,
+                  gap: 10,
                 }}
               >
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                  <Text style={{ fontSize: ui(13), fontWeight: "600", color: colors.foreground }}>
-                    #{idx + 1} · {stage.name || stage.id}
-                  </Text>
+                  <Pressable onPress={() => setActiveStageId(stage.id)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={{ fontSize: ui(13), fontWeight: "600", color: isSelected ? colors.accent : colors.foreground }}>
+                      #{idx + 1} · {stage.name || stage.id}
+                    </Text>
+                  </Pressable>
                   {editing.stages.length > 1 ? (
                     <Button colors={colors} size="xs" variant="ghost" icon="Trash2" label={t("common.remove")} onPress={() => removeStage(idx)} />
                   ) : null}
@@ -284,7 +456,7 @@ export function WorkflowListEditor({
                 />
 
                 {otherStages.length > 0 ? (
-                  <View style={{ gap: 4 }}>
+                  <View style={{ gap: 6 }}>
                     <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>
                       {t("workflows.dependsOnField")}
                     </Text>

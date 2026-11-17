@@ -52,6 +52,7 @@ export const TaskStageStateSchema = z.object({
   chatId: z.string().nullable().default(null),
   startedAt: z.string().nullable().default(null),
   completedAt: z.string().nullable().default(null),
+  prompt: z.string().nullable().optional().default(null),
 });
 export type TaskStageState = z.infer<typeof TaskStageStateSchema>;
 
@@ -214,6 +215,7 @@ export function initWorkflowRunState(
       chatId: null,
       startedAt: null,
       completedAt: null,
+      prompt: stage.prompt || null,
     };
   });
 
@@ -350,4 +352,21 @@ export function parseWorkerHandoff(reply: string): ParsedWorkerHandoff {
     openIssues: issuesMatch?.[1]?.trim() ?? "",
   };
 }
+
+/**
+ * Calculates human-readable elapsed duration (e.g. "42s", "1m 35s") between two ISO timestamps.
+ */
+export function formatElapsedDuration(startStr?: string | null, endStr?: string | null): string | null {
+  if (!startStr) return null;
+  const start = Date.parse(startStr);
+  if (isNaN(start)) return null;
+  const end = endStr ? Date.parse(endStr) : Date.now();
+  if (isNaN(end) || end < start) return null;
+  const totalSeconds = Math.max(0, Math.floor((end - start) / 1000));
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
 

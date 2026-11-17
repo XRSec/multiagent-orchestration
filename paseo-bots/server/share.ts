@@ -78,6 +78,7 @@ async function collect(root: string, budget: ExportBudget, memoryOnly = false): 
   const walk = async (dir: string, depth: number) => {
     if (depth > MAX_DEPTH) throw new Error(`Export folders may be at most ${MAX_DEPTH} levels deep.`);
     for (const name of (await readdir(dir)).sort()) {
+      if (name === "metadata.json") continue;
       if (memoryOnly && dir === root && name !== "MEMORY.md" && name !== "memory") continue;
       const path = join(dir, name);
       const info = await lstat(path);

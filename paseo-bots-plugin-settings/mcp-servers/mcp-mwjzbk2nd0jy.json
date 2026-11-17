@@ -1,0 +1,252 @@
+{
+  "id": "mcp-mwjzbk2nd0jy",
+  "name": "Prism",
+  "description": "",
+  "enabled": true,
+  "config": {
+    "type": "stdio",
+    "command": "/Applications/Prism Browser.app/Contents/Resources/pro-agent/prism-pro-agent",
+    "args": [
+      "--mcp"
+    ],
+    "env": {}
+  },
+  "tools": [
+    {
+      "name": "prism_health",
+      "description": "Check whether the stable Prism STDIO bridge and its local browser service are ready. Does not start a browser profile."
+    },
+    {
+      "name": "prism_get_connection_status",
+      "description": "Return structured local service connection state and whether automatic recovery is available."
+    },
+    {
+      "name": "prism_start_service",
+      "description": "Open Prism Browser when necessary and wait for the local AI service to become ready."
+    },
+    {
+      "name": "prism_restart_service",
+      "description": "Restart only the Prism local AI service and reconnect this STDIO session without changing the client configuration."
+    },
+    {
+      "name": "prism_create_profile",
+      "description": "Create one closed profile without opening a browser. Requires Pro and the user-enabled Allow AI to create profiles setting. Name, proxy, group, tags, startUrls, fingerprint and kernelVersion are optional; omitted values use Prism defaults and a fresh fingerprint seed; OS version, CPU cores and scree"
+    },
+    {
+      "name": "prism_create_profiles",
+      "description": "Create 1–50 profiles in one request, all validated before saving: if any profile is invalid nothing is created and error.details names each field (profiles[i].field). No browsers are started. Uses the same options, Pro permission, user creation toggle and 24-hour requestKey protection as prism_creat"
+    },
+    {
+      "name": "prism_list_profiles",
+      "description": "List browser profiles allowed by the user’s global MCP policy and individual profile overrides."
+    },
+    {
+      "name": "prism_create_task_session",
+      "description": "Create an independent page-control workspace for one authorized profile. Use one task session per agent task."
+    },
+    {
+      "name": "prism_list_task_sessions",
+      "description": "List only task sessions owned by this MCP connection."
+    },
+    {
+      "name": "prism_close_task_session",
+      "description": "Release one task page controller without closing the browser profile or another agent task."
+    },
+    {
+      "name": "prism_get_profile_status",
+      "description": "Get safe lifecycle metadata for one AI-enabled browser profile."
+    },
+    {
+      "name": "prism_start_profile",
+      "description": "Start one AI-enabled browser profile through the normal Prism security checks."
+    },
+    {
+      "name": "prism_close_profile",
+      "description": "Close one AI-enabled browser profile and persist its local browser data."
+    },
+    {
+      "name": "prism_open_page",
+      "description": "Start an AI-enabled profile if needed and open one HTTP or HTTPS URL in a new browser tab."
+    },
+    {
+      "name": "prism_read_page",
+      "description": "Return a stable paginated accessibility snapshot. Interactive elements and iframe containers include a rounded CSS viewport rect when available (rect:null otherwise; use prism_get_element_rect for the exact rect and quad); iframe containers are actionable:false. Coordinates use the selected top-leve"
+    },
+    {
+      "name": "prism_get_text",
+      "description": "Read visible text from the selected page, including same-origin frames and open shadow roots, or from one element ref. Form values, including passwords, may be returned."
+    },
+    {
+      "name": "prism_get_attribute",
+      "description": "Read one named DOM attribute from an element ref without executing caller-supplied JavaScript."
+    },
+    {
+      "name": "prism_get_markdown",
+      "description": "Convert the selected page, same-origin frames and open shadow roots into bounded Markdown for efficient AI reading."
+    },
+    {
+      "name": "prism_get_table",
+      "description": "Read a table by element ref or zero-based page index and return caption, headers and rows."
+    },
+    {
+      "name": "prism_get_list",
+      "description": "Read a list by element ref or zero-based page index and return ordered state and item text."
+    },
+    {
+      "name": "prism_find",
+      "description": "Find accessible page elements by text, role, value, placeholder or URL and return current actionable refs."
+    },
+    {
+      "name": "prism_get_page_schema",
+      "description": "Return headings and counts for links, controls, forms, tables, lists, frames and open shadow roots."
+    },
+    {
+      "name": "prism_navigate_page",
+      "description": "Navigate the currently selected task page to an HTTP or HTTPS URL and verify the resulting state."
+    },
+    {
+      "name": "prism_go_back",
+      "description": "Go back in the selected task page history and verify the resulting page state."
+    },
+    {
+      "name": "prism_go_forward",
+      "description": "Go forward in the selected task page history and verify the resulting page state."
+    },
+    {
+      "name": "prism_reload_page",
+      "description": "Reload the selected task page, optionally bypassing the HTTP cache."
+    },
+    {
+      "name": "prism_hover_element",
+      "description": "Scroll an element into view and move the page mouse pointer to its center."
+    },
+    {
+      "name": "prism_scroll_element_into_view",
+      "description": "Scroll the selected task page until an element ref is visible."
+    },
+    {
+      "name": "prism_select_option",
+      "description": "Select and verify one or more values in a native HTML select element."
+    },
+    {
+      "name": "prism_press_keys",
+      "description": "Press a page-level shortcut such as Meta+A, Control+Enter, Shift+Tab or Alt+ArrowLeft. Optional durationMs holds it before release (0–15000 ms); it does not synthesize auto-repeat."
+    },
+    {
+      "name": "prism_handle_dialog",
+      "description": "Accept or dismiss the currently open alert, confirm or prompt dialog; prompt text is supported."
+    },
+    {
+      "name": "prism_take_full_page_screenshot",
+      "description": "Capture the complete selected page up to bounded safe dimensions."
+    },
+    {
+      "name": "prism_wait_for_stable",
+      "description": "Wait for document complete, no in-flight network requests, network idle and DOM quiet."
+    },
+    {
+      "name": "prism_wait_for_element",
+      "description": "Wait until an element matching accessible text, role, value, placeholder or URL appears and return fresh refs."
+    },
+    {
+      "name": "prism_wait_for_text",
+      "description": "Wait until visible page text appears, including same-origin frames and open shadow roots."
+    },
+    {
+      "name": "prism_wait_for_url",
+      "description": "Wait until the selected page URL contains or exactly equals the requested value."
+    },
+    {
+      "name": "prism_wait_for_download",
+      "description": "Wait for a task page download to complete and return its safe filename and byte counts."
+    },
+    {
+      "name": "prism_list_network_requests",
+      "description": "List the task session network ring buffer. Authorization, Cookie, Set-Cookie and common URL token values are redacted before storage."
+    },
+    {
+      "name": "prism_get_network_request",
+      "description": "Get one sanitized request and response. Text/JSON body retrieval is optional and limited to 1 MB; binary bodies are omitted."
+    },
+    {
+      "name": "prism_start_har",
+      "description": "Start a bounded sanitized HAR capture for this task session."
+    },
+    {
+      "name": "prism_stop_har",
+      "description": "Stop and return the bounded sanitized HAR captured by this task session."
+    },
+    {
+      "name": "prism_set_offline",
+      "description": "Enable or disable CDP offline emulation for the selected task page."
+    },
+    {
+      "name": "prism_list_pages",
+      "description": "List controllable website tabs and visible browser-extension pages in one authorized profile. Use this after a wallet connection opens a popup."
+    },
+    {
+      "name": "prism_select_page",
+      "description": "Switch subsequent read, click, type, screenshot, key and scroll operations to one target returned by prism_list_pages."
+    },
+    {
+      "name": "prism_wait_for_page",
+      "description": "Wait for and select a matching website tab or wallet/extension popup. Omit text filters to select the newest target of the requested kind."
+    },
+    {
+      "name": "prism_take_screenshot",
+      "description": "Return a PNG of the visible viewport for visual inspection when the accessibility snapshot is incomplete, including wallet extension pages."
+    },
+    {
+      "name": "prism_click_element",
+      "description": "Click one element using a temporary ref. The result separately reports whether the input event was sent, the element received a trusted click, observable state changed, or verification timed out; it also reports newly opened targets."
+    },
+    {
+      "name": "prism_click_and_wait_for_page",
+      "description": "Click an element, wait for a new matching website tab or wallet/extension popup, then select it for subsequent operations."
+    },
+    {
+      "name": "prism_set_checked",
+      "description": "Reliably set and verify a native checkbox/radio or ARIA checkbox/radio/switch. Returns the previous and final state and fails if the page did not change it."
+    },
+    {
+      "name": "prism_set_input_files",
+      "description": "Set explicitly named local files on a file input or its associated upload button/drop area without opening the system picker. Only absolute regular non-symlink paths outside sensitive system locations are accepted."
+    },
+    {
+      "name": "prism_type_text",
+      "description": "Type text into an editable element ref. Authorized page reads may return current form values, including password fields; entered text is not written to the Prism audit log."
+    },
+    {
+      "name": "prism_click_and_hold",
+      "description": "Hold a mouse button or a touch contact, then release. Provide a fresh element ref OR CSS viewport x/y. Default: 3000 ms, left mouse button, stationary pointer. Ref targets are scrolled into view and pressed only where the referenced element itself is on top: a covered or clipped target fails with EL"
+    },
+    {
+      "name": "prism_drag",
+      "description": "Press at from, move to to over durationMs, then release. Each endpoint is a fresh ref OR CSS viewport x/y. Both endpoints must already be visible; use prism_scroll_element_into_view first if needed. Ref endpoints are checked before pressing (ELEMENT_OBSCURED / ELEMENT_NOT_VISIBLE). Defaults: 600 ms,"
+    },
+    {
+      "name": "prism_get_element_rect",
+      "description": "Get a fresh CSS-pixel rect and quad for an element ref. Coordinates are relative to the selected top-level viewport, including cross-origin frame offsets. Does not scroll. Re-measure after scrolling, resizing or layout changes. Hidden or stale elements fail explicitly."
+    },
+    {
+      "name": "prism_click_point",
+      "description": "Click CSS viewport coordinates from the latest Prism screenshot. Prefer prism_click_element when an element ref is available."
+    },
+    {
+      "name": "prism_scroll_page",
+      "description": "Scroll the visible website or extension page by CSS-pixel deltas. Positive deltaY scrolls down."
+    },
+    {
+      "name": "prism_press_key",
+      "description": "Press Enter, Tab, Escape, Space, Backspace, Delete, an arrow key, Home, End, PageUp or PageDown in the selected website or extension page. Optional durationMs holds the key before release (0–15000 ms), without auto-repeat."
+    },
+    {
+      "name": "prism_wait",
+      "description": "Wait briefly before reading the page again, for a navigation or dynamic update to settle."
+    }
+  ],
+  "checkedAt": "2026-11-17T00:53:50.211Z",
+  "checkError": null,
+  "createdAt": "2026-11-17T00:53:47.999Z",
+  "updatedAt": "2026-11-17T00:53:50.211Z"
+}

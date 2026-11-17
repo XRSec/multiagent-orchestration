@@ -19,8 +19,11 @@ import {
   type BotSettingsValues,
   type FallbackModel,
   type Library,
+  type LibraryMcpServer,
+  type LibrarySkill,
   type McpServerConfig,
   type TeamLogo,
+  stripLibraryInSettings,
 } from "./bot";
 import { saveTeam, teamLogoOf, withoutBot } from "./groups";
 import { addMcpServers, forgetItem, mcpServerTested, setBotUses } from "./library";
@@ -312,6 +315,16 @@ export interface ApplyContext {
   saveSoul?: (botId: string, soul: string) => void;
   /** When true, strips soul text in the returned settings object (soul: ""). */
   stripSoulInSettings?: boolean;
+  /** Callback to persist updated MCP server to independent file storage. */
+  saveMcpServer?: (server: LibraryMcpServer) => void;
+  /** Callback to delete MCP server from independent file storage. */
+  deleteMcpServer?: (serverId: string) => void;
+  /** Callback to persist updated skill metadata to independent file storage. */
+  saveSkill?: (skill: LibrarySkill) => void;
+  /** Callback to delete skill from independent file storage. */
+  deleteSkill?: (skillId: string) => void;
+  /** When true, strips inline library blobs from returned settings object. */
+  stripLibraryInSettings?: boolean;
 }
 
 function byRef<T>(items: readonly T[], ref: string, id: (item: T) => string, name: (item: T) => string, what: string): T {
@@ -693,7 +706,11 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
     case "set_skill": {
       const skill = findSkill(library, change.skill);
       if (change.enabled && skill.reviewedSha === null) throw new Error(`${skill.id} needs a review before it can be on. The user reviews it in Skills & Tools.`);
-      return { ...values, library: { ...library, skills: library.skills.map((entry) => (entry.id === skill.id ? { ...entry, enabled: change.enabled, updatedAt: context.now } : entry)) } };
+      const updatedSkill: LibrarySkill = { ...skill, enabled: change.enabled, updatedAt: context.now };
+      if (context.saveSkill) {
+        context.saveSkill(updatedSkill);
+      }
+      return { ...values, library: { ...library, skills: library.skills.map((entry) => (entry.id === skill.id ? updatedSkill : entry)) } };
     }
     case "add_mcp_server": {
       const name = change.name.trim();
@@ -705,15 +722,27 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
         : { type: change.transport ?? "http", url: change.url!.trim(), headers: change.headers ?? {} };
       const added = addMcpServers(library, [{ name, enabled: true, config }], { now: context.now });
       const id = added.ids[0]!;
-      return { ...values, library: { ...added.library, mcpServers: added.library.mcpServers.map((server) => (server.id === id ? { ...server, description: change.description?.trim() ?? "" } : server)) } };
+      const createdServer = added.library.mcpServers.find((server) => server.id === id)!;
+      const finalServer: LibraryMcpServer = { ...createdServer, description: change.description?.trim() ?? "" };
+      if (context.saveMcpServer) {
+        context.saveMcpServer(finalServer);
+      }
+      return { ...values, library: { ...added.library, mcpServers: added.library.mcpServers.map((server) => (server.id === id ? finalServer : server)) } };
     }
     case "set_mcp_server": {
       const server = findServer(library, change.server);
       if (change.enabled && !mcpServerTested(server)) throw new Error(`${server.name} hasn't passed a connection test. The user tests it in Skills & Tools, which turns it on.`);
-      return { ...values, library: { ...library, mcpServers: library.mcpServers.map((entry) => (entry.id === server.id ? { ...entry, enabled: change.enabled, updatedAt: context.now } : entry)) } };
+      const updatedServer: LibraryMcpServer = { ...server, enabled: change.enabled, updatedAt: context.now };
+      if (context.saveMcpServer) {
+        context.saveMcpServer(updatedServer);
+      }
+      return { ...values, library: { ...library, mcpServers: library.mcpServers.map((entry) => (entry.id === server.id ? updatedServer : entry)) } };
     }
     case "remove_mcp_server": {
       const server = findServer(library, change.server);
+      if (context.deleteMcpServer) {
+        context.deleteMcpServer(server.id);
+      }
       return { ...values, library: { ...library, mcpServers: library.mcpServers.filter((entry) => entry.id !== server.id) }, bots: forgetItem(values.bots, "mcp", server.id) };
     }
     case "set_defaults": {
@@ -787,13 +816,17 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
 
 /** The settings with every change applied in order; throws naming the first change that doesn't fit. */
 export function applyChanges(values: BotSettingsValues, changes: readonly Change[], context: ApplyContext): BotSettingsValues {
-  return changes.reduce((current, change, index) => {
+  const result = changes.reduce((current, change, index) => {
     try {
       return applyChange(current, change, context);
     } catch (error) {
       throw new Error(`Change ${index + 1} (${change.type}): ${error instanceof Error ? error.message : String(error)}`);
     }
   }, values);
+  if (context.stripLibraryInSettings) {
+    return stripLibraryInSettings(result);
+  }
+  return result;
 }
 
 /** Swaps app account names, which only the host can look up, for their ids, so the app applies the changes as they are. */

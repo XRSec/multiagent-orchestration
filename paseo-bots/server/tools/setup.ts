@@ -5,6 +5,8 @@ import { accounts, status } from "../composio";
 import type { BotsHost } from "../host";
 import { createProposal } from "../proposals";
 import { readBotSoul, writeBotSoulSync } from "../souls";
+import { deleteMcpServerSync, writeMcpServerSync } from "../mcp-servers";
+import { deleteSkillMetadataSync, writeSkillMetadataSync } from "../library";
 import { defineTool } from "./mcp";
 
 // The whole setup, for bots that set things up for the user: get_setup reads it,
@@ -26,6 +28,11 @@ async function hostContext(host: BotsHost): Promise<ApplyContext> {
     accounts: apps,
     saveSoul: (botId: string, soul: string) => writeBotSoulSync(botId, soul),
     stripSoulInSettings: true,
+    saveMcpServer: (server) => writeMcpServerSync(server),
+    deleteMcpServer: (serverId) => deleteMcpServerSync(serverId),
+    saveSkill: (skill) => writeSkillMetadataSync(skill),
+    deleteSkill: (skillId) => deleteSkillMetadataSync(skillId),
+    stripLibraryInSettings: true,
   };
 }
 

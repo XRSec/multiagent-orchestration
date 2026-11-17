@@ -17,6 +17,11 @@ export const TaskCardWorkflowStageSchema = z.object({
   retries: z.number().int().nonnegative().default(0),
   maxRetries: z.number().int().nonnegative().default(1),
   error: z.string().nullable().optional(),
+  output: z.string().nullable().optional(),
+  chatId: z.string().nullable().optional(),
+  startedAt: z.string().nullable().optional(),
+  completedAt: z.string().nullable().optional(),
+  prompt: z.string().nullable().optional(),
 });
 export type TaskCardWorkflowStage = z.infer<typeof TaskCardWorkflowStageSchema>;
 
@@ -24,6 +29,8 @@ export const TaskCardWorkflowSchema = z.object({
   workflowId: z.string(),
   workflowName: z.string(),
   status: z.enum(["running", "done", "failed"]),
+  startedAt: z.string().nullable().optional(),
+  completedAt: z.string().nullable().optional(),
   stages: z.array(TaskCardWorkflowStageSchema),
 });
 export type TaskCardWorkflow = z.infer<typeof TaskCardWorkflowSchema>;
@@ -58,6 +65,8 @@ export interface TaskCardSource {
     workflowId: string;
     workflowName: string;
     status: "running" | "done" | "failed";
+    startedAt?: string | null;
+    completedAt?: string | null;
     stages: {
       id: string;
       name: string;
@@ -68,6 +77,11 @@ export interface TaskCardSource {
       retries: number;
       maxRetries: number;
       error?: string | null;
+      output?: string | null;
+      chatId?: string | null;
+      startedAt?: string | null;
+      completedAt?: string | null;
+      prompt?: string | null;
     }[];
   };
 }
@@ -108,6 +122,8 @@ export function taskCardOf(source: TaskCardSource): TaskCard {
         workflowId: source.workflow.workflowId,
         workflowName: source.workflow.workflowName,
         status: source.workflow.status,
+        startedAt: source.workflow.startedAt ?? null,
+        completedAt: source.workflow.completedAt ?? null,
         stages: source.workflow.stages.map((s) => ({
           id: s.id,
           name: s.name,
@@ -117,7 +133,12 @@ export function taskCardOf(source: TaskCardSource): TaskCard {
           dependsOn: s.dependsOn,
           retries: s.retries,
           maxRetries: s.maxRetries,
-          ...(s.error ? { error: s.error.slice(0, 300) } : {}),
+          output: s.output ? s.output.slice(0, 4000) : null,
+          chatId: s.chatId ?? null,
+          startedAt: s.startedAt ?? null,
+          completedAt: s.completedAt ?? null,
+          ...(s.prompt ? { prompt: s.prompt.slice(0, 2000) } : {}),
+          ...(s.error ? { error: s.error.slice(0, 1000) } : {}),
         })),
       },
     } : {}),

@@ -1,6 +1,6 @@
 import { defineRpc } from "@getpaseo/plugin";
 import { z } from "zod";
-import { BotGroupSchema, BotMcpServerSchema, BotSchema, McpServerConfigSchema, McpToolSchema, TeamFileTeamSchema } from "./bot";
+import { BotGroupSchema, BotMcpServerSchema, BotSchema, LibraryMcpServerSchema, LibrarySkillSchema, McpServerConfigSchema, McpToolSchema, TeamFileTeamSchema } from "./bot";
 import {
   AnalyticsHistoryRecordSchema,
   AnalyticsRunInputSchema,
@@ -459,4 +459,42 @@ export const soulWriteRpc = defineRpc({
   name: "bots.soul.write",
   input: z.object({ botId: z.string().min(1), soul: z.string() }),
   output: z.object({ ok: z.boolean() }),
+});
+
+// ---------------------------------------------------------------- decoupled mcp servers & skills
+
+export const mcpServerReadRpc = defineRpc({
+  name: "bots.mcp.read",
+  input: z.object({ id: z.string().min(1) }),
+  output: z.object({ server: LibraryMcpServerSchema.nullable() }),
+});
+
+export const mcpServerWriteRpc = defineRpc({
+  name: "bots.mcp.write",
+  input: z.object({ server: LibraryMcpServerSchema }),
+  output: z.object({ ok: z.boolean(), path: z.string() }),
+});
+
+export const mcpServerDeleteRpc = defineRpc({
+  name: "bots.mcp.delete",
+  input: z.object({ id: z.string().min(1) }),
+  output: z.object({ ok: z.boolean() }),
+});
+
+export const mcpServerListRpc = defineRpc({
+  name: "bots.mcp.list",
+  input: z.object({}),
+  output: z.object({ servers: z.array(LibraryMcpServerSchema) }),
+});
+
+export const skillMetadataWriteRpc = defineRpc({
+  name: "bots.skill.metadata.write",
+  input: z.object({ skill: LibrarySkillSchema }),
+  output: z.object({ ok: z.boolean() }),
+});
+
+export const skillMetadataReadRpc = defineRpc({
+  name: "bots.skill.metadata.read",
+  input: z.object({ id: SkillName }),
+  output: z.object({ skill: LibrarySkillSchema.nullable() }),
 });

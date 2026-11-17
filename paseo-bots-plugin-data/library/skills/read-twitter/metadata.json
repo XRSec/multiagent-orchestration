@@ -1,0 +1,9 @@
+{
+  "id": "read-twitter",
+  "description": "Scrape and extract tweets and timeline feeds from X (Twitter) via ego-browser automation.",
+  "source": "",
+  "enabled": true,
+  "reviewedSha": "3c12fd42e325c375eb5fad53a0f55b20fae9fcb86809dfaff3fac7ffcbecda41",
+  "createdAt": "2026-11-15T03:27:06.839Z",
+  "updatedAt": "2026-11-15T03:27:06.839Z"
+}

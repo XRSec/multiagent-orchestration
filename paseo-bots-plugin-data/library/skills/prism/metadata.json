@@ -1,0 +1,9 @@
+{
+  "id": "prism",
+  "description": "Controls local Prism Vault profiles, CDP sessions, and structured page extraction via Prism MCP. Manual-only; load ONLY upon explicit invocation via /skill:prism; strict zero-auto-load rule.",
+  "source": "",
+  "enabled": true,
+  "reviewedSha": "ffb380642db96cfa012390483e382fc4db979b5275cdadd9fca332de3f42f9ea",
+  "createdAt": "2026-11-17T00:47:10.281Z",
+  "updatedAt": "2026-11-17T00:47:10.281Z"
+}

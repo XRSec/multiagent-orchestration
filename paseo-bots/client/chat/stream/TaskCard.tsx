@@ -1,12 +1,23 @@
+/**
+ * Purpose: Task Card stream renderer with horizontal DAG pipeline flow and stage drilldown.
+ * Context: Rendered in chat timeline when task records or Route 3 workflow updates arrive.
+ * Usage: <TaskCardView colors={theme.colors} card={item.data} onOpenChat={...} />
+ * Prerequisites: TaskCard schema, TaskStageModal.
+ */
+
 import type { PluginTheme } from "@getpaseo/plugin";
 import { useSettings } from "@getpaseo/plugin/client";
 import { Icon } from "@getpaseo/plugin/client/ui";
-import { Text, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
 import { botSettings } from "../../../shared/bot";
 import type { TaskCard as TaskCardData, TaskCardWorkflowStage } from "../../../shared/task-card";
+import { Avatar } from "../../Avatar";
 import { useT } from "../../i18n";
+import { useReduceMotion } from "../../motion";
 import { StatusBadge, type BadgeVariant } from "../../panel/controls";
 import { ui } from "../../typography";
+import { formatElapsedDuration, TaskStageModal } from "./TaskStageModal";
 
 type Colors = PluginTheme["colors"];
 
@@ -34,15 +45,34 @@ const STAGE_STATUS_ICON: Record<TaskCardWorkflowStage["status"], string> = {
   skipped: "MinusCircle",
 };
 
+export interface TaskCardViewProps {
+  colors: Colors;
+  card: TaskCardData;
+  onOpenChat?(botId: string, chatId: string): void;
+}
+
 /**
  * Renders a Task Pyramid group card and, when backed by a Route 3 Workflow DAG,
  * displays real-time stage status, bot assignment, resolved engine badge, dependencies, and retries.
  */
-export function TaskCardView({ colors, card }: { colors: Colors; card: TaskCardData }) {
+export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
   const { t } = useT();
   const settings = useSettings(botSettings);
+  const reduceMotion = useReduceMotion();
   const bots = settings.status === "ready" ? settings.values.bots : [];
-  const botNameById = new Map(bots.map((b) => [b.id, b.name]));
+  const botMap = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
+
+  const [selectedStage, setSelectedStage] = useState<TaskCardWorkflowStage | null>(null);
+
+  const wf = card.workflow;
+  const anyRunning = wf?.status === "running" || wf?.stages.some((s) => s.status === "running");
+  const [, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!anyRunning) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [anyRunning]);
 
   const statusVariant = TASK_STATUS_VARIANT[card.status];
   const taskStatusLabel =
@@ -54,7 +84,7 @@ export function TaskCardView({ colors, card }: { colors: Colors; card: TaskCardD
           ? t("workflows.statusFailed")
           : card.status;
 
-  if (!card.workflow) {
+  if (!wf) {
     return (
       <View style={{ marginVertical: 12, padding: 12, borderRadius: 8, borderWidth: 1, backgroundColor: colors.surface1, borderColor: colors.border, gap: 8 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 24 }}>
@@ -71,97 +101,163 @@ export function TaskCardView({ colors, card }: { colors: Colors; card: TaskCardD
     );
   }
 
-  const wf = card.workflow;
   const doneCount = wf.stages.filter((s) => s.status === "done").length;
-  const stageNameById = new Map(wf.stages.map((s) => [s.id, s.name]));
+  const totalStages = wf.stages.length;
+  const totalDuration = formatElapsedDuration(wf.startedAt, wf.completedAt);
 
   return (
     <View style={{ marginVertical: 12, padding: 12, borderRadius: 10, borderWidth: 1, backgroundColor: colors.surface1, borderColor: colors.border, gap: 10 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 24 }}>
+      {/* Workflow Header */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 24, flexWrap: "wrap" }}>
         <Icon name="GitBranch" size={16} color={colors.accent} />
         <Text numberOfLines={1} style={{ flex: 1, color: colors.foreground, fontSize: ui(14), fontWeight: "600", lineHeight: 22 }}>
           {wf.workflowName}
         </Text>
+
+        {totalDuration ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, backgroundColor: colors.surface2 }}>
+            <Icon name="Clock" size={11} color={colors.foregroundMuted} />
+            <Text style={{ fontSize: ui(11), color: colors.foregroundMuted }}>
+              {totalDuration}
+            </Text>
+          </View>
+        ) : null}
+
         <Text style={{ color: colors.foregroundMuted, fontSize: ui(12) }}>
-          {t("workflows.stageProgress", { done: doneCount, total: wf.stages.length })}
+          {t("workflows.stageProgress", { done: doneCount, total: totalStages })}
         </Text>
         <StatusBadge colors={colors} label={taskStatusLabel} variant={statusVariant} />
       </View>
 
-      <View style={{ gap: 6 }}>
-        {wf.stages.map((stage) => {
-          const botLabel = botNameById.get(stage.botId) ?? stage.botId;
+      {/* Horizontal Pipeline Stream Flow */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 8,
+          paddingVertical: 4,
+          paddingHorizontal: 2,
+        }}
+      >
+        {wf.stages.map((stage, idx) => {
+          const assignedBot = botMap.get(stage.botId);
+          const botLabel = assignedBot?.name ?? stage.botId;
           const engineLabel = stage.engine === "native" ? t("workflows.engineNative") : t("workflows.enginePaseoBot");
-          const stageLabel =
-            stage.status === "done"
-              ? t("workflows.statusDone")
-              : stage.status === "running"
-                ? t("workflows.statusRunning")
-                : stage.status === "failed"
-                  ? t("workflows.statusFailed")
-                  : stage.status === "skipped"
-                    ? t("workflows.statusSkipped")
-                    : t("workflows.statusPending");
+          const isRunning = stage.status === "running";
+          const isFailed = stage.status === "failed";
+          const isDone = stage.status === "done";
+          const stageDuration = formatElapsedDuration(stage.startedAt, stage.completedAt);
+
           const iconColor =
-            stage.status === "done"
+            isDone
               ? colors.statusSuccess
-              : stage.status === "failed"
+              : isFailed
                 ? colors.statusDanger
-                : stage.status === "running"
+                : isRunning
                   ? colors.accent
                   : colors.foregroundMuted;
-          const depsText = stage.dependsOn.length > 0
-            ? stage.dependsOn.map((id) => stageNameById.get(id) ?? id).join(", ")
-            : null;
+
+          const borderColor = isRunning
+            ? colors.accent
+            : isFailed
+              ? colors.statusDanger
+              : isDone
+                ? colors.border
+                : colors.border;
 
           return (
-            <View
-              key={stage.id}
-              style={{
-                padding: 8,
-                borderRadius: 8,
-                borderWidth: 1,
-                borderColor: colors.border,
-                backgroundColor: colors.surface0,
-                gap: 4,
-              }}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                <Icon name={STAGE_STATUS_ICON[stage.status]} size={14} color={iconColor} />
-                <Text numberOfLines={1} style={{ flex: 1, color: colors.foreground, fontSize: ui(13), fontWeight: "500" }}>
-                  {stage.name}
-                </Text>
-                <StatusBadge colors={colors} label={engineLabel} variant="muted" />
-                {stage.retries > 0 ? (
-                  <StatusBadge
-                    colors={colors}
-                    label={t("workflows.retryBadge", { count: stage.retries, max: stage.maxRetries })}
-                    variant="warning"
-                  />
-                ) : null}
-                <StatusBadge colors={colors} label={stageLabel} variant={STAGE_STATUS_VARIANT[stage.status]} />
-              </View>
-
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap", paddingLeft: 20 }}>
-                <Text style={{ color: colors.foregroundMuted, fontSize: ui(12) }}>
-                  {botLabel}
-                </Text>
-                {depsText ? (
-                  <Text style={{ color: colors.foregroundMuted, fontSize: ui(12) }}>
-                    · {t("workflows.dependsOnLabel", { deps: depsText })}
-                  </Text>
-                ) : null}
-              </View>
-
-              {stage.error ? (
-                <Text numberOfLines={2} style={{ color: colors.statusDanger, fontSize: ui(12), paddingLeft: 20 }}>
-                  {stage.error}
+            <View key={stage.id} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {idx > 0 ? (
+                <Text accessibilityElementsHidden importantForAccessibility="no" style={{ fontSize: ui(15), fontWeight: "bold", color: colors.foregroundMuted }}>
+                  →
                 </Text>
               ) : null}
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Stage ${stage.name}: ${stage.status}`}
+                onPress={() => setSelectedStage(stage)}
+                style={{
+                  minWidth: 160,
+                  maxWidth: 240,
+                  padding: 10,
+                  borderRadius: 8,
+                  borderWidth: isRunning || isFailed ? 1.5 : 1,
+                  borderColor,
+                  backgroundColor: isRunning ? colors.surface2 : colors.surface0,
+                  gap: 6,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Icon name={STAGE_STATUS_ICON[stage.status]} size={14} color={iconColor} />
+                  <Text numberOfLines={1} style={{ flex: 1, color: colors.foreground, fontSize: ui(13), fontWeight: "600" }}>
+                    {stage.name}
+                  </Text>
+                  {isRunning && !reduceMotion ? (
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent }} />
+                  ) : null}
+                </View>
+
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  {assignedBot?.avatar ? (
+                    <Avatar size={16} avatar={assignedBot.avatar} />
+                  ) : (
+                    <Icon name="Bot" size={13} color={colors.foregroundMuted} />
+                  )}
+                  <Text numberOfLines={1} style={{ flex: 1, color: colors.foregroundMuted, fontSize: ui(11) }}>
+                    {botLabel}
+                  </Text>
+                  <StatusBadge colors={colors} label={engineLabel} variant="muted" />
+                </View>
+
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
+                  {stageDuration ? (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+                      <Icon name="Clock" size={10} color={colors.foregroundMuted} />
+                      <Text style={{ color: colors.foregroundMuted, fontSize: ui(10) }}>
+                        {stageDuration}
+                      </Text>
+                    </View>
+                  ) : (
+                    <View />
+                  )}
+
+                  {stage.retries > 0 ? (
+                    <StatusBadge
+                      colors={colors}
+                      label={t("workflows.retryBadge", { count: stage.retries, max: stage.maxRetries })}
+                      variant="warning"
+                    />
+                  ) : null}
+                </View>
+
+                {stage.error ? (
+                  <Text numberOfLines={1} style={{ color: colors.statusDanger, fontSize: ui(10), fontFamily: "monospace" }}>
+                    {stage.error}
+                  </Text>
+                ) : null}
+              </Pressable>
             </View>
           );
         })}
-      </View>
+      </ScrollView>
+
+      {/* Stage Inspection Modal */}
+      {selectedStage ? (
+        <TaskStageModal
+          open={!!selectedStage}
+          onClose={() => setSelectedStage(null)}
+          stage={selectedStage}
+          workflowName={wf.workflowName}
+          botName={botMap.get(selectedStage.botId)?.name}
+          botAvatar={botMap.get(selectedStage.botId)?.avatar}
+          colors={colors}
+          allStages={wf.stages}
+          onOpenChat={onOpenChat}
+        />
+      ) : null}
     </View>
   );
 }
