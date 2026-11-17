@@ -6,19 +6,26 @@ import { paseoToolsState, type PaseoToolsConfig } from "../shared/paseo-tools";
 import type { AppAccount, PromptApp } from "../shared/apps";
 import { accounts, catalog, readState } from "./composio";
 import {
+  APPS_MCP_NAME,
+  TOOLS_MCP_NAME,
+  botMcpServers,
   botSkills,
   composeSystemPrompt,
   isAgyProvider,
   isClaudeProvider,
+  mcpServersRecord,
   primaryGroupForBot,
   promptSections,
   type Bot,
   type BotGroup,
   type BotSettingsValues,
   type Library,
+  type McpServerConfig,
+  type PluginServers,
   type PromptContext,
 } from "../shared/bot";
 import { teamsOf, teamsPrompt } from "../shared/groups";
+import type { WorkflowDefinition } from "../shared/workflows";
 import { syncBotToAgyAgent } from "./agy-agents";
 import { syncBotToClaudeAgent } from "./claude-agents";
 import { botDataPath } from "./bot-home";
@@ -48,7 +55,7 @@ export interface ChatStart {
   /** The chat's first message, which picks the playbooks. */
   message?: string;
   /** The bot's team(s) and every bot, when it's on one or more. */
-  team?: { group?: BotGroup; groups?: BotGroup[]; bots: Bot[] };
+  team?: { group?: BotGroup; groups?: BotGroup[]; bots: Bot[]; globalWorkflows?: WorkflowDefinition[] };
 }
 
 /**
@@ -60,7 +67,7 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
   const playbooks = selectPlaybooks(start.message ?? "", bot.playbooks);
   const startGroups = start.team?.groups ?? (start.team?.group ? [start.team.group] : []);
   const activeGroup = start.team?.group ?? primaryGroupForBot(bot.id, startGroups);
-  const team = startGroups.length && start.team ? teamsPrompt(startGroups, bot, start.team.bots) : null;
+  const team = startGroups.length && start.team ? teamsPrompt(startGroups, bot, start.team.bots, start.team.globalWorkflows) : null;
   const effectiveMounts = activeGroup ? activeGroup.mounts : bot.mounts;
   const effectiveCwd = activeGroup?.cwd ?? bot.cwd;
   // Connected apps go through this host's relay, so bots on other hosts can't reach them.
@@ -110,6 +117,10 @@ export async function systemPrompt(
     syncAgy = true,
     syncClaude = true,
     claudeAgentsDir,
+    claudeProjectDir,
+    claudeBotDataDir,
+    plugin,
+    mcpServers,
     soulsDir,
   }: {
     bot: Bot;
@@ -119,6 +130,10 @@ export async function systemPrompt(
     syncAgy?: boolean;
     syncClaude?: boolean;
     claudeAgentsDir?: string;
+    claudeProjectDir?: string;
+    claudeBotDataDir?: string;
+    plugin?: PluginServers;
+    mcpServers?: Record<string, McpServerConfig>;
     soulsDir?: string;
   },
   library: Library,
@@ -131,7 +146,7 @@ export async function systemPrompt(
   const activeGroup = group ?? primaryGroupForBot(effectiveBot.id, groups);
   const start: ChatStart = {
     ...(message !== undefined ? { message } : {}),
-    ...(groups.length && settings ? { team: { ...(activeGroup ? { group: activeGroup } : {}), groups, bots: settings.bots } } : {}),
+    ...(groups.length && settings ? { team: { ...(activeGroup ? { group: activeGroup } : {}), groups, bots: settings.bots, ...(settings.workflows ? { globalWorkflows: settings.workflows } : {}) } } : {}),
   };
   // Another host's config isn't readable from here; Paseo gives agents its tools by default.
   const context = await promptContext(effectiveBot, local, library, local ? await paseoToolsOn(paseo, effectiveBot.provider) : true, start);
@@ -140,10 +155,23 @@ export async function systemPrompt(
     await syncBotToAgyAgent(effectiveBot, { body: composed, soulsDir });
   }
   if (syncClaude && local && isClaudeProvider(effectiveBot.provider)) {
+    const effectiveBotDataDir = claudeBotDataDir ?? botDataPath(effectiveBot.id);
+    const effectiveProjectDir = claudeProjectDir ?? context.workdir ?? effectiveBotDataDir;
+    const resolvedMcpServers = mcpServers ?? {
+      ...mcpServersRecord(botMcpServers(effectiveBot, library)),
+      ...(plugin?.apps ? { [APPS_MCP_NAME]: plugin.apps } : {}),
+      ...(plugin?.tools ? { [TOOLS_MCP_NAME]: plugin.tools } : {}),
+    };
     await syncBotToClaudeAgent(effectiveBot, {
-      ...(claudeAgentsDir !== undefined ? { agentsDir: claudeAgentsDir } : { projectDir: context.workdir ?? botDataPath(effectiveBot.id) }),
+      ...(claudeAgentsDir !== undefined ? { agentsDir: claudeAgentsDir } : { projectDir: effectiveProjectDir }),
+      projectDir: effectiveProjectDir,
+      botDataDir: effectiveBotDataDir,
       body: composed,
       soulsDir,
+      skills: context.skills.map((s) => s.name),
+      mcpServers: resolvedMcpServers,
+      syncMcpConfig: true,
+      syncSkills: true,
     });
   }
   return { systemPrompt: composed, sections: promptSections(effectiveBot, context) };

@@ -25,12 +25,13 @@ import { connectSchedulerHost } from "./server/connection";
 import { Relay } from "./server/relay";
 import { acceptProposal, dismissProposal, getProposal, prepareProposal, registerProposalNotifications } from "./server/proposals";
 import { listOrphanedAgyAgents, resolveOrphanedAgyAgent, syncAllBotsToAgy } from "./server/agy-agents";
+import { syncAllBotsToClaude } from "./server/claude-agents";
 import { runAnalytics } from "./server/analytics/runner";
 import { listAnalyticsSessions } from "./server/analytics/sessions";
 import { deleteAnalyticsRecord, listAnalyticsHistory, saveAnalyticsRecord } from "./server/analytics/history";
 import { BOT_TOOLS } from "./server/tools";
 import { saveUpload } from "./server/uploads";
-import { botSettings, EMPTY_LIBRARY, type BotSettingsValues } from "./shared/bot";
+import { botMcpServers, botSettings, botSkills, EMPTY_LIBRARY, mcpServersRecord, type BotSettingsValues } from "./shared/bot";
 import { shellCommand } from "./shared/commands";
 import {
   agyOrphanResolveRpc,
@@ -109,7 +110,7 @@ export default function contribute(server: PluginServerContext) {
       .then(() =>
         syncAllBotsToAgy(values.bots, {
           resolveBody: async (bot) => {
-            const { systemPrompt: body } = await systemPrompt({ bot, local: true, syncAgy: false }, values.library ?? EMPTY_LIBRARY, host.paseo, values);
+            const { systemPrompt: body } = await systemPrompt({ bot, local: true, syncAgy: false, syncClaude: false }, values.library ?? EMPTY_LIBRARY, host.paseo, values);
             return body;
           },
         }),
@@ -117,14 +118,36 @@ export default function contribute(server: PluginServerContext) {
       .then(() => undefined)
       .catch((error: unknown) => console.error(`paseo-bots: couldn't sync agy agents (${phase})`, error));
   };
+  let claudeSyncQueue = Promise.resolve();
+  const queueClaudeSync = (values: BotSettingsValues, phase: string) => {
+    claudeSyncQueue = claudeSyncQueue
+      .then(() =>
+        syncAllBotsToClaude(values.bots, {
+          resolveBody: async (bot) => {
+            const { systemPrompt: body } = await systemPrompt({ bot, local: true, syncAgy: false, syncClaude: false }, values.library ?? EMPTY_LIBRARY, host.paseo, values);
+            return body;
+          },
+          resolveSkills: (bot) => botSkills(bot, values.library ?? EMPTY_LIBRARY).map((s) => s.id),
+          resolveMcpServers: (bot) => mcpServersRecord(botMcpServers(bot, values.library ?? EMPTY_LIBRARY)),
+        }),
+      )
+      .then(() => undefined)
+      .catch((error: unknown) => console.error(`paseo-bots: couldn't sync claude agents (${phase})`, error));
+  };
   void settings
     .read()
     .then((state) => {
-      if (state.status === "ready") queueAgySync(state.values, "startup");
+      if (state.status === "ready") {
+        queueAgySync(state.values, "startup");
+        queueClaudeSync(state.values, "startup");
+      }
     })
-    .catch((error: unknown) => console.error("paseo-bots: couldn't read settings for agy sync", error));
-  const unsubscribeAgySync = settings.subscribe((state) => {
-    if (state.status === "ready") queueAgySync(state.values, "settings-change");
+    .catch((error: unknown) => console.error("paseo-bots: couldn't read settings for agent sync", error));
+  const unsubscribeAgentSync = settings.subscribe((state) => {
+    if (state.status === "ready") {
+      queueAgySync(state.values, "settings-change");
+      queueClaudeSync(state.values, "settings-change");
+    }
   });
   const stopInteractions = registerInteractions(server, host);
   const stopHandoffs = registerHandoffs(server, host);
@@ -278,7 +301,7 @@ export default function contribute(server: PluginServerContext) {
   });
 
   return async () => {
-    unsubscribeAgySync();
+    unsubscribeAgentSync();
     curator.stop();
     oauthProxy.stop();
     await oauth.stop();

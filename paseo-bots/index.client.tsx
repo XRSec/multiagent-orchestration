@@ -12,7 +12,9 @@ import { InteractionCard } from "./client/chat/stream/InteractionCard";
 import { InteractionRecovery } from "./client/chat/stream/InteractionRecovery";
 import { INTERACTION_CARD, InteractionIdSchema, InteractionSchema, interactionIdOf } from "./shared/interaction";
 import { HandoffCard } from "./client/chat/stream/HandoffCard";
+import { TaskCardView } from "./client/chat/stream/TaskCard";
 import { HANDOFF_CARD, HandoffCardSchema } from "./shared/handoff";
+import { TASK_CARD, TaskCardSchema } from "./shared/task-card";
 import { requestIntent } from "./client/intent";
 import { initPluginI18n, tMsg, translateNow } from "./client/i18n";
 import { RoutinesScreen } from "./client/RoutinesScreen";
@@ -229,6 +231,11 @@ export default function contribute(client: PluginClientContext) {
     ...HANDOFF_CARD,
     schema: HandoffCardSchema,
     Component: ({ item, theme, layout }) => <HandoffCard colors={theme.colors} compact={layout.compact} card={item.data} onOpenChat={(botId, chatId) => client.openScreen({ screenId: "bot-chat", params: { botId, chatId } })} />,
+  });
+  client.addTimelineRenderer({
+    ...TASK_CARD,
+    schema: TaskCardSchema,
+    Component: ({ item, theme }) => <TaskCardView colors={theme.colors} card={item.data} />,
   });
   return () => {
     removeLauncherButtons();

@@ -1,6 +1,7 @@
 import { rmSync } from "node:fs";
 import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
+import type { WorkflowRunState } from "../shared/workflows";
 import { pluginDataPath } from "./bot-home";
 import { atomicWrite, ensureRealDirectory, readRegularText } from "./files";
 import { acquireLease, releaseLease } from "./leases";
@@ -41,6 +42,8 @@ export interface TaskRecord {
   cardAgentId?: string;
   /** Card ids already appended; a replay is refused from here, not from a timeline window. */
   publishedCardIds?: string[];
+  /** Runtime workflow DAG state when this task executes a workflow. */
+  workflow?: WorkflowRunState;
 }
 
 export interface OpenTaskInput {
@@ -49,6 +52,7 @@ export interface OpenTaskInput {
   groupId?: string;
   acceptance?: string;
   budget?: { steps?: number; fanout?: number };
+  workflow?: WorkflowRunState;
 }
 
 const RECORD_LIMIT = 256 * 1024;
@@ -144,9 +148,10 @@ export async function openTask(input: OpenTaskInput): Promise<TaskRecord> {
         taskId: input.taskId,
         ...(input.groupId ? { groupId: input.groupId } : {}),
         title: input.title,
-        status: "issued",
+        status: input.workflow ? "running" : "issued",
         ...(input.acceptance ? { acceptance: input.acceptance } : {}),
         ...(input.budget ? { budget: input.budget } : {}),
+        ...(input.workflow ? { workflow: input.workflow } : {}),
         version: 1,
         createdAt: now,
         updatedAt: now,
@@ -160,6 +165,7 @@ export async function openTask(input: OpenTaskInput): Promise<TaskRecord> {
       ...(input.title ? { title: input.title } : {}),
       ...(input.acceptance ? { acceptance: input.acceptance } : {}),
       ...(input.budget ? { budget: input.budget } : {}),
+      ...(input.workflow ? { workflow: input.workflow } : {}),
       version: existing.version + 1,
       updatedAt: now,
     };
@@ -167,8 +173,27 @@ export async function openTask(input: OpenTaskInput): Promise<TaskRecord> {
     const unchanged = merged.title === existing.title
       && merged.groupId === existing.groupId
       && merged.acceptance === existing.acceptance
-      && JSON.stringify(merged.budget ?? null) === JSON.stringify(existing.budget ?? null);
+      && JSON.stringify(merged.budget ?? null) === JSON.stringify(existing.budget ?? null)
+      && JSON.stringify(merged.workflow ?? null) === JSON.stringify(existing.workflow ?? null);
     return unchanged ? existing : writeRecord(merged);
+  });
+}
+
+/** Atomically updates the workflow run state on an existing task line under its lease lock. */
+export async function updateTaskWorkflow(taskId: string, updater: (workflow: WorkflowRunState) => WorkflowRunState): Promise<TaskRecord> {
+  return withTaskLock(taskId, async () => {
+    const existing = await readTask(taskId);
+    if (!existing) throw new Error(`There is no task line "${taskId}" to update workflow state.`);
+    if (!existing.workflow) throw new Error(`Task line "${taskId}" has no workflow state.`);
+    const nextWorkflow = updater(existing.workflow);
+    const now = new Date().toISOString();
+    return writeRecord({
+      ...existing,
+      workflow: nextWorkflow,
+      status: nextWorkflow.status === "running" ? "running" : existing.status,
+      version: existing.version + 1,
+      updatedAt: now,
+    });
   });
 }
 
@@ -360,6 +385,10 @@ export async function evaluateTask(taskId: string): Promise<{ settled: boolean; 
   const record = await readTask(taskId);
   if (!record) throw new Error(`There is no task line "${taskId}" to evaluate.`);
   if (record.settledAt) return { settled: false, record };
+  if (record.workflow) {
+    if (record.workflow.status === "running") return { settled: false, record };
+    return settleTask(taskId, { status: record.workflow.status === "done" ? "done" : "blocked" });
+  }
   if (!record.acceptance?.trim()) return { settled: false, record };
   if (record.members.length === 0) return { settled: false, record };
   // Three phases, in this order. A permission wait is not terminal: settling it would publish a

@@ -1,4 +1,5 @@
 import type { Bot, BotGroup, TeamLogo } from "./bot";
+import { ORCHESTRATOR_WORKFLOW_PROTOCOL, type WorkflowDefinition } from "./workflows";
 
 // OpenMausBot's teams: a bot can belong to one or more teams, every member gets
 // each team's roster and shared instructions in its prompt, and each team's
@@ -35,24 +36,42 @@ function rosterLine(bot: Bot, lead: boolean): string {
 }
 
 /** A team member's prompt section: its teammates, the shared instructions and, for the lead, how to lead. */
-export function teamPrompt(group: BotGroup, bot: Bot, bots: readonly Bot[]): string {
+export function teamPrompt(group: BotGroup, bot: Bot, bots: readonly Bot[], globalWorkflows?: readonly WorkflowDefinition[]): string {
   const { lead, members } = groupBots(group, bots);
   const isLead = lead?.id === bot.id;
   const others = [...(lead && !isLead ? [lead] : []), ...members.filter((member) => member.id !== bot.id)].slice(0, ROSTER_MAX);
   const name = group.name.trim() || "Untitled";
+  const teamWorkflows = group.workflows ?? [];
+  const teamWorkflowIds = new Set(teamWorkflows.map((w) => w.id));
+  const combinedWorkflows = isLead
+    ? [...teamWorkflows, ...(globalWorkflows ?? []).filter((w) => !teamWorkflowIds.has(w.id))]
+    : [];
+  const workflowsSection = isLead && combinedWorkflows.length > 0
+    ? [
+        `Available workflows for "${name}" (trigger with run_workflow):`,
+        ...combinedWorkflows.map((w) => {
+          const stagesLine = w.stages.map((s) => `${s.name} (${s.botId})`).join(" -> ");
+          const desc = w.description?.trim() ? ` — ${w.description.trim()}` : "";
+          return `- ${w.name} (id: "${w.id}")${desc} [${stagesLine}]`;
+        }),
+        "",
+        ORCHESTRATOR_WORKFLOW_PROTOCOL,
+      ].join("\n")
+    : "";
   const parts = [
     isLead
       ? `You are the Chief of Staff of the "${name}" team and the user's main contact for it. Own the outcome: understand the request, decide what to handle yourself, hand parts to the teammates who fit them with ask_bot when that helps, and return one concise answer. Don't delegate trivial work to look busy, and never invent a teammate's progress or result.`
       : `You're on the "${name}" team.${lead ? ` ${lead.name} leads it.` : ""}`,
     others.length ? `Teammates:\n${others.map((other) => rosterLine(other, other.id === lead?.id)).join("\n")}` : "",
     group.instructions.trim() ? `Shared instructions for the team. The user manages them for every bot on the team; you can't edit them.\n${group.instructions.trim()}` : "",
+    workflowsSection,
   ];
   return parts.filter(Boolean).join("\n\n");
 }
 
 /** Combined prompt sections for all teams a bot belongs to. */
-export function teamsPrompt(groups: readonly BotGroup[], bot: Bot, bots: readonly Bot[]): string {
-  return groups.map((group) => teamPrompt(group, bot, bots)).filter(Boolean).join("\n\n");
+export function teamsPrompt(groups: readonly BotGroup[], bot: Bot, bots: readonly Bot[], globalWorkflows?: readonly WorkflowDefinition[]): string {
+  return groups.map((group) => teamPrompt(group, bot, bots, globalWorkflows)).filter(Boolean).join("\n\n");
 }
 
 export interface TeamDraft {
@@ -63,6 +82,7 @@ export interface TeamDraft {
   instructions: string;
   cwd?: string | null;
   mounts?: string[];
+  workflows?: WorkflowDefinition[];
 }
 
 /** Creates (null id) or updates a team; bots may belong to multiple teams at once. */
@@ -79,6 +99,7 @@ export function saveTeam(groups: readonly BotGroup[], id: string | null, draft: 
     instructions: draft.instructions,
     cwd: draft.cwd !== undefined ? draft.cwd : (existing?.cwd ?? null),
     mounts: draft.mounts !== undefined ? draft.mounts : (existing?.mounts ?? []),
+    workflows: draft.workflows !== undefined ? draft.workflows : (existing?.workflows ?? []),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };

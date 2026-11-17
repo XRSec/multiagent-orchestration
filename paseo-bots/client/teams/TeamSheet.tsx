@@ -3,13 +3,14 @@ import { Modal, SettingsAction, SettingsCard, SettingsRow, SettingsSection, Sett
 import { useState } from "react";
 import { View } from "react-native";
 import { randomSeed } from "../../shared/avatar";
-import type { Bot, BotGroup, TeamLogo as Logo } from "../../shared/bot";
+import type { Bot, BotGroup, TeamLogo as Logo, WorkflowDefinition } from "../../shared/bot";
 import { teamLogoOf, teamsOf, type TeamDraft } from "../../shared/groups";
 import { TeamLogo } from "../Avatar";
 import { errorText, nativeTokens } from "../native";
 import { useT } from "../i18n";
 import { Button, InputField, SheetActions, TextAreaField } from "../panel/controls";
 import { ColourRow, pickPicture, PictureSource } from "../panel/picture";
+import { WorkflowListEditor } from "../settings/WorkflowEditor";
 import { canPickFiles } from "../web";
 
 type Colors = PluginTheme["colors"];
@@ -42,6 +43,7 @@ export function TeamEditorForm({
   const [memberIds, setMemberIds] = useState<string[]>(group ? [...new Set([...(group.leadId ? [group.leadId] : []), ...group.memberIds])] : []);
   const [leadId, setLeadId] = useState<string | null>(group?.leadId ?? null);
   const [instructions, setInstructions] = useState(group?.instructions ?? "");
+  const [workflows, setWorkflows] = useState<WorkflowDefinition[]>(group?.workflows ?? []);
   const live = bots.filter((bot) => !bot.archived);
   const members = live.filter((bot) => memberIds.includes(bot.id));
   const lead = leadId && memberIds.includes(leadId) ? leadId : null;
@@ -105,6 +107,14 @@ export function TeamEditorForm({
           <TextAreaField colors={colors} accessibilityLabel={t("teams.sharedInstructions")} value={instructions} onChangeText={setInstructions} minHeight={160} placeholder={t("teams.sharedInstructionsPlaceholder")} />
         </SettingsCard>
       </SettingsSection>
+      <WorkflowListEditor
+        colors={colors}
+        title={t("workflows.teamTitle")}
+        info={t("workflows.teamInfo")}
+        workflows={workflows}
+        bots={members.length > 0 ? members : live}
+        onChange={setWorkflows}
+      />
       <SheetActions leading={onDelete ? <Button colors={colors} variant="ghost" label={t("teams.deleteTeam")} icon="Trash2" onPress={onDelete} /> : null}>
         <Button colors={colors} variant="ghost" label={t("common.cancel")} onPress={onClose} />
         <Button
@@ -112,7 +122,7 @@ export function TeamEditorForm({
           variant="default"
           label={group ? t("common.save") : t("teams.createTeam")}
           disabled={!name.trim()}
-          onPress={() => onSave({ name: name.trim().slice(0, 60), logo, leadId: lead, memberIds: members.map((bot) => bot.id), instructions })}
+          onPress={() => onSave({ name: name.trim().slice(0, 60), logo, leadId: lead, memberIds: members.map((bot) => bot.id), instructions, workflows })}
         />
       </SheetActions>
     </>

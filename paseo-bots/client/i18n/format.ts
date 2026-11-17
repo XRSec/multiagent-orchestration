@@ -507,6 +507,17 @@ export function formatDescribeChange(t: TFn, locale: AppLocale, change: Change):
       return t("changes.savePreset", { bot: change.bot });
     case "delete_preset":
       return t("changes.deletePreset", { preset: change.preset });
+    case "save_workflow":
+      return t("changes.saveWorkflow", {
+        scope: change.team ?? t("workflows.templatesGroup"),
+        name: change.workflow.name,
+        count: change.workflow.stages.length,
+      });
+    case "delete_workflow":
+      return t("changes.deleteWorkflow", {
+        scope: change.team ?? t("workflows.templatesGroup"),
+        workflowId: change.workflow_id,
+      });
   }
 }
 
@@ -535,6 +546,7 @@ export function formatChangeWarnings(t: TFn, locale: AppLocale, changes: readonl
     }
     if (change.type === "delete_bot") warnings.push(t("changes.warnDeleteBot", { bot: change.bot }));
     if (change.type === "delete_team") warnings.push(t("changes.warnDeleteTeam", { team: change.team }));
+    if (change.type === "delete_workflow") warnings.push(t("changes.warnDeleteWorkflow", { workflowId: change.workflow_id }));
     if (change.type === "remove_mcp_server") warnings.push(t("changes.warnRemoveMcp", { server: change.server }));
   }
   return warnings;

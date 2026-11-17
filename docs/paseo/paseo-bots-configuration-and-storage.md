@@ -1,8 +1,8 @@
 ---
 doc_id: PASEO-BOTS-CONFIG-STORAGE
 status: CURRENT
-version: 1.2.0
-last_verified: 2026-11-16
+version: 1.3.0
+last_verified: 2026-11-18
 language: en-US
 ---
 
@@ -21,8 +21,12 @@ Primary codebase coordinates:
 - Canonical tool & permission mapping: `<projectRoot>/paseo-bots/shared/bot-tools.ts`
 - Workspace & projects API: `<projectRoot>/paseo-bots/shared/chat.ts`, `projects.list` (`workdir` + `mounts`)
 - Antigravity agent sync: `<projectRoot>/paseo-bots/server/agy-agents.ts`, symbols `syncAllBotsToAgy`, `listOrphanedAgyAgents`, `resolveOrphanedAgyAgent`
-- Claude agent sync: `<projectRoot>/paseo-bots/server/claude-agents.ts` (`.claude/agents/<id>.md`)
+- Claude agent sync: `<projectRoot>/paseo-bots/server/claude-agents.ts`, symbols `syncBotToClaudeAgent`, `syncClaudeMcpConfig`, `syncClaudeSkills`, `assertNotGlobalUserConfig`
 - Change proposal engine: `<projectRoot>/paseo-bots/shared/changes.ts`, symbol `applyChanges`
+- Declarative workflow definitions & DAG: `<projectRoot>/paseo-bots/shared/workflows.ts`, symbols `validateWorkflowDAG`, `WorkflowDefinitionSchema`
+- Workflow execution runner: `<projectRoot>/paseo-bots/server/workflow-runner.ts`, symbol `runWorkflowDag`
+- Workflow MCP tool: `<projectRoot>/paseo-bots/server/tools/workflows.ts`, symbol `runWorkflowTool`
+- Task cards & timeline schemas: `<projectRoot>/paseo-bots/shared/task-card.ts`, symbol `TaskCardWorkflowSchema`
 
 ---
 
@@ -55,7 +59,8 @@ A structural distinction exists between the JSON payload stored on disk and the 
        "history": [ ... ],
        "ui": { ... },
        "library": { ... },
-       "groups": [ ... ]
+       "groups": [ ... ],
+       "workflows": [ ... ]
      }
    }
    ```
@@ -67,7 +72,8 @@ A structural distinction exists between the JSON payload stored on disk and the 
    - `library`: `LibrarySchema.optional()` (currently holds `skills`, including `read-twitter`)
    - `defaults`: `BotDefaultsSchema.optional()`
    - `presets`: `z.array(PresetSchema).optional()`
-   - `groups`: `z.array(BotGroupSchema).optional()` (supports team-scoped `cwd` and `mounts`; `resolveBotPlacement` resolves session placement in order `group.cwd -> bot.cwd -> ensureBotHome`)
+   - `groups`: `z.array(BotGroupSchema).optional()` (supports team-scoped `cwd`, `mounts`, and team-scoped `workflows: z.array(WorkflowDefinitionSchema).optional()`; `resolveBotPlacement` resolves session placement in order `group.cwd -> bot.cwd -> ensureBotHome`)
+   - `workflows`: `z.array(WorkflowDefinitionSchema).optional()` (global workflow templates available across all teams)
 
 Writing raw `values` directly to disk without the outer `{ "version": 4, "values": { ... } }` wrapper causes Paseo daemon startup parser failure and triggers automatic fallback reset.
 
@@ -75,7 +81,7 @@ Writing raw `values` directly to disk without the outer `{ "version": 4, "values
 
 - **Canonical Capability & Permission Mapping (`paseo-bots/shared/bot-tools.ts`, `paseo-bots/shared/bot.ts`)**: `bot-tools.ts` defines canonical capabilities and permission mode mappings (e.g., `full_access` -> `full-access` on `agy` / `bypassPermissions` on `claude`). `bot.ts` performs dynamic runtime resolution (`resolveBotBaseTools`, `resolveBotPlacement`) per provider without cross-provider leakage.
 - **Antigravity Agent Sync & Orphan Detection (`paseo-bots/server/agy-agents.ts`)**: `syncAllBotsToAgy` and `syncBotToAgyAgent` project active `agy` bots from `bots.json` into `~/.gemini/config/agents/*.md` using dynamic tool/permission mapping, writing front matter fields `managedBy: paseo-bots` and `botId`. `listOrphanedAgyAgents` and `resolveOrphanedAgyAgent` detect `managedBy: paseo-bots` files absent from active `agy` bots and delete or disable (`<fileName>.disabled`) them.
-- **Claude Agent Sync (`paseo-bots/server/claude-agents.ts`)**: Projects active `claude` bots into `.claude/agents/<id>.md` using canonical capability and permission mode mappings.
+- **Claude Agent Sync & CLI Session Injection (`paseo-bots/server/claude-agents.ts`)**: Projects active `claude` bots into `.claude/agents/<id>.md` with frontmatter declaring `tools`, `permissionMode`, `skills`, and `mcpServers`. To support isolated CLI sessions without host pollution, `syncClaudeMcpConfig` writes project-scoped `<projectRoot>/.mcp.json` and session-scoped `<botDataDir>/mcp.json` (for `--mcp-config`), while `syncClaudeSkills` creates filesystem symlinks in `<projectRoot>/.claude/skills/<skillId>`. The `assertNotGlobalUserConfig` guard strictly forbids writing to operator global configurations (`~/.claude.json`, `~/.claude/settings.json`, `~/.gemini/config/skills`, `~/.gemini/settings.json`).
 - **Client Localization & Stream Scroll (`paseo-bots/client/`)**: `i18n/` (`en.ts`, `zh-CN.ts`) provides `en` and `zh-CN` UI localization; `chat/Stream.tsx` enforces initial scroll lock on stream mount.
 - **ACP Media Placeholder Normalization (`paseo-agy-acp/server/`)**: `brain-io.ts`, `mapping.ts`, and `session.ts` normalize non-text media attachments to `[image]` placeholders in `history: 'replay'` and brain projection paths.
 
@@ -143,7 +149,7 @@ Teams are configured in the `groups` array of `bots.json`:
 
 ### 4.1 Client Proposal Card Rendering Defect
 
-The Paseo Bots plugin includes an automated agent tool `propose_changes` (`<projectRoot>/paseo-bots/shared/changes.ts`). Under designed workflow, bots propose configuration diffs (e.g., bot creation, model reassignment, team updates) which generate structured approval cards inside chat sessions.
+The Paseo Bots plugin includes an automated agent tool `propose_changes` (`<projectRoot>/paseo-bots/shared/changes.ts`). Under designed workflow, bots propose configuration diffs (e.g., bot creation, model reassignment, team updates, `save_workflow`, `delete_workflow`) which generate structured approval cards inside chat sessions.
 
 In the current client implementation:
 - The UI client does not render interactive `propose_changes` action cards within the chat bubble timeline.
@@ -154,7 +160,7 @@ In the current client implementation:
 Because interactive proposal cards do not render, programmatic or administrative reconfigurations must bypass `propose_changes` and apply directly to disk:
 1. Load `<projectRoot>/paseo-bots-plugin-settings/bots.json`.
 2. Extract and mutate the inner `values` object according to `botSettings.schema`.
-3. Validate mutations using Zod (`BotSchema.parse`, `BotGroupSchema.parse`).
+3. Validate mutations using Zod (`BotSchema.parse`, `BotGroupSchema.parse`, `WorkflowDefinitionSchema.parse`).
 4. Write back the complete file preserving the outer `{ "version": 4, "values": values }` envelope.
 5. Paseo host daemon detects file changes and reloads the active configuration without service disruption.
 
@@ -171,6 +177,11 @@ Because interactive proposal cards do not render, programmatic or administrative
 | Fleet Count (11 Bots) | `bots.json` array `values.bots` | CURRENT | `node -e 'const d=JSON.parse(require("fs").readFileSync("paseo-bots-plugin-settings/bots.json","utf8"));console.log(d.values.bots.length)'` |
 | Team Count (5 Teams) | `bots.json` array `values.groups` | CURRENT | `node -e 'const d=JSON.parse(require("fs").readFileSync("paseo-bots-plugin-settings/bots.json","utf8"));console.log(d.values.groups.length)'` |
 | Agy Agent Sync | `<projectRoot>/paseo-bots/server/agy-agents.ts`, `syncAllBotsToAgy` | CURRENT | `npm --prefix paseo-bots run typecheck` |
-| Claude Agent Sync | `<projectRoot>/paseo-bots/server/claude-agents.ts` | CURRENT | `npm --prefix paseo-bots run typecheck` |
+| Claude Agent Sync | `<projectRoot>/paseo-bots/server/claude-agents.ts`, `syncBotToClaudeAgent` | CURRENT | `npm --prefix paseo-bots run typecheck` |
+| Zero Global Pollution Guard | `<projectRoot>/paseo-bots/server/claude-agents.ts`, `assertNotGlobalUserConfig` | CURRENT | `npm --prefix paseo-bots test tests/claude-agents.test.ts` |
+| Claude MCP Config Sync | `<projectRoot>/paseo-bots/server/claude-agents.ts`, `syncClaudeMcpConfig` | CURRENT | `npm --prefix paseo-bots test tests/claude-agents.test.ts` |
+| Claude Skills Symlink Sync | `<projectRoot>/paseo-bots/server/claude-agents.ts`, `syncClaudeSkills` | CURRENT | `npm --prefix paseo-bots test tests/claude-agents.test.ts` |
+| Workflow DAG Validation | `<projectRoot>/paseo-bots/shared/workflows.ts`, `validateWorkflowDAG` | CURRENT | `npm --prefix paseo-bots test tests/workflows.test.ts` |
+| Workflow Execution Runner | `<projectRoot>/paseo-bots/server/workflow-runner.ts`, `runWorkflowDag` | CURRENT | `npm --prefix paseo-bots test tests/workflow-runner.test.ts` |
 | Canonical Tool Mapping | `<projectRoot>/paseo-bots/shared/bot-tools.ts` | CURRENT | `npm --prefix paseo-bots run typecheck` |
 | Inner Schema Def | `<projectRoot>/paseo-bots/shared/bot.ts`, symbol `botSettings` | CURRENT | `npm --prefix paseo-bots run typecheck` |

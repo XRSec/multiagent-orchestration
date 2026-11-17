@@ -235,6 +235,8 @@ export interface StartChatInput {
   images?: { data: string; mimeType: string }[];
   attachments?: WireAttachment[];
   clientMessageId?: string;
+  skills?: string[];
+  mcpConfigPath?: string;
 }
 
 /**
@@ -446,6 +448,8 @@ export async function startBotChat(
           candidate.thinkingOptionId,
           isEligible ? bot.fallbackModels : undefined,
           input.engine ?? null,
+          input.skills,
+          input.mcpConfigPath,
         ),
         cwd: input.placement.path,
         ...(workspaceId ? { workspaceId } : {}),

@@ -1,7 +1,7 @@
 ---
 doc_id: DOCS-INDEX
 status: CURRENT
-last_verified: 2026-11-16
+last_verified: 2026-11-18
 language: en-US
 ---
 
@@ -55,9 +55,10 @@ Status values are defined in [standards/documentation-standards.md](standards/do
 | [dev-rules/orchestrator-mcp.md](dev-rules/orchestrator-mcp.md) | [0] ROOT: HOST-INTERNAL ORCHESTRATOR MCP SPECIFICATION | en | 29 | UNAUDITED |
 | [dev-rules/script-standards.md](dev-rules/script-standards.md) | [0] ROOT: PRACTICAL SCRIPT STANDARDS & DEVELOPMENT CONVENTIONS | en | 53 | UNAUDITED |
 | [dev-rules/web-parser-and-studio.md](dev-rules/web-parser-and-studio.md) | [0] ROOT: CLAUDE STREAM PARSER & PARTNER STUDIO SPECIFICATION | en | 52 | UNAUDITED |
-| [paseo/INDEX.md](paseo/INDEX.md) | Paseo Plugin Specifications Branch Index | en | 23 | CURRENT |
-| [paseo/paseo-bots-configuration-and-storage.md](paseo/paseo-bots-configuration-and-storage.md) | Paseo Bots Plugin Configuration, Envelope & Storage Topology Specification | en | 169 | CURRENT |
-| [paseo/paseo-bots-partner-settings-ui.md](paseo/paseo-bots-partner-settings-ui.md) | Paseo Bots Partner Settings & TeamMap UI Specification | en | 50 | CURRENT |
+| [paseo/INDEX.md](paseo/INDEX.md) | Paseo Plugin Specifications Branch Index | en | 25 | CURRENT |
+| [paseo/paseo-bots-configuration-and-storage.md](paseo/paseo-bots-configuration-and-storage.md) | Paseo Bots Plugin Configuration, Envelope & Storage Topology Specification | en | 187 | CURRENT |
+| [paseo/paseo-bots-partner-settings-ui.md](paseo/paseo-bots-partner-settings-ui.md) | Paseo Bots Partner Settings & TeamMap UI Specification | en | 46 | CURRENT |
+| [paseo/paseo-bots-workflow-engine-and-routing.md](paseo/paseo-bots-workflow-engine-and-routing.md) | Paseo Bots Workflow Engine, Subagent Routing & Session Injection Specification | en | 211 | CURRENT |
 | [paseo/same-provider-fallback-models.md](paseo/same-provider-fallback-models.md) | Same-Provider Fallback Models Architecture & Runtime Execution Specification | en | 215 | CURRENT |
 | [protocols/agent-definition-specification.md](protocols/agent-definition-specification.md) | Claude Code Native Sub-Agent Specification | en | 404 | CURRENT |
 | [protocols/dispatch-protocol.md](protocols/dispatch-protocol.md) | Concurrency Dispatch Protocol (Fan-Out & Fan-In) | en | 31 | UNAUDITED |

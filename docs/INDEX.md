@@ -3,9 +3,9 @@ doc_id: DOCS_ROUTER
 status: CURRENT
 name: docs-index
 version: 1.5.0
-last_verified: 2026-11-16
+last_verified: 2026-11-18
 language: en-US
-description: Agent read-path router below the docs/README.md catalogue. Load after AGENTS.md to find the single doc that answers the task. Routes only.
+description: Agent read-path router below docs/README.md. Load after AGENTS.md to find the single doc that answers the task. Routes only.
 type: DOCS_BRANCH_INDEX
 parent_node: ../AGENTS.md
 allowed-tools: []
@@ -30,7 +30,7 @@ sources: [AGENTS.md, MEMORY.md, docs/README.md, docs/_conventions.md]
 - [2.3] [protocols](protocols/INDEX.md) :: [LOAD_IF: agent-to-agent, host wire protocols, or native sub-agent markdown specifications]
 - [2.4] [proposals](proposals/INDEX.md) :: [LOAD_IF: designing a change to review, sessions or doc routing that awaits an owner ruling]
 - [2.5] [claude-managed-agents](claude-managed-agents/README.md) :: [LOAD_IF: upstream Anthropic platform reference]
-- [2.6] [paseo](paseo/INDEX.md) :: [LOAD_IF: Paseo bots configuration, version 4 envelope, teams, agy-agents sync, same-provider fallback models, partner settings UI, or plugin settings/data storage]
+- [2.6] [paseo](paseo/INDEX.md) :: [LOAD_IF: Paseo bots configuration, version 4 envelope, teams, agy-agents sync, same-provider fallback models, partner settings UI, workflow engine, subagent routing, per-session CLI MCP/skills injection, or plugin settings/data storage]
 
 ## [3] EVIDENCE
 - [3.1] [reviews](reviews/INDEX.md) :: [LOAD_IF: a doc cites a dispatch receipt]

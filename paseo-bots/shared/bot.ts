@@ -22,8 +22,11 @@ import { PASEO_MCP_NAME, PASEO_TOOLS_PROMPT } from "./paseo-tools";
 import type { SubagentEngine } from "./chat";
 import { renderPlaybooks } from "./playbooks";
 import { MAX_MESSAGE_BOOKMARKS, MessageBookmarkSchema } from "./bookmarks";
+import { WorkflowDefinitionSchema, type WorkflowDefinition } from "./workflows";
 
 export {
+  WorkflowDefinitionSchema,
+  type WorkflowDefinition,
   isAgyProvider,
   isClaudeProvider,
   isCodexProvider,
@@ -33,6 +36,8 @@ export {
   providerBaseTools,
   resolveToolsForProvider,
   resolveModeIdForProvider,
+  APPS_MCP_NAME,
+  TOOLS_MCP_NAME,
 };
 
 /** Agent label carrying the bot id. Chats are found by filtering on it. */
@@ -303,6 +308,8 @@ export const BotGroupSchema = z.object({
   cwd: z.string().nullable().default(null),
   /** Team-scoped mounted project paths. */
   mounts: z.array(z.string()).default([]),
+  /** Team-scoped workflows (Route 3). */
+  workflows: z.array(WorkflowDefinitionSchema).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -376,6 +383,8 @@ export const botSettings = defineSettings({
     defaults: BotDefaultsSchema.optional(),
     presets: z.array(PresetSchema).optional(),
     groups: z.array(BotGroupSchema).optional(),
+    /** Global workflow templates reusable across teams (Route 3). */
+    workflows: z.array(WorkflowDefinitionSchema).optional(),
     /** Message references belong to this host and never travel in bot/team exports. */
     bookmarks: z.array(MessageBookmarkSchema).max(MAX_MESSAGE_BOOKMARKS).optional(),
     /** Atomic receipts for proposal application; retained until the server retires the card. */
@@ -692,7 +701,7 @@ export function botSkills(bot: Pick<Bot, "skillIds">, library: Library): Library
   });
 }
 
-function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "config">[]): Record<string, McpServerConfig> {
+export function mcpServersRecord(servers: readonly Pick<LibraryMcpServer, "name" | "config">[]): Record<string, McpServerConfig> {
   const record: Record<string, McpServerConfig> = {};
   for (const server of servers) {
     const name = server.name.trim();
@@ -721,6 +730,8 @@ export interface BotAgentConfig {
   providerOptions?: { agent?: string; [key: string]: unknown };
   mcpServers?: Record<string, McpServerConfig>;
   toolPolicy?: { preapproved: { kind: "mcp"; server: string; tool: string }[] };
+  skills?: string[];
+  mcpConfigPath?: string;
 }
 
 /** Resolves the Antigravity agent name for a bot, returning `bot.id` on agy providers. */
@@ -802,6 +813,8 @@ export function buildAgentConfig(
   thinkingOptionId?: string | null,
   fallbackModels?: FallbackModel[],
   engine?: SubagentEngine | null,
+  skills?: readonly string[],
+  mcpConfigPath?: string | null,
 ): BotAgentConfig {
   const mcpServers: Record<string, McpServerConfig> = {
     ...mcpServersRecord(botMcpServers(bot, library)),
@@ -820,6 +833,7 @@ export function buildAgentConfig(
   const effectiveBaseTools = engineBaseTools(bot, engine);
   const resolvedModeId = resolveModeIdForProvider(bot.modeId, bot.provider);
   const effectiveFallbacks = fallbackModels !== undefined ? fallbackModels : (bot.fallbackModels ?? []);
+  const resolvedSkills = skills !== undefined ? [...skills] : botSkills(bot, library).map((skill) => skill.id);
 
   let providerOptions: { agent?: string; [key: string]: unknown } | undefined = undefined;
   if (agyAgent) {
@@ -845,6 +859,8 @@ export function buildAgentConfig(
     ...(agyAgent ? {} : { systemPrompt }),
     ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
     ...(preapproved.length > 0 ? { toolPolicy: { preapproved } } : {}),
+    ...(resolvedSkills.length > 0 ? { skills: resolvedSkills } : {}),
+    ...(mcpConfigPath ? { mcpConfigPath } : {}),
   };
 }
 

@@ -124,17 +124,24 @@ export async function startChat(
     : null;
   const group = input.group !== undefined ? input.group : (sharedGroup ?? primaryGroupForBot(bot.id, groups));
   const home = await ensureBotHome({ botId: bot.id, ...(group ? { groupId: group.id, groupName: group.name } : {}) });
-  const { systemPrompt: system } = await systemPrompt({ bot, local: true, message: input.prompt, group }, library, paseo, values);
   const agentId = input.agentId ?? newUuid();
   const effectiveBot = input.thinkingOptionId !== undefined ? { ...bot, thinkingOptionId: input.thinkingOptionId } : bot;
+  const placement = resolveBotPlacement(effectiveBot, group, home);
+  const plugin = { tools: await relay.mountTools(bot.id, agentId), apps: bot.apps.length ? await relay.mountApps(bot.id) : null };
+  const { systemPrompt: system } = await systemPrompt(
+    { bot: effectiveBot, local: true, message: input.prompt, group, plugin, claudeProjectDir: placement.path },
+    library,
+    paseo,
+    values,
+  );
   return startBotChat(
     paseo,
     {
       bot: effectiveBot,
       library,
       agentId,
-      plugin: { tools: await relay.mountTools(bot.id, agentId), apps: bot.apps.length ? await relay.mountApps(bot.id) : null },
-      placement: resolveBotPlacement(effectiveBot, group, home),
+      plugin,
+      placement,
       prompt: input.prompt,
       systemPrompt: system,
       title: input.title,

@@ -27,6 +27,7 @@ import { addMcpServers, forgetItem, mcpServerTested, setBotUses } from "./librar
 import { PALETTE_COUNT } from "./pixel";
 import { describeSchedule, ScheduleInput, scheduleFrom } from "./routines";
 import { BOT_TEMPLATES, newBot } from "./templates";
+import { validateWorkflowDAG, WorkflowDefinitionSchema } from "./workflows";
 
 // Changes a bot proposes to the setup (bots, teams, the library, defaults and
 // presets) with propose_changes. They wait on a card in its chat, and the app
@@ -160,6 +161,7 @@ const CreateTeam = z.object({
   instructions: z.string().max(20_000).optional().describe("Shared instructions added to every member's prompt."),
   cwd: z.string().max(1000).nullable().optional().describe("Team working folder (absolute path); null for each bot's own folder."),
   mounts: z.array(z.string().max(1000)).max(50).optional().describe("Team mounted project absolute paths."),
+  workflows: z.array(WorkflowDefinitionSchema).max(50).optional().describe("Team-scoped workflows."),
   logo: LogoInput.optional(),
 });
 
@@ -175,6 +177,7 @@ const UpdateTeam = z.object({
   mounts: z.array(z.string().max(1000)).max(50).optional().describe("Mounted project absolute paths; replaces the current ones."),
   add_mounts: z.array(z.string().min(1).max(1000)).max(50).optional().describe("Mounted project absolute paths to add."),
   remove_mounts: z.array(z.string().min(1).max(1000)).max(50).optional().describe("Mounted project paths to remove."),
+  workflows: z.array(WorkflowDefinitionSchema).max(50).optional().describe("Team-scoped workflows; replaces the current ones."),
   logo: LogoInput.optional(),
 });
 
@@ -214,6 +217,18 @@ const SetDefaults = z.object({
 const SavePreset = z.object({ type: z.literal("save_preset"), bot: Ref("The bot to save as a preset") });
 const DeletePreset = z.object({ type: z.literal("delete_preset"), preset: Ref("The preset") });
 
+const SaveWorkflow = z.object({
+  type: z.literal("save_workflow"),
+  team: Ref("Target team; omit for a global workflow template").optional(),
+  workflow: WorkflowDefinitionSchema,
+});
+
+const DeleteWorkflow = z.object({
+  type: z.literal("delete_workflow"),
+  team: Ref("Target team; omit for a global workflow template").optional(),
+  workflow_id: z.string().min(1).max(100),
+});
+
 export const ChangeSchema = z.discriminatedUnion("type", [
   CreateBot,
   UpdateBot,
@@ -231,6 +246,8 @@ export const ChangeSchema = z.discriminatedUnion("type", [
   SetDefaults,
   SavePreset,
   DeletePreset,
+  SaveWorkflow,
+  DeleteWorkflow,
 ]);
 export type Change = z.infer<typeof ChangeSchema>;
 export const ChangesSchema = z.array(ChangeSchema).min(1).max(50);
@@ -632,7 +649,13 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
       const logo = withLogo({ seed: randomSeed(), palette: null, imageUrl: null }, change.logo);
       const cwd = change.cwd ? validateAbsolutePath(change.cwd, "Team working folder") : null;
       const mounts = change.mounts !== undefined ? withMounts([], change.mounts) : [];
-      const draft = { name: oneLine(change.name), logo, leadId: lead?.id ?? null, memberIds: members, instructions: change.instructions?.trim() ?? "", cwd, mounts };
+      if (change.workflows) {
+        for (const wf of change.workflows) {
+          const check = validateWorkflowDAG(wf.stages);
+          if (!check.valid) throw new Error(`Invalid workflow "${wf.name}": ${check.error}`);
+        }
+      }
+      const draft = { name: oneLine(change.name), logo, leadId: lead?.id ?? null, memberIds: members, instructions: change.instructions?.trim() ?? "", cwd, mounts, ...(change.workflows ? { workflows: change.workflows } : {}) };
       return { ...values, groups: saveTeam(groups, null, draft, newGroupId(), context.now) };
     }
     case "update_team": {
@@ -645,6 +668,12 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
       if (change.add_mounts?.length || change.remove_mounts?.length) {
         mounts = withMounts(mounts, change.add_mounts, change.remove_mounts);
       }
+      if (change.workflows) {
+        for (const wf of change.workflows) {
+          const check = validateWorkflowDAG(wf.stages);
+          if (!check.valid) throw new Error(`Invalid workflow "${wf.name}": ${check.error}`);
+        }
+      }
       const draft = {
         name: change.name !== undefined ? oneLine(change.name) : group.name,
         logo: withLogo(teamLogoOf(group), change.logo),
@@ -653,6 +682,7 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
         instructions: change.instructions?.trim() ?? group.instructions,
         cwd,
         mounts,
+        ...(change.workflows !== undefined ? { workflows: change.workflows } : {}),
       };
       return { ...values, groups: saveTeam(groups, group.id, draft, group.id, context.now) };
     }
@@ -712,6 +742,45 @@ function applyChange(values: BotSettingsValues, change: Change, context: ApplyCo
       const presets = values.presets ?? [];
       const preset = byRef(presets, change.preset, (entry) => entry.id, (entry) => entry.name, "preset");
       return { ...values, presets: presets.filter((entry) => entry.id !== preset.id) };
+    }
+    case "save_workflow": {
+      const check = validateWorkflowDAG(change.workflow.stages);
+      if (!check.valid) throw new Error(`Invalid workflow "${change.workflow.name}": ${check.error}`);
+      const wf = { ...change.workflow, updatedAt: context.now, createdAt: change.workflow.createdAt ?? context.now };
+      if (change.team) {
+        const group = findTeam(values, change.team);
+        const existing = group.workflows ?? [];
+        const nextWorkflows = existing.some((entry) => entry.id === wf.id)
+          ? existing.map((entry) => (entry.id === wf.id ? wf : entry))
+          : [...existing, wf];
+        return {
+          ...values,
+          groups: groups.map((entry) => (entry.id === group.id ? { ...entry, workflows: nextWorkflows, updatedAt: context.now } : entry)),
+        };
+      }
+      const existing = values.workflows ?? [];
+      const nextGlobal = existing.some((entry) => entry.id === wf.id)
+        ? existing.map((entry) => (entry.id === wf.id ? wf : entry))
+        : [...existing, wf];
+      return { ...values, workflows: nextGlobal };
+    }
+    case "delete_workflow": {
+      if (change.team) {
+        const group = findTeam(values, change.team);
+        const existing = group.workflows ?? [];
+        if (!existing.some((entry) => entry.id === change.workflow_id)) {
+          throw new Error(`No workflow "${change.workflow_id}" on team "${group.name}".`);
+        }
+        return {
+          ...values,
+          groups: groups.map((entry) => (entry.id === group.id ? { ...entry, workflows: existing.filter((w) => w.id !== change.workflow_id), updatedAt: context.now } : entry)),
+        };
+      }
+      const existing = values.workflows ?? [];
+      if (!existing.some((entry) => entry.id === change.workflow_id)) {
+        throw new Error(`No global workflow "${change.workflow_id}".`);
+      }
+      return { ...values, workflows: existing.filter((w) => w.id !== change.workflow_id) };
     }
   }
 }
@@ -868,6 +937,10 @@ export function describeChange(change: Change): string {
       return `**Save ${change.bot} as a preset**`;
     case "delete_preset":
       return `**Delete preset ${change.preset}**`;
+    case "save_workflow":
+      return `**${change.team ? `Team ${change.team}` : "Global"} workflow "${change.workflow.name}"**: ${change.workflow.stages.length} stage(s)`;
+    case "delete_workflow":
+      return `**Delete ${change.team ? `team ${change.team}` : "global"} workflow "${change.workflow_id}"**`;
   }
 }
 
@@ -887,6 +960,7 @@ export function changeWarnings(changes: readonly Change[]): string[] {
     if (change.type === "add_mcp_server" && change.command) warnings.push(`The ${change.name} MCP server runs a program on this computer once it's on.`);
     if (change.type === "delete_bot") warnings.push(`Deletes the bot ${change.bot}.`);
     if (change.type === "delete_team") warnings.push(`Deletes the team ${change.team}.`);
+    if (change.type === "delete_workflow") warnings.push(`Deletes workflow "${change.workflow_id}".`);
     if (change.type === "remove_mcp_server") warnings.push(`Removes the MCP server ${change.server}.`);
   }
   return warnings;

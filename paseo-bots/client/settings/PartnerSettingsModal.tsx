@@ -6,10 +6,11 @@
  */
 
 import type { PluginTheme } from "@getpaseo/plugin";
+import { Icon } from "@getpaseo/plugin/client/ui";
 import { Modal, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Pressable, Text, View } from "react-native";
-import type { Bot, BotGroup, HistoryEntry, Library } from "../../shared/bot";
+import type { Bot, BotGroup, HistoryEntry, Library, WorkflowDefinition } from "../../shared/bot";
 import type { TeamDraft } from "../../shared/groups";
 import { Avatar, TeamLogo } from "../Avatar";
 import type { LocalHost } from "../data";
@@ -18,12 +19,14 @@ import { nativeTokens } from "../native";
 import { BotPanel, type PanelProps, type SectionId } from "../panel/BotPanel";
 import { TeamEditorForm } from "../teams/TeamSheet";
 import { ui } from "../typography";
+import { WorkflowListEditor } from "./WorkflowEditor";
 
 type Colors = PluginTheme["colors"];
 
 export type PartnerSettingsTarget =
   | { kind: "team"; id: string }
-  | { kind: "bot"; id: string };
+  | { kind: "bot"; id: string }
+  | { kind: "workflows" };
 
 export interface PartnerSettingsModalProps {
   open: boolean;
@@ -33,6 +36,7 @@ export interface PartnerSettingsModalProps {
   localHost: LocalHost;
   history: HistoryEntry[];
   library: Library;
+  globalWorkflows?: readonly WorkflowDefinition[];
   initialTarget?: PartnerSettingsTarget | null;
   onClose(): void;
   onPatchBot(botId: string, patch: Partial<Bot>): void;
@@ -42,6 +46,7 @@ export interface PartnerSettingsModalProps {
   onOpenChat(bot: Bot, chatId: string): void;
   onSaveTeam(teamId: string, draft: TeamDraft): void;
   onDeleteTeam?(group: BotGroup): void;
+  onSaveGlobalWorkflows?(workflows: WorkflowDefinition[]): void;
 }
 
 export function PartnerSettingsModal({
@@ -52,6 +57,7 @@ export function PartnerSettingsModal({
   localHost,
   history,
   library,
+  globalWorkflows,
   initialTarget,
   onClose,
   onPatchBot,
@@ -61,6 +67,7 @@ export function PartnerSettingsModal({
   onOpenChat,
   onSaveTeam,
   onDeleteTeam,
+  onSaveGlobalWorkflows,
 }: PartnerSettingsModalProps) {
   const { t } = useT();
   const tokens = nativeTokens(colors);
@@ -70,8 +77,9 @@ export function PartnerSettingsModal({
     if (groups[0]) return { kind: "team", id: groups[0].id };
     if (liveBots[0]) return { kind: "bot", id: liveBots[0].id };
     if (bots[0]) return { kind: "bot", id: bots[0].id };
+    if (onSaveGlobalWorkflows) return { kind: "workflows" };
     return null;
-  }, [groups, liveBots, bots]);
+  }, [groups, liveBots, bots, onSaveGlobalWorkflows]);
 
   const [target, setTarget] = useState<PartnerSettingsTarget | null>(() => initialTarget ?? fallbackTarget);
   const [botSection, setBotSection] = useState<SectionId | null>(null);
@@ -86,9 +94,10 @@ export function PartnerSettingsModal({
     setTarget((prev) => {
       if (prev?.kind === "team" && groups.some((g) => g.id === prev.id)) return prev;
       if (prev?.kind === "bot" && bots.some((b) => b.id === prev.id)) return prev;
+      if (prev?.kind === "workflows" && onSaveGlobalWorkflows) return prev;
       return fallbackTarget;
     });
-  }, [open, initialTarget, groups, bots, fallbackTarget]);
+  }, [open, initialTarget, groups, bots, fallbackTarget, onSaveGlobalWorkflows]);
 
   const selectTarget = (next: PartnerSettingsTarget) => {
     setTarget(next);
@@ -122,7 +131,7 @@ export function PartnerSettingsModal({
   return (
     <Modal title={t("partnerSettings.title")} open={open} onOpenChange={(next) => !next && handleClose()}>
       <Modal.Content contentContainerStyle={{ gap: 12 }}>
-        {(groups.length > 0 || liveBots.length > 0) ? (
+        {(groups.length > 0 || liveBots.length > 0 || onSaveGlobalWorkflows) ? (
           <View style={{ gap: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
             {groups.length > 0 ? (
               <TargetSelectorRow
@@ -151,10 +160,35 @@ export function PartnerSettingsModal({
                 }))}
               />
             ) : null}
+
+            {onSaveGlobalWorkflows ? (
+              <TargetSelectorRow
+                label={t("workflows.templatesGroup")}
+                colors={colors}
+                items={[
+                  {
+                    key: "global:workflows",
+                    label: t("workflows.globalTemplates"),
+                    active: target?.kind === "workflows",
+                    icon: <Icon name="GitBranch" size={16} color={target?.kind === "workflows" ? colors.accent : colors.foregroundMuted} />,
+                    onPress: () => selectTarget({ kind: "workflows" }),
+                  },
+                ]}
+              />
+            ) : null}
           </View>
         ) : null}
 
-        {selectedGroup ? (
+        {target?.kind === "workflows" && onSaveGlobalWorkflows ? (
+          <WorkflowListEditor
+            colors={colors}
+            title={t("workflows.globalTitle")}
+            info={t("workflows.globalInfo")}
+            workflows={globalWorkflows ?? []}
+            bots={liveBots}
+            onChange={onSaveGlobalWorkflows}
+          />
+        ) : selectedGroup ? (
           <TeamEditorForm
             key={selectedGroup.id}
             colors={colors}

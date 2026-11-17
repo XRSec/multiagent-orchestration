@@ -14,7 +14,8 @@ Personal bots for [Paseo](https://paseo.sh). Give each bot instructions, a model
 | **Memory** | Each bot keeps a `MEMORY.md` it updates as it learns, and a daily log of its chats. |
 | **Routines** | Cron schedules with time zones, fixed intervals, one-time runs and local webhooks. Manage run history, pause schedules and stop active runs. |
 | **Teams** | Put bots on a team with a Chief of Staff, who takes your requests and hands parts to the others. Each team gets a tab and a pixel-art logo. |
-| **Skills & Tools** | One library of skills and MCP servers, switched on per bot. Import skills from GitHub and MCP servers from Claude Code, Claude Desktop or Cursor. |
+| **Workflows** | Declarative Stage DAG pipelines with topological dependency resolution, concurrent wave dispatch, bounded retries, live timeline cards, and the dual-end contract (`<task_brief>`, `<worker_handoff>`, `<repair_brief>`). |
+| **Skills & Tools** | One library of skills and MCP servers, switched on per bot. Import skills from GitHub and MCP servers from Claude Code, Claude Desktop or Cursor. CLI sessions inject isolated per-project `.mcp.json` and per-session `.claude/skills/` with Zero Global Pollution. |
 | **Learning** | Send `/learn` after a task and the bot writes it up as a skill. |
 | **Connected apps** | Apps such as Gmail, Slack and Notion from [Composio's](https://composio.dev) catalog, with several named accounts per app. |
 | **Paseo tools** | Bots can start other agents, open workspaces, set up schedules and use the browser. |
@@ -142,6 +143,15 @@ Bot and team files can include memory and skills. Imported routines start paused
 
 Whether a bot may ask others for help is set in its settings under **Permissions → Contact other bots**: **Ask first**, **Allowed** or **Off**.
 
+### Workflows
+
+Configure multi-stage workflow DAGs for complex tasks that span multiple specialist bots:
+
+1. Define global or team-scoped workflows in **Settings → Workflows** or ask a lead bot to set them up. Each workflow declares stages, designated specialist bots, dependencies (`dependsOn`), prompts, and bounded retries (`maxRetries`).
+2. Run workflows programmatically with the `run_workflow` tool, or ask a team lead in chat.
+3. Stages execute in topological dependency order in concurrent waves. A live progress card tracks stage statuses (`pending`, `running`, `done`, `failed`, `skipped`) in the conversation timeline.
+4. Orchestrators and stage workers communicate through a dual-end contract: the orchestrator dispatches self-contained `<task_brief>` or diagnostic `<repair_brief>` prompts with upstream context, and the worker concludes with a structured `<worker_handoff>` block (`STATUS`, `SUMMARY`, `TOUCHED_FILES`, `VERIFICATION_PROOF`, `OPEN_ISSUES`).
+
 ### Skills & Tools
 
 Press **Skills & Tools** at the bottom of the bot list.
@@ -150,6 +160,8 @@ Press **Skills & Tools** at the bottom of the bot list.
 - **MCP servers**: press **+**, then **New server**, or **Import config** to pick up the servers set up in Claude Code, Claude Desktop or Cursor. Press **Test and turn on** on the server's page.
 
 Then give them to a bot in its settings: skills under **Skills**, MCP servers under **Access**.
+
+When bots run through the Claude Code CLI or external harnesses, Paseo automatically projects per-session `.mcp.json` configs (for `--mcp-config`) and links enabled skills into `.claude/skills/<skillId>` via directory symlinks. An `assertNotGlobalUserConfig` invariant strictly guards the operator's global configuration files (`~/.claude.json`, `~/.claude/settings.json`, `~/.gemini/config/skills`, `~/.gemini/settings.json`), ensuring zero global pollution.
 
 Remote HTTP and SSE servers also support **OAuth** under **Authentication**. Save the server, then press **Connect** to approve access in your browser. Tokens and client secrets stay on the host; the local proxy refreshes tokens for bots automatically. **Client registration** accepts a pre-registered client ID and optional secret when automatic registration is unavailable, and shows the redirect URI to register. From another device, use **Signing in from another device?** and paste the complete callback URL if the browser cannot reach the host's loopback address. **Disconnect** removes the saved credentials and blocks existing proxy connections. Start a new chat after changing a server from headers to OAuth; OAuth connections run on the host where this plugin is installed. In Paseo 0.16, exact **Always allowed** OAuth tool grants work with Claude; other providers keep their native approval rules. Legacy SSE requires a provider that supports it, such as Claude; use Streamable HTTP with Codex.
 

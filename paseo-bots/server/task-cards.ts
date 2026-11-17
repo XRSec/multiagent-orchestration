@@ -8,7 +8,7 @@ import { pluginDataPath } from "./bot-home";
 import { atomicWrite, ensureRealDirectory, readRegularText } from "./files";
 import type { BotsHost } from "./host";
 import type { PaseoApi } from "./paseo";
-import { evaluateTask, recordPublishedCard, setCardAgent } from "./tasks";
+import { evaluateTask, readTask, recordPublishedCard, setCardAgent } from "./tasks";
 
 // The group overview surface: one host-composed card per task version, appended to the
 // task line's requester chat. Nothing here starts a turn, so a card cannot echo into one.
@@ -151,6 +151,26 @@ export async function flushTaskCards(host: BotsHost): Promise<number> {
 }
 
 /**
+ * Publishes or updates in-place the live Stage/DAG progress card for a workflow task.
+ */
+export async function publishWorkflowCard(host: BotsHost, taskId: string, requesterAgentId?: string): Promise<boolean> {
+  if (!host.paseo) return false;
+  const record = await readTask(taskId).catch(() => null);
+  if (!record || !record.workflow) return false;
+  const agentId = record.cardAgentId ?? await groupAgentFor(host, { groupId: record.groupId, requesterAgentId }) ?? requesterAgentId;
+  if (!agentId) return false;
+  if (record.cardAgentId !== agentId) await setCardAgent(taskId, agentId).catch(() => null);
+  const card = taskCardOf(record);
+  const id = `task-card:${card.taskId}:workflow`;
+  try {
+    await host.requirePaseo().agents.ref(agentId).timeline.append({ type: "plugin", id, ...TASK_CARD, data: { ...card } });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Settles and, only for the caller that settled, publishes the group card. A failure to
  * append keeps the card queued rather than un-settling the task: the state is a fact, the
  * card is a projection of it.
@@ -159,12 +179,21 @@ export async function settleAndPublish(host: BotsHost, taskId: string, requester
   const { settled, record } = await evaluateTask(taskId);
   if (!settled) return { settled: false, published: false };
   const card = taskCardOf(record);
-  const id = taskCardId(card.taskId, card.version);
+  const id = card.workflow ? `task-card:${card.taskId}:workflow` : taskCardId(card.taskId, card.version);
   // The recorded id is authoritative; the timeline window is only a fallback for old records.
-  if (record.publishedCardIds?.includes(id)) return { settled: true, published: false };
-  const agentId = record.cardAgentId ?? await groupAgentFor(host, { groupId: record.groupId, requesterAgentId });
+  if (!card.workflow && record.publishedCardIds?.includes(id)) return { settled: true, published: false };
+  const agentId = record.cardAgentId ?? await groupAgentFor(host, { groupId: record.groupId, requesterAgentId }) ?? (card.workflow ? requesterAgentId : undefined);
   if (!agentId) return { settled: true, published: false };
   if (record.cardAgentId !== agentId) await setCardAgent(taskId, agentId).catch(() => null);
+  if (card.workflow) {
+    try {
+      await host.requirePaseo().agents.ref(agentId).timeline.append({ type: "plugin", id, ...TASK_CARD, data: { ...card } });
+      await recordPublishedCard(taskId, id).catch(() => null);
+      return { settled: true, published: true };
+    } catch {
+      return { settled: true, published: false };
+    }
+  }
   await queueTaskCard(card, agentId);
   try {
     const outcome = await publishTaskCard(host.requirePaseo(), agentId, card);

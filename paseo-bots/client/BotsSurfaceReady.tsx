@@ -1015,6 +1015,13 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, settings, la
               groups: saveTeam(values.groups ?? [], teamId, draft, teamId, new Date().toISOString()),
             }));
           }}
+          globalWorkflows={settings.values.workflows ?? []}
+          onSaveGlobalWorkflows={(workflows) => {
+            void commit((values) => ({
+              ...values,
+              workflows,
+            }));
+          }}
           onDeleteTeam={(group) => {
             void deleteTeam(group);
           }}
