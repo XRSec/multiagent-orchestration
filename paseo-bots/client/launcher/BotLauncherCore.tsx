@@ -60,6 +60,11 @@ import { ModelPickerPopover } from "./ModelPickerPopover";
 import { ScrollablePills } from "./ScrollablePills";
 import { useComposerOptions } from "./useComposerOptions";
 import { useVisualViewport } from "./useVisualViewport";
+import {
+  formatWorkflowLaunchPrompt,
+  resolveAvailableWorkflows,
+  shouldRetainWorkflowSelection,
+} from "./workflowSelection";
 
 export interface BotLauncherCoreProps {
   theme: PluginTheme;
@@ -102,6 +107,10 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
   const bots = useMemo(() => (settings.status === "ready" ? settings.values.bots.filter((b) => !b.archived) : []), [settings]);
   const groups = useMemo(() => (settings.status === "ready" ? settings.values.groups ?? [] : []), [settings]);
   const library = settings.status === "ready" ? settings.values.library ?? EMPTY_LIBRARY : EMPTY_LIBRARY;
+  const globalWorkflows = useMemo(
+    () => (settings.status === "ready" ? settings.values.workflows ?? [] : []),
+    [settings],
+  );
 
   const localHost = useMemo(
     () => ({ id: props.host?.id ?? "local", label: props.host?.label ?? "Local" }),
@@ -287,16 +296,38 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
     return () => clearTimeout(timer);
   }, [embedded, isCompact, props.onClose]);
 
-  const activeBot = useMemo(() => {
-    if (chatMode === "team") {
-      const activeGroup = groups.find((g) => g.id === selectedGroupId) ?? groups[0];
-      if (activeGroup?.leadId) {
-        const lead = bots.find((b) => b.id === activeGroup.leadId);
-        if (lead) return lead;
+  const activeGroup = useMemo(
+    () => (chatMode === "team" ? (groups.find((g) => g.id === selectedGroupId) ?? groups[0] ?? null) : null),
+    [chatMode, groups, selectedGroupId],
+  );
+  const availableWorkflows = useMemo(
+    () => (chatMode === "team" ? resolveAvailableWorkflows(activeGroup, globalWorkflows) : []),
+    [chatMode, activeGroup, globalWorkflows],
+  );
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (chatMode !== "team") {
+      if (selectedWorkflowId !== null) {
+        setSelectedWorkflowId(null);
+      }
+      return;
+    }
+    if (selectedWorkflowId) {
+      const retain = shouldRetainWorkflowSelection(selectedWorkflowId, activeGroup, globalWorkflows);
+      if (!retain) {
+        setSelectedWorkflowId(null);
       }
     }
+  }, [chatMode, selectedGroupId, activeGroup, globalWorkflows, selectedWorkflowId]);
+
+  const activeBot = useMemo(() => {
+    if (chatMode === "team" && activeGroup?.leadId) {
+      const lead = bots.find((b) => b.id === activeGroup.leadId);
+      if (lead) return lead;
+    }
     return bots.find((b) => b.id === selectedBotId) ?? bots[0];
-  }, [bots, chatMode, selectedBotId, selectedGroupId, groups]);
+  }, [bots, chatMode, selectedBotId, activeGroup]);
 
   const host = useBotHost(activeBot?.hostId ?? null, localHost);
   const ensureHome = useRpc(ensureBotHomeRpc);
@@ -512,6 +543,15 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
         effectivePrompt = `${basePrompt}${textPayload}`;
       }
 
+      if (chatMode === "team" && selectedWorkflowId) {
+        const selectedWorkflow = availableWorkflows.find((w) => w.id === selectedWorkflowId);
+        effectivePrompt = formatWorkflowLaunchPrompt(
+          selectedWorkflowId,
+          effectivePrompt,
+          selectedWorkflow?.name,
+        );
+      }
+
       const effectiveBot = {
         ...activeBot,
         provider: selectedProvider || activeBot.provider,
@@ -552,6 +592,7 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
       setPromptText("");
       setInputHeight(baseMinInputHeight);
       setAttachments([]);
+      setSelectedWorkflowId(null);
       setIsSubmitting(false);
       props.onClose?.();
 
@@ -588,6 +629,8 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
     props,
     t,
     toast,
+    selectedWorkflowId,
+    availableWorkflows,
   ]);
 
   const onKeyPress = (event: { nativeEvent: unknown; preventDefault?: () => void }) => {
@@ -610,10 +653,6 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
   const hasTeams = groups.length > 0;
   const hasContent = promptText.trim().length > 0 || attachments.length > 0;
   const canSubmit = hasBots && hasContent && !isSubmitting;
-  const activeGroup = useMemo(
-    () => (chatMode === "team" ? (groups.find((g) => g.id === selectedGroupId) ?? groups[0] ?? null) : null),
-    [chatMode, groups, selectedGroupId],
-  );
   const modeToggle = (
     <View style={[styles.segmentedControl, { backgroundColor: colors.surface2, borderColor: colors.border }]}>
       <Pressable
@@ -808,6 +847,101 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
             {t("launcher.engineHint")}
           </Text>
         </View>
+
+        {chatMode === "team" && availableWorkflows.length > 0 ? (
+          <View
+            accessibilityRole="radiogroup"
+            accessibilityLabel={t("launcher.workflowLabel")}
+            style={styles.workflowSection}
+          >
+            <ScrollablePills colors={colors}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityState={{ selected: selectedWorkflowId === null }}
+                onPress={() => setSelectedWorkflowId(null)}
+                style={[
+                  styles.pillItem,
+                  {
+                    borderColor: selectedWorkflowId === null ? colors.accent : colors.border,
+                    backgroundColor: selectedWorkflowId === null ? colors.surface2 : colors.surface1,
+                  },
+                  Platform.OS === "web" ? ({ touchAction: "pan-x" } as any) : null,
+                ]}
+              >
+                <Icon
+                  name="MessageSquare"
+                  size={14}
+                  color={selectedWorkflowId === null ? colors.accent : colors.foregroundMuted}
+                />
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    styles.pillText,
+                    { color: selectedWorkflowId === null ? colors.foreground : colors.foregroundMuted },
+                  ]}
+                >
+                  {t("launcher.workflowFreeChat")}
+                </Text>
+              </Pressable>
+              {availableWorkflows.map((wf) => {
+                const isSelected = wf.id === selectedWorkflowId;
+                const stageCount = wf.stages?.length ?? 0;
+                return (
+                  <Pressable
+                    key={wf.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    onPress={() => setSelectedWorkflowId(wf.id)}
+                    style={[
+                      styles.pillItem,
+                      {
+                        borderColor: isSelected ? colors.accent : colors.border,
+                        backgroundColor: isSelected ? colors.surface2 : colors.surface1,
+                      },
+                      Platform.OS === "web" ? ({ touchAction: "pan-x" } as any) : null,
+                    ]}
+                  >
+                    <Icon
+                      name="GitBranch"
+                      size={14}
+                      color={isSelected ? colors.accent : colors.foregroundMuted}
+                    />
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        styles.pillText,
+                        { color: isSelected ? colors.foreground : colors.foregroundMuted },
+                      ]}
+                    >
+                      {wf.name}
+                    </Text>
+                    {stageCount > 0 ? (
+                      <View
+                        style={[
+                          styles.stageBadge,
+                          {
+                            backgroundColor: isSelected ? colors.accent : colors.surface2,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.stageBadgeText,
+                            {
+                              color: isSelected ? (colors.accentForeground ?? "#ffffff") : colors.foregroundMuted,
+                            },
+                          ]}
+                        >
+                          {stageCount}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </ScrollablePills>
+          </View>
+        ) : null}
 
         <View
           ref={inputWrapperRef}

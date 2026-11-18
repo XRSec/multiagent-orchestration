@@ -261,6 +261,7 @@ export async function systemPrompt(
     claudeAgentsDir,
     claudeProjectDir,
     claudeBotDataDir,
+    agyAgentsDir,
     plugin,
     mcpServers,
     soulsDir,
@@ -287,6 +288,7 @@ export async function systemPrompt(
     claudeAgentsDir?: string;
     claudeProjectDir?: string;
     claudeBotDataDir?: string;
+    agyAgentsDir?: string;
     plugin?: PluginServers;
     mcpServers?: Record<string, McpServerConfig>;
     soulsDir?: string;
@@ -344,7 +346,11 @@ export async function systemPrompt(
   const composed = composeSystemPrompt(effectiveBot, context);
 
   if (syncAgy && local && isAgyProvider(effectiveBot.provider)) {
-    await syncBotToAgyAgent(effectiveBot, { body: composed, soulsDir });
+    await syncBotToAgyAgent(effectiveBot, {
+      body: composed,
+      soulsDir,
+      ...(agyAgentsDir !== undefined ? { agentsDir: agyAgentsDir } : {}),
+    });
   }
 
   const resolvedMcpServers = mcpServers ?? {

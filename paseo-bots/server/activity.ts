@@ -1,10 +1,14 @@
 import type { PluginHookEvents } from "@getpaseo/plugin/server";
 import { hasMemorySignal, lastTurn, lastUserText, logLine } from "../shared/activity";
+import { SESSION_ROLE_LABEL } from "../shared/chat";
+import { ASKED_BY_LABEL } from "../shared/handoff";
+import { isBriefDispatchMessage } from "../shared/protocol-cards";
 import type { BotsHost } from "./host";
 import type { MemoryJournal } from "./journal";
 import { appendDailyLog } from "./memory";
-import type { MemoryCurator } from "./memory-curator";
+import { MEMORY_CURATION_LABEL, type MemoryCurator } from "./memory-curator";
 import type { RoutineScheduler } from "./scheduler";
+import { WORKFLOW_STAGE_LABEL, WORKFLOW_TASK_LABEL } from "./workflow-runner";
 
 // What happens around each turn of a bot's chat: the journal notes memory
 // changes, and the daily log gets a line saying what the bot did.
@@ -35,7 +39,22 @@ export async function turnEnded(
   if (chat.routineId) await scheduler.finished(chat.routineId, agent.id, outcome, reply);
   if (outcome.kind === "canceled") return;
 
-  if (outcome.kind === "completed" && curator && !curator.isCurationAgent(agent.id) && !memoryChanged && hasMemorySignal(userText)) {
+  const isCuration = chat.labels[MEMORY_CURATION_LABEL] === "true" || (curator?.isCurationAgent(agent.id) ?? false);
+  if (isCuration) {
+    await host.paseo?.agents.ref(agent.id).archive?.().catch(() => null);
+  }
+
+  const isHumanTurn =
+    !isCuration &&
+    chat.routineId == null &&
+    !chat.labels[ASKED_BY_LABEL] &&
+    !chat.labels[WORKFLOW_TASK_LABEL] &&
+    !chat.labels[WORKFLOW_STAGE_LABEL] &&
+    chat.labels[SESSION_ROLE_LABEL] !== "worker" &&
+    chat.labels[SESSION_ROLE_LABEL] !== "dispatched-worker" &&
+    !isBriefDispatchMessage(userText);
+
+  if (outcome.kind === "completed" && curator && isHumanTurn && !memoryChanged && hasMemorySignal(userText)) {
     void curator.curateTurnFallback({ botId, agentId: agent.id, chatTitle: title, userText, reply }).catch((error: unknown) => {
       console.error("paseo-bots: memory fallback curation failed", error);
     });

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { syncBotToAgyAgent } from "../server/agy-agents";
 
 describe("Sync bot-moadmin configuration", () => {
-  it("updates bot-moadmin in bots.json and syncs ~/.gemini/config/agents/bot-moadmin.md", async () => {
+  it("verifies bot-moadmin baseTools and syncs into isolated agy agents directory", async () => {
     const jsonPath = resolve(__dirname, "../../paseo-bots-plugin-settings/bots.json");
     const data = JSON.parse(await readFile(jsonPath, "utf8"));
     const moadmin = data.values.bots.find((b: any) => b.id === "bot-moadmin");
@@ -29,22 +29,29 @@ describe("Sync bot-moadmin configuration", () => {
         }
       }
     }
-    moadmin.updatedAt = new Date().toISOString();
 
-    await writeFile(jsonPath, JSON.stringify(data, null, 2), "utf8");
+    const tempAgentsDir = await mkdtemp(join(tmpdir(), "paseo-test-moadmin-agents-"));
+    const tempBotDataDir = await mkdtemp(join(tmpdir(), "paseo-test-moadmin-data-"));
+    try {
+      const syncResult = await syncBotToAgyAgent(moadmin, {
+        agentsDir: tempAgentsDir,
+        botDataDir: tempBotDataDir,
+      });
+      expect(syncResult.synced).toBe(true);
 
-    const syncResult = await syncBotToAgyAgent(moadmin);
-    expect(syncResult.synced).toBe(true);
-
-    const mdPath = join(homedir(), ".gemini", "config", "agents", "bot-moadmin.md");
-    const mdContent = await readFile(mdPath, "utf8");
-    for (const tool of targetTools) {
-      expect(mdContent).toContain(`  - ${tool}`);
+      const mdPath = join(tempAgentsDir, "bot-moadmin.md");
+      const mdContent = await readFile(mdPath, "utf8");
+      for (const tool of targetTools) {
+        expect(mdContent).toContain(`  - ${tool}`);
+      }
+      expect(mdContent).not.toContain("  - read_file");
+      expect(mdContent).not.toContain("  - edit_file");
+      expect(mdContent).not.toContain("  - write_file");
+      expect(mdContent).not.toContain("  - run_command");
+      expect(mdContent).not.toContain("  - search_web");
+    } finally {
+      await rm(tempAgentsDir, { recursive: true, force: true });
+      await rm(tempBotDataDir, { recursive: true, force: true });
     }
-    expect(mdContent).not.toContain("  - read_file");
-    expect(mdContent).not.toContain("  - edit_file");
-    expect(mdContent).not.toContain("  - write_file");
-    expect(mdContent).not.toContain("  - run_command");
-    expect(mdContent).not.toContain("  - search_web");
   });
 });

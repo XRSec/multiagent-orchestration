@@ -32,7 +32,7 @@ import { listAnalyticsSessions } from "./server/analytics/sessions";
 import { deleteAnalyticsRecord, listAnalyticsHistory, saveAnalyticsRecord } from "./server/analytics/history";
 import { BOT_TOOLS } from "./server/tools";
 import { listTasks } from "./server/tasks";
-import { reconcileOrphanWorkflows } from "./server/workflow-runner";
+import { archiveSettledWorkflowStageChats, reconcileOrphanWorkflows } from "./server/workflow-runner";
 import { saveUpload } from "./server/uploads";
 import { botMcpServers, botSettings, botSkills, EMPTY_LIBRARY, mcpServersRecord, type BotSettingsValues } from "./shared/bot";
 import { shellCommand } from "./shared/commands";
@@ -116,9 +116,11 @@ export default function contribute(server: PluginServerContext) {
   const detachOrphanReconcile = host.onAttach(() => {
     if (reconciledOnAttach) return;
     reconciledOnAttach = true;
-    void reconcileOrphanWorkflows({ host, staleAfterMs: 0, republish: true } as any).catch((error: unknown) =>
-      console.error("paseo-bots: couldn't reconcile orphan workflows on attach", error),
-    );
+    void reconcileOrphanWorkflows({ host, staleAfterMs: 0, republish: true } as any)
+      .then(() => archiveSettledWorkflowStageChats(host))
+      .catch((error: unknown) =>
+        console.error("paseo-bots: couldn't reconcile orphan workflows or archive settled chats on attach", error),
+      );
   });
   const library = async () => {
     return host.library();

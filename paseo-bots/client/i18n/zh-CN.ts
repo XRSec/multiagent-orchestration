@@ -1366,6 +1366,8 @@ export const zhCN: DeepStringRecord<typeof en> = {
     modelCount: "{{count}} 个模型",
     noMatchingModels: "没有匹配的模型",
     selectModel: "选择模型",
+    workflowLabel: "工作流",
+    workflowFreeChat: "自由对话",
   },
   workflows: {
     sidebarTitle: "工作流",
@@ -1441,6 +1443,8 @@ export const zhCN: DeepStringRecord<typeof en> = {
     protocolTaskBrief: "任务简报",
     protocolRepairBrief: "修复简报",
     protocolWorkerHandoff: "执行交接",
+    protocolWorkerProtocol: "执行协议",
+    protocolRules: "协议规则",
     protocolVerificationProof: "验证证据",
     protocolDodChecklist: "DoD 清单",
     protocolTouchedFiles: "变更文件",

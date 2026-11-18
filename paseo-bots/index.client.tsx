@@ -15,7 +15,11 @@ import { HandoffCard } from "./client/chat/stream/HandoffCard";
 import { TaskCardView } from "./client/chat/stream/TaskCard";
 import { ProtocolCard } from "./client/chat/stream/ProtocolCard";
 import { Markdown } from "./client/Markdown";
-import { segmentProtocolBlocks } from "./shared/protocol-cards";
+import {
+  segmentProtocolBlocks,
+  transformAssistantProtocolCards,
+  transformUserProtocolCards,
+} from "./shared/protocol-cards";
 import { HANDOFF_CARD, HandoffCardSchema } from "./shared/handoff";
 import { TASK_CARD, TaskCardSchema } from "./shared/task-card";
 import { requestIntent } from "./client/intent";
@@ -287,38 +291,14 @@ export default function contribute(client: PluginClientContext) {
     id: "protocol-cards-assistant",
     query: { itemType: "assistant_message" },
     transform({ item }) {
-      if (!item.text) return undefined;
-      const segments = segmentProtocolBlocks(item.text);
-      if (!segments.some((s) => s.kind === "protocol")) return undefined;
-      return {
-        items: [
-          {
-            type: "plugin",
-            kind: "protocol-card",
-            version: 1,
-            data: { text: item.text, role: "assistant" },
-          },
-        ],
-      };
+      return transformAssistantProtocolCards(item);
     },
   });
   client.addTimelineTransformer({
     id: "protocol-cards-user",
     query: { itemType: "user_message" },
     transform({ item }) {
-      if (!item.text) return undefined;
-      const segments = segmentProtocolBlocks(item.text);
-      if (!segments.some((s) => s.kind === "protocol")) return undefined;
-      return {
-        items: [
-          {
-            type: "plugin",
-            kind: "protocol-card",
-            version: 1,
-            data: { text: item.text, role: "user" },
-          },
-        ],
-      };
+      return transformUserProtocolCards(item);
     },
   });
   client.addTimelineRenderer({

@@ -1,0 +1,15 @@
+已完成阶段 1（`moadmin-plan`：意图解析与任务拆解），并将任务契约同步写入仓库 [TASK_MANIFEST.md](file:///Users/xr/IDEA.localized/multiagent-orchestration/.t3/TASK_MANIFEST.md) 与当前工作流黑板 [TASK_MANIFEST.md](file:///Users/xr/.paseo/plugin-data/paseo-bots/shared/Teams/multiagent-orchestration/sessions/wf-wf-32977efc/TASK_MANIFEST.md)。
+
+### 一、核心拆解与已锁定的 6 大侦察/加固焦点（供下游 `bot-modeep` / `bot-mocode` 执行）
+
+1. **运行态与调度引擎加固 (`DoD-1`)**：
+   - 核查 [workflow-runner.ts](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/server/workflow-runner.ts)、[workflows.ts](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/server/tools/workflows.ts)、[workflows.ts](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/shared/workflows.ts)、[tasks.ts](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/server/tasks.ts) 与 [task-cards.ts](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/server/task-cards.ts)。
+   - 重点修复：**Session Blackboard 双 `wf-` 前缀**（实测生成 `sessions/wf-wf-32977efc`）、DAG 环路/孤立依赖校验、`engine` 路由（`auto` / `native` / `paseo-bot`）、`maxRetries` 有界重试、超时/取消信号传播与终态错误结算。
+2. **Session Blackboard 与 `<worker_handoff>` 跨阶段传递一致性 (`DoD-2`)**：
+   - 审计 [handoff.ts](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/shared/handoff.ts) 与 [handoffs.ts](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/server/handoffs.ts)：统一 5/6 字段（含 `DOD_CHECKLIST`）解析容错，解决运行态注入的 Session `TASK_MANIFEST.md` 与 Prompt 硬编码 `.t3/TASK_MANIFEST.md`（及团队 `cwd: null` 下各 Bot CWD 漂移）的路径分裂，并补齐跨跳依赖（如 `moci-verify` / `modoc-writeback` 读取 `moadmin-plan` DoD 与 `mocode-impl` 变更集）的上下文可见性。
+3. **客户端管理页执行态可视化与 `TaskCard` 同步 (`DoD-3`)**：
+   - 审计并增强 [WorkflowsScreen.tsx](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/client/WorkflowsScreen.tsx)、[WorkflowEditor.tsx](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/client/settings/WorkflowEditor.tsx)、[WorkflowPipelinePreview.tsx](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/client/settings/WorkflowPipelinePreview.tsx)、[TaskCard.tsx](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/client/chat/stream/TaskCard.tsx) 与 [HandoffCard.tsx](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/client/chat/stream/HandoffCard.tsx)。
+   - **关键新增要求**：在 [WorkflowsScreen.tsx](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/client/WorkflowsScreen.tsx) 直接提供工作流运行态可视化（活跃/近期运行列表、各阶段 DAG 进度状态及一键跳转对应会话/聊天），消除必须切换聊天窗口才能查看执行进度的问题。
+4. **`wf-moadmin-closed-loop` 编排契约优化 (`DoD-4`)**：
+   - 对齐 [bots.json](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots-plugin-settings/bots.json) 与 [workflow-templates.ts](file:///Users/xr/IDEA.localized/multiagent-orchestration/paseo-bots/shared/workflow-templates.ts) 中 7 个阶段的 `dependsOn`、黑板/Manifest 路径指引、`STATUS: FAILED` 仲裁语义及 `<worker_handoff>` 输出契约。
+   - **铁律**：写回 [bots.json](file:///

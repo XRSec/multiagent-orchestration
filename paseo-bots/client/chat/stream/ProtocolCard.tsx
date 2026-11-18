@@ -49,6 +49,9 @@ function resolveToneColor(colors: Colors, segment: ProtocolBlock): string {
     if (status === "FAILED") return colors.statusDanger;
     return colors.foregroundMuted;
   }
+  if (segment.tag === "worker_protocol" || (segment as any).kind === "worker_protocol" || segment.tag === "workspace_snapshot") {
+    return colors.foregroundMuted;
+  }
   return segment.tag === "repair_brief" ? colors.statusWarning : colors.accent;
 }
 
@@ -60,6 +63,12 @@ function resolveTagIcon(segment: ProtocolBlock): string {
     if (status === "BLOCKED") return "PauseCircle";
     if (status === "FAILED") return "AlertCircle";
     return "FileCheck2";
+  }
+  if (segment.tag === "worker_protocol" || (segment as any).kind === "worker_protocol") {
+    return "Scroll";
+  }
+  if (segment.tag === "workspace_snapshot") {
+    return "Camera";
   }
   return segment.tag === "repair_brief" ? "Wrench" : "ClipboardList";
 }
@@ -104,11 +113,14 @@ function CollapsibleSection({
   );
 }
 
-/** Renders a structured collapsible card for `<task_brief>`, `<repair_brief>`, or `<worker_handoff>`. */
+/** Renders a structured collapsible card for `<task_brief>`, `<repair_brief>`, `<worker_handoff>`, or `<worker_protocol>`. */
 export function ProtocolCard({ colors, segment }: { colors: Colors; segment: ProtocolBlock }) {
   const { t } = useT();
   const tokens = nativeTokens(colors);
   const [expanded, setExpanded] = useState(false);
+
+  const isWorkerProtocol = segment.tag === "worker_protocol" || (segment as any).kind === "worker_protocol";
+  const isHandoff = segment.tag === "worker_handoff";
 
   const tone = resolveToneColor(colors, segment);
   const icon = resolveTagIcon(segment);
@@ -118,24 +130,30 @@ export function ProtocolCard({ colors, segment }: { colors: Colors; segment: Pro
       ? t("workflows.protocolTaskBrief")
       : segment.tag === "repair_brief"
         ? t("workflows.protocolRepairBrief")
-        : t("workflows.protocolWorkerHandoff");
+        : segment.tag === "workspace_snapshot"
+          ? "Workspace Snapshot"
+          : isWorkerProtocol
+            ? t("workflows.protocolWorkerProtocol")
+            : t("workflows.protocolWorkerHandoff");
 
-  const badgeLabel =
-    segment.tag === "worker_handoff"
-      ? segment.handoff?.status ?? "UNKNOWN"
+  const badgeLabel = isHandoff
+    ? segment.handoff?.status ?? "UNKNOWN"
+    : isWorkerProtocol
+      ? "PROTOCOL"
       : segment.fields.STAGE_ID || segment.fields.WORKFLOW || segment.tag.toUpperCase();
 
-  const subtitle =
-    segment.tag === "worker_handoff"
-      ? segment.handoff?.summary || ""
+  const subtitle = isHandoff
+    ? segment.handoff?.summary || ""
+    : isWorkerProtocol
+      ? ""
       : [segment.fields.WORKFLOW, segment.fields.STAGE_NAME || segment.fields.STAGE_ID]
           .filter(Boolean)
           .join(" · ");
 
-  const verificationProof = segment.handoff?.verificationProof || segment.fields.VERIFICATION_PROOF || "";
-  const dodChecklist = segment.handoff?.dodChecklist || segment.fields.DOD_CHECKLIST || "";
-  const touchedFiles = segment.handoff?.touchedFiles || segment.fields.TOUCHED_FILES || "";
-  const openIssues = segment.handoff?.openIssues || segment.fields.OPEN_ISSUES || "";
+  const verificationProof = isHandoff ? (segment.handoff?.verificationProof || segment.fields.VERIFICATION_PROOF || "") : "";
+  const dodChecklist = isHandoff ? (segment.handoff?.dodChecklist || "") : (segment.fields.DOD_CHECKLIST || "");
+  const touchedFiles = isHandoff ? (segment.handoff?.touchedFiles || segment.fields.TOUCHED_FILES || "") : "";
+  const openIssues = isHandoff ? (segment.handoff?.openIssues || segment.fields.OPEN_ISSUES || "") : "";
   const previousError = segment.fields.PREVIOUS_ERROR || "";
   const briefObjective =
     segment.fields.OBJECTIVE ||
@@ -144,6 +162,9 @@ export function ProtocolCard({ colors, segment }: { colors: Colors; segment: Pro
     segment.fields.INSTRUCTIONS ||
     "";
   const upstreamContext = segment.fields.UPSTREAM_CONTEXT || "";
+  const protocolRules = isWorkerProtocol
+    ? (segment.fields.RULES || segment.fields.CONTENT || segment.raw || "")
+    : (segment.protocolRules || "");
 
   return (
     <View
@@ -190,27 +211,38 @@ export function ProtocolCard({ colors, segment }: { colors: Colors; segment: Pro
 
       {expanded ? (
         <View style={{ gap: 8 }}>
-          {previousError ? (
-            <CollapsibleSection colors={colors} title={t("workflows.protocolPreviousError")} body={previousError} defaultExpanded />
-          ) : null}
-          {touchedFiles && touchedFiles.toLowerCase() !== "none" ? (
-            <CollapsibleSection colors={colors} title={t("workflows.protocolTouchedFiles")} body={touchedFiles} defaultExpanded monospace />
-          ) : null}
-          {openIssues && openIssues.toLowerCase() !== "none" ? (
-            <CollapsibleSection colors={colors} title={t("workflows.protocolOpenIssues")} body={openIssues} defaultExpanded />
-          ) : null}
-          {verificationProof ? (
-            <CollapsibleSection colors={colors} title={t("workflows.protocolVerificationProof")} body={verificationProof} monospace />
-          ) : null}
-          {dodChecklist ? (
-            <CollapsibleSection colors={colors} title={t("workflows.protocolDodChecklist")} body={dodChecklist} />
-          ) : null}
-          {briefObjective ? (
-            <CollapsibleSection colors={colors} title={t("workflows.stagePromptTitle") || "Objective"} body={briefObjective} />
-          ) : null}
-          {upstreamContext ? (
-            <CollapsibleSection colors={colors} title="Upstream Context" body={upstreamContext} />
-          ) : null}
+          {isWorkerProtocol ? (
+            <View style={{ padding: 8, borderRadius: 6, backgroundColor: colors.surface2 }}>
+              <MarkdownText colors={colors} text={protocolRules} />
+            </View>
+          ) : (
+            <>
+              {previousError ? (
+                <CollapsibleSection colors={colors} title={t("workflows.protocolPreviousError")} body={previousError} defaultExpanded />
+              ) : null}
+              {touchedFiles && touchedFiles.toLowerCase() !== "none" ? (
+                <CollapsibleSection colors={colors} title={t("workflows.protocolTouchedFiles")} body={touchedFiles} defaultExpanded monospace />
+              ) : null}
+              {openIssues && openIssues.toLowerCase() !== "none" ? (
+                <CollapsibleSection colors={colors} title={t("workflows.protocolOpenIssues")} body={openIssues} defaultExpanded />
+              ) : null}
+              {verificationProof ? (
+                <CollapsibleSection colors={colors} title={t("workflows.protocolVerificationProof")} body={verificationProof} monospace />
+              ) : null}
+              {dodChecklist ? (
+                <CollapsibleSection colors={colors} title={t("workflows.protocolDodChecklist")} body={dodChecklist} />
+              ) : null}
+              {briefObjective ? (
+                <CollapsibleSection colors={colors} title={t("workflows.stagePromptTitle") || "Objective"} body={briefObjective} />
+              ) : null}
+              {upstreamContext ? (
+                <CollapsibleSection colors={colors} title="Upstream Context" body={upstreamContext} />
+              ) : null}
+              {protocolRules ? (
+                <CollapsibleSection colors={colors} title={t("workflows.protocolRules")} body={protocolRules} />
+              ) : null}
+            </>
+          )}
         </View>
       ) : null}
     </View>

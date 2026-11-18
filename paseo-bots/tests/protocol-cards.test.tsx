@@ -1,7 +1,15 @@
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { describe, expect, it, vi } from "vitest";
 import React from "react";
-import { parseBriefFields, segmentProtocolBlocks } from "../shared/protocol-cards";
+import {
+  containsProtocolBlock,
+  isBriefDispatchMessage,
+  parseBriefFields,
+  segmentProtocolBlocks,
+  transformAssistantProtocolCards,
+  transformUserProtocolCards,
+} from "../shared/protocol-cards";
+import { ProtocolCardsRow } from "../client/chat/stream/rows";
 
 vi.mock("react-native", () => ({
   Platform: { OS: "web", select: (o: Record<string, unknown>) => o.web ?? o.default },
@@ -206,7 +214,7 @@ describe("segmentProtocolBlocks (DoD-3A parser)", () => {
     expect(fields.UPSTREAM_CONTEXT).toContain("Detailed requirements here.");
   });
 
-  it("ignores <worker_protocol> instruction templates wrapping protocol blocks", () => {
+  it("matches <worker_protocol> as a single block without inner template becoming a fake PASS card", () => {
     const input = [
       "Here is the instruction prompt:",
       "<worker_protocol>",
@@ -220,9 +228,17 @@ describe("segmentProtocolBlocks (DoD-3A parser)", () => {
     ].join("\n");
 
     const segments = segmentProtocolBlocks(input);
-    expect(segments.some((s) => s.kind === "protocol")).toBe(false);
-    expect(segments.length).toBeGreaterThan(0);
-    expect(segments.every((s) => s.kind === "text")).toBe(true);
+    expect(segments.map((s) => s.kind)).toEqual(["text", "protocol", "text"]);
+    expect(segments[0]?.kind === "text" && segments[0].text).toContain("Here is the instruction prompt:");
+
+    const proto = segments[1] as Extract<(typeof segments)[number], { kind: "protocol" }>;
+    expect(proto.tag).toBe("worker_protocol");
+    expect(proto.fields.RULES).toContain("Output `<worker_handoff>` with STATUS");
+    expect(proto.fields.RULES).toContain("Fake template example");
+
+    // Inner worker_handoff is NOT extracted as a separate protocol card
+    expect(segments.filter((s) => s.kind === "protocol" && s.tag === "worker_handoff")).toHaveLength(0);
+    expect(segments[2]?.kind === "text" && segments[2].text).toBe("Real trailing text");
   });
 
   it("ignores placeholder template status values like [PASS | PARTIAL and never renders a fake PASS card", () => {
@@ -447,5 +463,331 @@ describe("ProtocolCard (DoD-3A UI)", () => {
     });
     const standaloneMd = renderer.root.findByProps({ "data-testid": "markdown" });
     expect(standaloneMd.children).toEqual(["Standalone `test` **markdown**"]);
+  });
+
+  it("prevents nested UPSTREAM_CONTEXT handoff leakage into <task_brief> and renders collapsed <worker_protocol>", async () => {
+    const prompt = [
+      "<task_brief>",
+      "- WORKFLOW: moAdmin Closed Loop",
+      "- STAGE_ID: moadmin-finalize",
+      "- STAGE_NAME: Finalize",
+      "- UPSTREAM_CONTEXT:",
+      "  ### From \"moadmin-review\" (moadmin-review):",
+      "  <worker_handoff>",
+      "  STATUS: PASS",
+      "  SUMMARY: Review passed. All acceptance criteria met.",
+      "  TOUCHED_FILES:",
+      "    - client/chat/stream/ProtocolCard.tsx",
+      "    - shared/protocol-cards.ts",
+      "  VERIFICATION_PROOF:",
+      "    - Command: `npm test`",
+      "    - Exit_Code: `0`",
+      "  DOD_CHECKLIST:",
+      "    - [x] DoD item 1 verified",
+      "    - [x] DoD item 2 verified",
+      "  OPEN_ISSUES: None",
+      "  </worker_handoff>",
+      "- SPECIFICATION:",
+      "  Finalize the run and write back report.",
+      "</task_brief>",
+      "",
+      "<worker_protocol>",
+      "Output `<worker_handoff>` with STATUS, SUMMARY, TOUCHED_FILES, VERIFICATION_PROOF, OPEN_ISSUES.",
+      "</worker_protocol>",
+    ].join("\n");
+
+    const segments = segmentProtocolBlocks(prompt);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]?.kind).toBe("protocol");
+
+    const briefSeg = segments[0] as Extract<(typeof segments)[number], { kind: "protocol" }>;
+    expect(briefSeg.tag).toBe("task_brief");
+    expect(briefSeg.fields.WORKFLOW).toBe("moAdmin Closed Loop");
+    expect(briefSeg.fields.STAGE_ID).toBe("moadmin-finalize");
+    expect(briefSeg.fields.STAGE_NAME).toBe("Finalize");
+    expect(briefSeg.fields.SPECIFICATION).toBe("Finalize the run and write back report.");
+
+    // Critical assertion: zero leakage into outer task_brief fields!
+    expect(briefSeg.fields.TOUCHED_FILES).toBeUndefined();
+    expect(briefSeg.fields.VERIFICATION_PROOF).toBeUndefined();
+    expect(briefSeg.fields.DOD_CHECKLIST).toBeUndefined();
+    expect(briefSeg.fields.STATUS).toBeUndefined();
+    expect(briefSeg.fields.SUMMARY).toBeUndefined();
+    expect(briefSeg.fields.OPEN_ISSUES).toBeUndefined();
+
+    // UPSTREAM_CONTEXT preserved completely
+    expect(briefSeg.fields.UPSTREAM_CONTEXT).toContain("Review passed.");
+    expect(briefSeg.fields.UPSTREAM_CONTEXT).toContain("TOUCHED_FILES:");
+    expect(briefSeg.fields.UPSTREAM_CONTEXT).toContain("client/chat/stream/ProtocolCard.tsx");
+    expect(briefSeg.fields.UPSTREAM_CONTEXT).toContain("VERIFICATION_PROOF:");
+    expect(briefSeg.fields.UPSTREAM_CONTEXT).toContain("DOD_CHECKLIST:");
+
+    // <worker_protocol> merged directly into task_brief segment
+    expect(briefSeg.protocolRules).toBe(
+      "Output `<worker_handoff>` with STATUS, SUMMARY, TOUCHED_FILES, VERIFICATION_PROOF, OPEN_ISSUES."
+    );
+
+    // UI Rendering test for outer task_brief: zero touched files / verification proof / dod checklist cards
+    let briefRenderer!: ReactTestRenderer;
+    await act(async () => {
+      briefRenderer = create(<ProtocolCard colors={MOCK_COLORS} segment={briefSeg} />);
+    });
+
+    // Expand outer task_brief card
+    const briefExpandBtn = briefRenderer.root.findAllByType("button")[0]!;
+    await act(async () => {
+      briefExpandBtn.props.onPress();
+    });
+
+    // Assert that leaked sections are NOT mounted
+    expect(briefRenderer.root.findAll((n) => n.children.includes("workflows.protocolTouchedFiles"))).toHaveLength(0);
+    expect(briefRenderer.root.findAll((n) => n.children.includes("workflows.protocolVerificationProof"))).toHaveLength(0);
+    expect(briefRenderer.root.findAll((n) => n.children.includes("workflows.protocolDodChecklist"))).toHaveLength(0);
+    expect(briefRenderer.root.findAll((n) => n.children.includes("workflows.protocolOpenIssues"))).toHaveLength(0);
+    // Upstream Context section IS mounted
+    expect(briefRenderer.root.findAll((n) => n.children.includes("Upstream Context"))).toHaveLength(1);
+
+    // Merged protocolRules CollapsibleSection IS mounted inside task_brief card
+    const rulesBtn = briefRenderer.root
+      .findAllByType("button")
+      .find((b) => b.findAll((n) => n.children.includes("workflows.protocolRules")).length > 0);
+    expect(rulesBtn).toBeDefined();
+
+    // Default collapsed: rules markdown is not mounted
+    expect(
+      briefRenderer.root.findAll(
+        (n) =>
+          n.props["data-testid"] === "markdown" &&
+          n.children.includes("Output `<worker_handoff>` with STATUS, SUMMARY, TOUCHED_FILES, VERIFICATION_PROOF, OPEN_ISSUES.")
+      )
+    ).toHaveLength(0);
+
+    // Expand protocolRules section
+    await act(async () => {
+      rulesBtn!.props.onPress();
+    });
+
+    // When expanded, rules markdown IS mounted
+    expect(
+      briefRenderer.root.findAll(
+        (n) =>
+          n.props["data-testid"] === "markdown" &&
+          n.children.includes("Output `<worker_handoff>` with STATUS, SUMMARY, TOUCHED_FILES, VERIFICATION_PROOF, OPEN_ISSUES.")
+      )
+    ).toHaveLength(1);
+
+    // UI Rendering test for standalone worker_protocol (without preceding brief)
+    const standaloneProto = [
+      "<worker_protocol>",
+      "Output `<worker_handoff>` standalone.",
+      "</worker_protocol>",
+    ].join("\n");
+    const standaloneSegs = segmentProtocolBlocks(standaloneProto);
+    expect(standaloneSegs).toHaveLength(1);
+    const standaloneSeg = standaloneSegs[0] as Extract<(typeof standaloneSegs)[number], { kind: "protocol" }>;
+    expect(standaloneSeg.tag).toBe("worker_protocol");
+    expect(standaloneSeg.fields.RULES).toBe("Output `<worker_handoff>` standalone.");
+
+    let protoRenderer!: ReactTestRenderer;
+    await act(async () => {
+      protoRenderer = create(<ProtocolCard colors={MOCK_COLORS} segment={standaloneSeg} />);
+    });
+
+    // Default collapsed: rules markdown is not mounted
+    expect(protoRenderer.root.findAll((n) => n.props["data-testid"] === "markdown")).toHaveLength(0);
+    // Badge shows PROTOCOL
+    const protoBadges = protoRenderer.root.findAll((n) => n.children.includes("PROTOCOL"));
+    expect(protoBadges).toHaveLength(1);
+    // Title is Worker Protocol
+    const protoTitles = protoRenderer.root.findAll((n) => n.children.includes("workflows.protocolWorkerProtocol"));
+    expect(protoTitles).toHaveLength(1);
+
+    // Expand worker_protocol card
+    const protoExpandBtn = protoRenderer.root.findAllByType("button")[0]!;
+    await act(async () => {
+      protoExpandBtn.props.onPress();
+    });
+
+    // When expanded, rules markdown IS mounted
+    const protoMds = protoRenderer.root.findAll((n) => n.props["data-testid"] === "markdown");
+    expect(protoMds.length).toBeGreaterThan(0);
+    expect(protoMds.some((n) => n.children.includes("Output `<worker_handoff>` standalone."))).toBe(true);
+  });
+});
+
+describe("protocol-cards-user timeline transformer & brief dispatch guard", () => {
+  it("does NOT transform a memory-extraction user prompt containing quoted <task_brief> and <worker_handoff>", () => {
+    const memoryPrompt = [
+      'In a recent turn of "Feature Chat", the user expressed something worth remembering, but memory/MEMORY.md was not updated.',
+      "Review the exchange below and update memory/MEMORY.md directly (or a topic file under memory/) if there is a durable preference, correction (feedback with Why & How to apply), project decision, or reference.",
+      "Update existing entries rather than duplicating. Never store secrets. If nothing durable needs saving, do nothing.",
+      "",
+      "User: <task_brief>",
+      "- WORKFLOW: moAdmin Closed Loop",
+      "- STAGE_ID: mocode-impl",
+      "- STAGE_NAME: Implementation",
+      "- SPECIFICATION: Implement the feature",
+      "</task_brief>",
+      "",
+      "Assistant: Here is my output:",
+      "<worker_handoff>",
+      "STATUS: PASS",
+      "SUMMARY: Implemented all requirements.",
+      "TOUCHED_FILES: client/index.ts",
+      "VERIFICATION_PROOF:",
+      "  - Command: `npm test`",
+      "  - Exit_Code: `0`",
+      "DOD_CHECKLIST:",
+      "  - [x] All tests pass",
+      "OPEN_ISSUES: None",
+      "</worker_handoff>",
+    ].join("\n");
+
+    // Fast-path probe detects protocol XML is present in raw text
+    expect(containsProtocolBlock(memoryPrompt)).toBe(true);
+
+    // Guard identifies this as a non-dispatch message (has leading prose, transcript markers, worker_handoff)
+    expect(isBriefDispatchMessage(memoryPrompt)).toBe(false);
+
+    // Critical assertion: protocol-cards-user timeline transformer returns undefined!
+    // Paseo will NOT replace the user bubble with unbubbled cards/text chunks.
+    const transformResult = transformUserProtocolCards({ text: memoryPrompt });
+    expect(transformResult).toBeUndefined();
+  });
+
+  it("transforms a genuine worker dispatch user message starting with <task_brief> and <worker_protocol> into a merged ProtocolCard", async () => {
+    const dispatchPrompt = [
+      "<task_brief>",
+      "- WORKFLOW: moAdmin Closed Loop",
+      "- STAGE_ID: mocode-impl",
+      "- STAGE_NAME: Implementation",
+      "- SPECIFICATION: Implement the feature",
+      "</task_brief>",
+      "",
+      "<worker_protocol>",
+      "Output `<worker_handoff>` with STATUS, SUMMARY, TOUCHED_FILES, VERIFICATION_PROOF, OPEN_ISSUES.",
+      "</worker_protocol>",
+    ].join("\n");
+
+    // Guard identifies genuine worker dispatch
+    expect(isBriefDispatchMessage(dispatchPrompt)).toBe(true);
+
+    // protocol-cards-user timeline transformer returns protocol-card item
+    const transformResult = transformUserProtocolCards({ text: dispatchPrompt });
+    expect(transformResult).toBeDefined();
+    expect(transformResult?.items).toHaveLength(1);
+    expect(transformResult?.items[0]?.kind).toBe("protocol-card");
+    expect(transformResult?.items[0]?.data.role).toBe("user");
+    expect(transformResult?.items[0]?.data.text).toBe(dispatchPrompt);
+
+    // Verify UI rendering: merged into a single ProtocolCard with brief and collapsed rules
+    const segments = segmentProtocolBlocks(dispatchPrompt);
+    expect(segments).toHaveLength(1);
+    const briefSeg = segments[0] as Extract<(typeof segments)[number], { kind: "protocol" }>;
+    expect(briefSeg.tag).toBe("task_brief");
+    expect(briefSeg.fields.WORKFLOW).toBe("moAdmin Closed Loop");
+    expect(briefSeg.fields.STAGE_ID).toBe("mocode-impl");
+    expect(briefSeg.protocolRules).toContain("Output `<worker_handoff>`");
+
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ProtocolCard colors={MOCK_COLORS} segment={briefSeg} />);
+    });
+
+    // Badge shows STAGE_ID
+    expect(renderer.root.findAll((n) => n.children.includes("mocode-impl"))).toHaveLength(1);
+    // Subtitle shows WORKFLOW and STAGE_NAME
+    expect(renderer.root.findAll((n) => n.children.includes("moAdmin Closed Loop · Implementation"))).toHaveLength(1);
+  });
+
+  it("handles retry worker dispatches starting with <repair_brief>", () => {
+    const retryPrompt = [
+      "<repair_brief>",
+      "- WORKFLOW: moAdmin Closed Loop",
+      "- STAGE_ID: mocode-impl",
+      "- PREVIOUS_FAILURE: Exit code 1 on test suite",
+      "</repair_brief>",
+      "",
+      "<task_brief>",
+      "- WORKFLOW: moAdmin Closed Loop",
+      "- STAGE_ID: mocode-impl",
+      "- SPECIFICATION: Fix the test failure",
+      "</task_brief>",
+      "",
+      "<worker_protocol>",
+      "Output `<worker_handoff>` upon completion.",
+      "</worker_protocol>",
+    ].join("\n");
+
+    expect(isBriefDispatchMessage(retryPrompt)).toBe(true);
+    const result = transformUserProtocolCards({ text: retryPrompt });
+    expect(result).toBeDefined();
+    expect(result?.items[0]?.kind).toBe("protocol-card");
+  });
+
+  it("does NOT transform user messages with conversational leading text before <task_brief> or transcript quotes", () => {
+    const conversational = "Hey bot, can you check this brief:\n<task_brief>\n- WORKFLOW: test\n</task_brief>";
+    expect(isBriefDispatchMessage(conversational)).toBe(false);
+    expect(transformUserProtocolCards({ text: conversational })).toBeUndefined();
+
+    const transcriptOnly = "User: <task_brief>\n- WORKFLOW: test\n</task_brief>";
+    expect(isBriefDispatchMessage(transcriptOnly)).toBe(false);
+    expect(transformUserProtocolCards({ text: transcriptOnly })).toBeUndefined();
+
+    const plainUserMsg = "Just a normal user message asking for help.";
+    expect(containsProtocolBlock(plainUserMsg)).toBe(false);
+    expect(isBriefDispatchMessage(plainUserMsg)).toBe(false);
+    expect(transformUserProtocolCards({ text: plainUserMsg })).toBeUndefined();
+
+    const trailingCommentary = "<task_brief>\n- WORKFLOW: test\n</task_brief>\nPlease also make sure to run tests.";
+    expect(isBriefDispatchMessage(trailingCommentary)).toBe(false);
+    expect(transformUserProtocolCards({ text: trailingCommentary })).toBeUndefined();
+
+    const middleCommentary = "<task_brief>\n- WORKFLOW: test\n</task_brief>\nSome outside commentary\n<worker_protocol>\nRules\n</worker_protocol>";
+    expect(isBriefDispatchMessage(middleCommentary)).toBe(false);
+    expect(transformUserProtocolCards({ text: middleCommentary })).toBeUndefined();
+  });
+
+  it("transforms genuine dispatches wrapped in markdown code fences or blockquotes", () => {
+    const fencedPrompt = [
+      "```xml",
+      "<task_brief>",
+      "- WORKFLOW: CI Workflow",
+      "- STAGE_ID: test-run",
+      "</task_brief>",
+      "```",
+    ].join("\n");
+
+    expect(isBriefDispatchMessage(fencedPrompt)).toBe(true);
+    const result = transformUserProtocolCards({ text: fencedPrompt });
+    expect(result).toBeDefined();
+    expect(result?.items[0]?.kind).toBe("protocol-card");
+
+    const blockquotedPrompt = [
+      "> <task_brief>",
+      "> - WORKFLOW: Blockquoted CI",
+      "> - STAGE_ID: bq-test",
+      "> </task_brief>",
+    ].join("\n");
+
+    expect(isBriefDispatchMessage(blockquotedPrompt)).toBe(true);
+    expect(transformUserProtocolCards({ text: blockquotedPrompt })).toBeDefined();
+  });
+
+  it("renders ProtocolCardsRow correctly for dispatch segments and text", async () => {
+    const dispatchPrompt = [
+      "<task_brief>",
+      "- WORKFLOW: CI",
+      "- STAGE_ID: stage-1",
+      "</task_brief>",
+    ].join("\n");
+
+    const segments = segmentProtocolBlocks(dispatchPrompt);
+    let renderer!: ReactTestRenderer;
+    await act(async () => {
+      renderer = create(<ProtocolCardsRow colors={MOCK_COLORS} segments={segments} role="user" />);
+    });
+
+    expect(renderer.root.findAll((n) => n.children.includes("stage-1"))).toHaveLength(1);
   });
 });

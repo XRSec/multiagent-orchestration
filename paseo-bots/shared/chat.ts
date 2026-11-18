@@ -15,6 +15,14 @@ export const TEAM_SESSION_LABEL = "paseo-bots.team-session";
 /** Label on chats carrying the session role (dm, team-lead, team-direct-specialist, dispatched-worker). */
 export const SESSION_ROLE_LABEL = "paseo-bots.session-role";
 
+/** Label on chats carrying the workflow task ID. */
+export const WORKFLOW_TASK_LABEL = "paseo-bots:workflow-task";
+export const WORKFLOW_ID_LABEL = WORKFLOW_TASK_LABEL;
+
+/** Label on chats carrying the workflow stage ID. */
+export const WORKFLOW_STAGE_LABEL = "paseo-bots:workflow-stage";
+export const WORKFLOW_STAGE_ID_LABEL = WORKFLOW_STAGE_LABEL;
+
 /** Label on chats started by a routine, carrying the routine id. */
 export const ROUTINE_LABEL = "paseo-bots.routine";
 

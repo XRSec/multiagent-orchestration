@@ -21,15 +21,19 @@ import {
 const NOW = "2026-11-18T00:00:00.000Z";
 let testHome = "";
 const prevPaseoHome = process.env.PASEO_HOME;
+const prevAgyAgentsDir = process.env.AGY_AGENTS_DIR;
 
 beforeAll(() => {
   testHome = mkdtempSync(join(tmpdir(), "paseo-wf-blackboard-"));
   process.env.PASEO_HOME = testHome;
+  process.env.AGY_AGENTS_DIR = join(testHome, "agents");
 });
 
 afterAll(() => {
   if (prevPaseoHome === undefined) delete process.env.PASEO_HOME;
   else process.env.PASEO_HOME = prevPaseoHome;
+  if (prevAgyAgentsDir === undefined) delete process.env.AGY_AGENTS_DIR;
+  else process.env.AGY_AGENTS_DIR = prevAgyAgentsDir;
   rmSync(testHome, { recursive: true, force: true });
 });
 
@@ -488,6 +492,7 @@ describe("Workflow Blackboard Wiring & File-Backed Stage Handoffs (WP-5)", () =>
         labels: { "custom.flag": "true" },
         group,
         teamSessionId: "team-sess-specialist-1",
+        syncAgy: false,
       });
 
       expect(createdAgents).toHaveLength(1);
@@ -518,6 +523,7 @@ describe("Workflow Blackboard Wiring & File-Backed Stage Handoffs (WP-5)", () =>
         teamSessionId: "team-sess-stage-2",
         isWorkflowStage: true,
         stageSeatKey: "stage-1-bot-mocode",
+        syncAgy: false,
       });
 
       expect(createdAgents).toHaveLength(2);
@@ -568,6 +574,7 @@ describe("Workflow Blackboard Wiring & File-Backed Stage Handoffs (WP-5)", () =>
         labels: {},
         agentId: assignedAgentId,
         group: null,
+        syncAgy: false,
       });
 
       expect(createdAgents).toHaveLength(1);

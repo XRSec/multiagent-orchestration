@@ -39,7 +39,7 @@ export interface OrphanedAgyAgent {
 export type OrphanedAgyAction = "delete" | "disable";
 
 export function defaultAgyAgentsDir(): string {
-  return join(homedir(), ".gemini", "config", "agents");
+  return process.env.AGY_AGENTS_DIR || join(homedir(), ".gemini", "config", "agents");
 }
 
 function assertValidAgentName(name: string): string {

@@ -75,6 +75,7 @@ export interface StartWorkflowInput {
   taskId?: string;
   wait?: boolean;
   waitTimeoutMs?: number;
+  notifyCallerOnSettle?: boolean;
   dispatchStage?: (ctx: StageDispatchContext) => Promise<StageDispatchResult>;
 }
 
@@ -138,6 +139,7 @@ export async function startWorkflowExecution(
     group,
     callerBotId: caller.bot.id,
     callerAgentId: caller.agentId,
+    notifyCallerOnSettle: args.notifyCallerOnSettle ?? !args.wait,
     ...(args.dispatchStage ? { dispatchStage: args.dispatchStage } : {}),
   });
 

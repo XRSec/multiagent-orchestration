@@ -1,12 +1,42 @@
-# moAdmin · 任务编排与治理主管 — Knowledge Index
+# moAdmin (`bot_moadmin_director_03`) — Knowledge Index
+
 - **Bot ID**: `bot_moadmin_director_03`
-- **Initialized**: 2026-11-05T08:41:36.946Z
+- **Initialized**: `2026-11-05T08:41:36.946Z`
+
+## user
+- **Agent-First & Language Discipline**: Author internal specs, memory shards, skills, and protocols in dense, rule-first `en-US`; reply to the operator in `zh-CN` while preserving code identifiers and verbatim quotes.
+- **Desktop Full-Window Bots Views**: Render `paseo-bots` Analytics (`数据分析`) and Team Graph (`团队关系图`) views full-window on desktop rather than half-window split panes, and expose a session selector (including archived sessions) on the Analytics view.
+
+## feedback
+- **Bypass Unrendered `propose_changes` Cards**: Do not ask the operator to click `propose_changes` confirmation cards when creating or modifying Bots or Teams.
+  - **Why**: Current chat client surfaces do not render `propose_changes` confirmation cards, leaving card-gated proposals unactionable.
+  - **How to apply**: When the operator explicitly requests Bot or Team creation/modification, run `applyChanges` + `botSettings.schema.parse` from `paseo-bots/shared/changes.ts` via `bun -e` to write directly to `bots.json` (`$PROJECT_ROOT/plugin-settings/bots.json` / `paseo-bots-plugin-settings/bots.json`).
+- **Wrap Direct `bots.json` Writes in Current Versioned Envelope (`version: 4`)**: Never write bare `botSettings.schema.parse(...)` output directly to `bots.json`, and do not downgrade the envelope version to `3`.
+  - **Why**: `botSettings.schema.parse(...)` validates only the inner `values` payload while `BOT_SETTINGS_VERSION` in `paseo-bots/shared/bot.ts` is `4`; bare output fails Paseo settings loading and stale task prompts referencing `v3` cause schema version drift.
+  - **How to apply**: Always read the existing `version` (currently `4`) and wrap direct `bots.json` disk writes as `{ "version": 4, "values": <parsed> }`.
+
+## project
+- **Pure Orchestrator Boundary**: `bot-moadmin` manages task decomposition (`.t3/TASK_MANIFEST.md`) and specialist dispatch (`bot-*` prefixed subagents via `invoke_subagent` / `send_message`), delegating all repository code and doc edits to domain bots.
+- **Silent Routine Check Skip**: Output exact token `NO_REPLY` when invoked on no-delta routine checks (e.g., `moAdmin · Memory check`).
+- **Workflow Runtime & Blackboard Contract (`paseo-bots`)**:
+  - `runWorkflowDag` deduplicates `wf-` fallback `teamSessionId` prefixes, enforces `waitForFinish(stageTimeoutMs)` timeout failure detection, treats `<worker_handoff>` `STATUS: PARTIAL | BLOCKED | FAILED` as stage failures for bounded retry, and reuses an idle `stage.chatId` via `sendBotMessage` on `<repair_brief>` retries (falling back to `startChat` only when unavailable).
+  - `reconcileOrphanWorkflows` (`paseo-bots/server/workflow-runner.ts`, `paseo-bots/index.server.ts`) guards in-flight runs via `activeWorkflowTaskIds`, settling stale `running` disk tasks on plugin startup (`staleAfterMs: 0`) and `bots.workflows.runs` reads (`DEFAULT_ORPHAN_STALE_MS`) while refreshing `TaskCard` state.
+  - `buildStageBriefPrompt` injects `- SESSION_BOARD` and `- TASK_MANIFEST` paths into `<task_brief>`, eliminating path drift when team `cwd` is `null`; `parseWorkerHandoff` extracts all 6 canonical fields (`STATUS`, `SUMMARY`, `TOUCHED_FILES`, `VERIFICATION_PROOF`, `DOD_CHECKLIST`, `OPEN_ISSUES`) with Markdown bold/list tolerance.
+  - Chat stream (`paseo-bots/shared/protocol-cards.ts`, `paseo-bots/client/chat/stream/ProtocolCard.tsx`, `rows.tsx`) segments `<task_brief>`, `<repair_brief>`, and `<worker_handoff>` outside fenced code blocks into collapsible `PASS`/`PARTIAL`/`BLOCKED`/`FAILED` cards (`en`/`zh-CN` i18n); partner chat links route through `navigateToAgentChat` (`paseo-bots/client/navigation.ts`) and single-pass `handledRouteRef` sync in `BotsSurfaceReady.tsx` to open existing `stage.chatId` sessions without blank-session resets.
+  - `wf-moadmin-closed-loop` wires cross-hop `dependsOn` edges (`moci-verify` -> `["moadmin-plan", "mocode-impl"]`; `modoc-writeback` -> `["mocode-impl", "moadmin-review"]`) so QA and doc specialists receive upstream DoD and `TOUCHED_FILES` directly.
+- **`paseo-bots/client` UI & CDS Adaptation**:
+  - `paseo-bots/client` runs on React Native (`react-native` / `react-native-web`) + `@getpaseo/plugin` `PluginTheme` (`theme.ts`, `native.ts`, `motion.ts`, `typography.ts`), with `tsc --noEmit` and `vitest run` in `paseo-bots/package.json`.
+  - When applying `/open-claude-ui` (CDS), bridge tokens, single-stroke borders, clay/accent role separation, `prefers-reduced-motion` curves, IME composition guards, 150ms scroll-pinning cooldown, and `tabular-nums` natively into RN primitives—never paste raw HTML/CSS.
+
+## reference
 - **Active Memory Shards**:
   - `user_agent-first-multi-agent-system.md`
   - `user_language-discipline.md`
   - `user_skills-are-for-machines.md`
   - `reference_taskforce-orchestration-protocols.md`
-
-## Paseo Client Quirks
-- 当前对话客户端不渲染 `propose_changes` 的确认卡片；在用户明确要求创建/修改 Bot 或 Team 时，直接通过 `bun -e` 调用 `paseo-bots/shared/changes.ts` 的 `applyChanges` + `botSettings.schema.parse` 写入 `$PROJECT_ROOT/plugin-settings/bots.json`，不要让用户去点击看不见的 Proposal 卡片。
-- `botSettings.schema.parse(...)` 只校验内层结构；直接写盘 `bots.json` 时**必须**用 `{ "version": 3, "values": <parsed> }` 包裹（否则 Paseo 读取会报 `Invalid input`）。
+- **Key Implementation Pointers**:
+  - Bot roster & workflows SSOT: `paseo-bots-plugin-settings/bots.json`
+  - Settings mutation & schema helper: `paseo-bots/shared/changes.ts`, `paseo-bots/shared/bot.ts`
+  - Workflow engine, contracts & live UI: `paseo-bots/server/workflow-runner.ts`, `paseo-bots/shared/workflows.ts`, `paseo-bots/shared/protocol-cards.ts`, `paseo-bots/client/chat/stream/ProtocolCard.tsx`, `paseo-bots/client/WorkflowsScreen.tsx` (`bots.workflows.runs` RPC)
+  - Workflow architecture spec: `docs/paseo/paseo-bots-workflow-engine-and-routing.md` (`v1.2.0`)
+  - Desktop Bots surface & chat routing: `paseo-bots/client/BotsSurfaceReady.tsx`, `paseo-bots/client/navigation.ts`

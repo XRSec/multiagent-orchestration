@@ -130,6 +130,22 @@ export const launcherStyles = StyleSheet.create({
     fontSize: ui(13),
     fontWeight: "500",
   },
+  workflowSection: {
+    width: "100%",
+  },
+  stageBadge: {
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    minWidth: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stageBadgeText: {
+    fontSize: ui(10),
+    fontWeight: "600",
+    lineHeight: 12,
+  },
   inputWrapper: {
     borderRadius: 8,
     borderWidth: 1,

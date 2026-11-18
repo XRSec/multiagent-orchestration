@@ -22,6 +22,8 @@ describe("launcher i18n completeness", () => {
     expect(zhKeys).toContain("defaultAttachmentPrompt");
     expect(zhKeys).toContain("scrollLeft");
     expect(zhKeys).toContain("scrollRight");
+    expect(zhKeys).toContain("workflowLabel");
+    expect(zhKeys).toContain("workflowFreeChat");
   });
 });
 

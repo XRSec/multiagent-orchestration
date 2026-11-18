@@ -73,6 +73,7 @@ export const WorkflowRunStateSchema = z.object({
   completedAt: z.string().nullable().default(null),
   teamSessionId: z.string().optional(),
   sessionBoardPath: z.string().optional(),
+  chatsArchivedAt: z.string().nullable().optional(),
 });
 export type WorkflowRunState = z.infer<typeof WorkflowRunStateSchema>;
 

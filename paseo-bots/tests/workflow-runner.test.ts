@@ -17,15 +17,19 @@ import {
 const NOW = "2026-11-18T00:00:00.000Z";
 let home = "";
 const previousHome = process.env.PASEO_HOME;
+const previousAgyAgentsDir = process.env.AGY_AGENTS_DIR;
 
 beforeAll(() => {
   home = mkdtempSync(join(tmpdir(), "paseo-bots-wf-runner-"));
   process.env.PASEO_HOME = home;
+  process.env.AGY_AGENTS_DIR = join(home, "agents");
 });
 
 afterAll(() => {
   if (previousHome === undefined) delete process.env.PASEO_HOME;
   else process.env.PASEO_HOME = previousHome;
+  if (previousAgyAgentsDir === undefined) delete process.env.AGY_AGENTS_DIR;
+  else process.env.AGY_AGENTS_DIR = previousAgyAgentsDir;
   rmSync(home, { recursive: true, force: true });
 });
 
@@ -900,5 +904,695 @@ describe("workflow-runner DAG execution", () => {
     expect(s2?.status).toBe("skipped");
     expect(settled?.workflow?.status).toBe("failed");
     expect(settled?.status).toBe("blocked");
+  });
+
+  it("wakes callerAgentId with distilled stage summary on background workflow completion when notifyCallerOnSettle is enabled", async () => {
+    const { openTask } = await import("../server/tasks");
+    const { runWorkflowDag } = await import("../server/workflow-runner");
+
+    const bots = [
+      makeBot({ id: "bot-lead", name: "moAdmin" }),
+      makeBot({ id: "bot-worker", name: "Worker" }),
+    ];
+    const group: BotGroup = {
+      id: "team-wake",
+      name: "TeamWake",
+      logo: null,
+      leadId: "bot-lead",
+      memberIds: bots.map((b) => b.id),
+      instructions: "",
+      cwd: null,
+      mounts: [],
+      createdAt: NOW,
+      updatedAt: NOW,
+    };
+    const workflow = WorkflowDefinitionSchema.parse({
+      id: "wf-wake-caller",
+      name: "Wake Caller Workflow",
+      stages: [
+        { id: "s1", name: "Planning", botId: "bot-lead", prompt: "Plan", engine: "auto" },
+        { id: "s2", name: "Execution", botId: "bot-worker", prompt: "Execute", engine: "auto", dependsOn: ["s1"] },
+      ],
+    });
+
+    const botMap = new Map(bots.map((b) => [b.id, b]));
+    const initial = initWorkflowRunState(workflow, (id) => botMap.get(id) ?? null, (id) => botMap.get(id)?.provider);
+    await openTask({
+      taskId: "task-wf-wake-caller",
+      title: "Workflow: Wake Caller",
+      acceptance: "All stages complete",
+      groupId: group.id,
+      workflow: initial,
+    });
+
+    const sentMessages: { agentId: string; text: string; options?: unknown }[] = [];
+    const mockCallerRef = {
+      refresh: async () => ({
+        agent: {
+          id: "caller-chat-wake-1",
+          status: "idle",
+          archivedAt: null,
+        },
+      }),
+      send: async (text: string, options?: unknown) => {
+        sentMessages.push({ agentId: "caller-chat-wake-1", text, options });
+      },
+      timeline: {
+        append: async () => {},
+        refetch: async () => ({ entries: [] }),
+      },
+    };
+
+    const mockPaseo = {
+      agents: {
+        list: async () => ({ entries: [{ agent: { id: "caller-chat-wake-1" } }] }),
+        ref: (id: string) => {
+          if (id === "caller-chat-wake-1") return mockCallerRef;
+          return {
+            timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+          };
+        },
+      },
+    };
+
+    const host = {
+      paseo: mockPaseo,
+      requirePaseo: () => mockPaseo,
+      chatOf: async () => ({ botId: "bot-lead", title: null, routineId: null, labels: {} }),
+      values: async () => ({ bots, groups: [group] }),
+      library: async () => ({ skills: [], mcpServers: [] }),
+      bots: async () => bots,
+      bot: async (id: string) => bots.find((b) => b.id === id) ?? null,
+    } as unknown as BotsHost;
+
+    const relay = {
+      mountTools: async () => [],
+      mountApps: async () => null,
+    } as unknown as Relay;
+
+    const finalState = await runWorkflowDag({
+      host,
+      relay,
+      taskId: "task-wf-wake-caller",
+      workflow,
+      userInput: "Please execute full workflow in background",
+      group,
+      callerBotId: "bot-lead",
+      callerAgentId: "caller-chat-wake-1",
+      notifyCallerOnSettle: true,
+      dispatchStage: async (ctx) => {
+        return {
+          ok: true,
+          output: `Output of ${ctx.stage.name}: finished successfully with handoff deliverables.`,
+        };
+      },
+    });
+
+    expect(finalState.status).toBe("done");
+    expect(finalState.stages.every((s) => s.status === "done")).toBe(true);
+
+    // Verify callerAgentId received the completion wake via sendBotMessage
+    expect(sentMessages).toHaveLength(1);
+    const wake = sentMessages[0]!;
+    expect(wake.agentId).toBe("caller-chat-wake-1");
+    expect(wake.text).toContain("[Workflow Completion: Wake Caller Workflow — DONE]");
+    expect(wake.text).toContain("Workflow \"Wake Caller Workflow\" has completed with status: **done**.");
+    expect(wake.text).toContain("Planning");
+    expect(wake.text).toContain("Execution");
+    expect(wake.text).toContain("handoffs/s1-bot-lead.md");
+    expect(wake.text).toContain("handoffs/s2-bot-worker.md");
+    expect(wake.text).toContain("Output of Execution: finished successfully with handoff deliverables.");
+    expect(wake.text).toContain("Please review the final results and deliver the report to the user.");
+  });
+
+  it("safely skips waking callerAgentId when caller chat is archived", async () => {
+    const { openTask } = await import("../server/tasks");
+    const { runWorkflowDag } = await import("../server/workflow-runner");
+
+    const bots = [makeBot({ id: "bot-worker", name: "Worker" })];
+    const workflow = WorkflowDefinitionSchema.parse({
+      id: "wf-archived-caller",
+      name: "Archived Caller",
+      stages: [{ id: "step1", name: "Step 1", botId: "bot-worker", prompt: "Work", engine: "auto" }],
+    });
+    const botMap = new Map(bots.map((b) => [b.id, b]));
+    const initial = initWorkflowRunState(workflow, (id) => botMap.get(id) ?? null, (id) => botMap.get(id)?.provider);
+    await openTask({
+      taskId: "task-wf-archived-caller",
+      title: "Workflow: Archived Caller",
+      acceptance: "Done",
+      workflow: initial,
+    });
+
+    let sendCalled = false;
+    const mockCallerRef = {
+      refresh: async () => ({
+        agent: {
+          id: "archived-chat",
+          status: "idle",
+          archivedAt: new Date().toISOString(),
+        },
+      }),
+      send: async () => {
+        sendCalled = true;
+      },
+      timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+    };
+
+    const mockPaseo = {
+      agents: {
+        list: async () => ({ entries: [] }),
+        ref: (id: string) => (id === "archived-chat" ? mockCallerRef : { timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) } }),
+      },
+    };
+
+    const host = {
+      paseo: mockPaseo,
+      requirePaseo: () => mockPaseo,
+      chatOf: async () => ({ botId: "bot-worker", title: null, routineId: null, labels: {} }),
+      values: async () => ({ bots, groups: [] }),
+      library: async () => ({ skills: [], mcpServers: [] }),
+      bots: async () => bots,
+      bot: async (id: string) => bots.find((b) => b.id === id) ?? null,
+    } as unknown as BotsHost;
+
+    const relay = { mountTools: async () => [], mountApps: async () => null } as unknown as Relay;
+
+    const finalState = await runWorkflowDag({
+      host,
+      relay,
+      taskId: "task-wf-archived-caller",
+      workflow,
+      callerAgentId: "archived-chat",
+      notifyCallerOnSettle: true,
+      dispatchStage: async () => ({ ok: true, output: "Done" }),
+    });
+
+    expect(finalState.status).toBe("done");
+    expect(sendCalled).toBe(false);
+  });
+
+  it("archives stage child chats upon workflow settlement while strictly sparing callerAgentId and already-archived chats", async () => {
+    const { openTask } = await import("../server/tasks");
+    const { runWorkflowDag } = await import("../server/workflow-runner");
+
+    const bots = [
+      makeBot({ id: "bot-stage-1", name: "Worker 1" }),
+      makeBot({ id: "bot-stage-2", name: "Worker 2" }),
+      makeBot({ id: "bot-stage-3", name: "Worker 3" }),
+    ];
+    const workflow = WorkflowDefinitionSchema.parse({
+      id: "wf-archive-stages",
+      name: "Archive Stages",
+      stages: [
+        { id: "step1", name: "Step 1", botId: "bot-stage-1", prompt: "Work 1", engine: "auto" },
+        { id: "step2", name: "Step 2", botId: "bot-stage-2", prompt: "Work 2", engine: "auto", dependsOn: ["step1"] },
+        { id: "step3", name: "Step 3", botId: "bot-stage-3", prompt: "Work 3", engine: "auto", dependsOn: ["step2"] },
+      ],
+    });
+    const botMap = new Map(bots.map((b) => [b.id, b]));
+    const initial = initWorkflowRunState(workflow, (id) => botMap.get(id) ?? null, (id) => botMap.get(id)?.provider);
+    await openTask({
+      taskId: "task-wf-archive-stages",
+      title: "Workflow: Archive Stages",
+      acceptance: "Done",
+      workflow: initial,
+    });
+
+    const archivedChatIds: string[] = [];
+    const callerArchiveSpy = vi.fn(async () => {
+      archivedChatIds.push("caller-chat-id");
+    });
+    const stage1ArchiveSpy = vi.fn(async () => {
+      archivedChatIds.push("stage-chat-1");
+    });
+    const stage2ArchiveSpy = vi.fn(async () => {
+      archivedChatIds.push("stage-chat-2");
+    });
+    const stage3AlreadyArchivedSpy = vi.fn(async () => {
+      archivedChatIds.push("stage-chat-3");
+    });
+
+    const mockRefs: Record<string, any> = {
+      "caller-chat-id": {
+        refresh: async () => ({ agent: { id: "caller-chat-id", status: "idle", archivedAt: null } }),
+        archive: callerArchiveSpy,
+        send: async () => {},
+        timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+      },
+      "stage-chat-1": {
+        refresh: async () => ({ agent: { id: "stage-chat-1", status: "idle", archivedAt: null } }),
+        archive: stage1ArchiveSpy,
+        timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+      },
+      "stage-chat-2": {
+        refresh: async () => ({ agent: { id: "stage-chat-2", status: "idle", archivedAt: null } }),
+        archive: stage2ArchiveSpy,
+        timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+      },
+      "stage-chat-3": {
+        refresh: async () => ({ agent: { id: "stage-chat-3", status: "idle", archivedAt: "2026-11-18T00:00:00.000Z" } }),
+        archive: stage3AlreadyArchivedSpy,
+        timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+      },
+    };
+
+    const mockPaseo = {
+      agents: {
+        list: async () => ({ entries: [] }),
+        ref: (id: string) => mockRefs[id] ?? {
+          timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+        },
+      },
+    };
+
+    const host = {
+      paseo: mockPaseo,
+      requirePaseo: () => mockPaseo,
+      chatOf: async () => ({ botId: "bot-stage-1", title: null, routineId: null, labels: {} }),
+      values: async () => ({ bots, groups: [] }),
+      library: async () => ({ skills: [], mcpServers: [] }),
+      bots: async () => bots,
+      bot: async (id: string) => bots.find((b) => b.id === id) ?? null,
+    } as unknown as BotsHost;
+
+    const relay = { mountTools: async () => [], mountApps: async () => null } as unknown as Relay;
+
+    const finalState = await runWorkflowDag({
+      host,
+      relay,
+      taskId: "task-wf-archive-stages",
+      workflow,
+      callerAgentId: "caller-chat-id",
+      notifyCallerOnSettle: true,
+      dispatchStage: async (ctx) => {
+        if (ctx.stage.id === "step1") {
+          return { ok: true, output: "Stage 1 Done", chatId: "stage-chat-1" };
+        }
+        if (ctx.stage.id === "step2") {
+          return { ok: true, output: "Stage 2 Done", chatId: "stage-chat-2" };
+        }
+        return { ok: true, output: "Stage 3 Done", chatId: "stage-chat-3" };
+      },
+    });
+
+    expect(finalState.status).toBe("done");
+
+    // Stage 1 and 2 must be archived
+    expect(stage1ArchiveSpy).toHaveBeenCalledTimes(1);
+    expect(stage2ArchiveSpy).toHaveBeenCalledTimes(1);
+    expect(archivedChatIds).toContain("stage-chat-1");
+    expect(archivedChatIds).toContain("stage-chat-2");
+
+    // Stage 3 was already archived; its archive method must not be called
+    expect(stage3AlreadyArchivedSpy).not.toHaveBeenCalled();
+
+    // callerAgentId must NEVER be archived
+    expect(callerArchiveSpy).not.toHaveBeenCalled();
+    expect(archivedChatIds).not.toContain("caller-chat-id");
+  });
+
+  it("archives stage child chats upon failed workflow terminal settlement without archiving callerAgentId", async () => {
+    const { openTask } = await import("../server/tasks");
+    const { runWorkflowDag } = await import("../server/workflow-runner");
+
+    const bots = [
+      makeBot({ id: "bot-stage-1", name: "Worker 1" }),
+      makeBot({ id: "bot-stage-2", name: "Worker 2" }),
+    ];
+    const workflow = WorkflowDefinitionSchema.parse({
+      id: "wf-archive-failed",
+      name: "Archive Failed",
+      stages: [
+        { id: "step1", name: "Step 1", botId: "bot-stage-1", prompt: "Work 1", engine: "auto" },
+        { id: "step2", name: "Step 2", botId: "bot-stage-2", prompt: "Work 2", engine: "auto", dependsOn: ["step1"] },
+      ],
+    });
+    const botMap = new Map(bots.map((b) => [b.id, b]));
+    const initial = initWorkflowRunState(workflow, (id) => botMap.get(id) ?? null, (id) => botMap.get(id)?.provider);
+    await openTask({
+      taskId: "task-wf-archive-failed",
+      title: "Workflow: Archive Failed",
+      acceptance: "Done",
+      workflow: initial,
+    });
+
+    const stage1ArchiveSpy = vi.fn(async () => {});
+    const callerArchiveSpy = vi.fn(async () => {});
+
+    const mockRefs: Record<string, any> = {
+      "caller-chat-fail": {
+        refresh: async () => ({ agent: { id: "caller-chat-fail", status: "idle", archivedAt: null } }),
+        archive: callerArchiveSpy,
+        send: async () => {},
+        timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+      },
+      "stage-chat-fail-1": {
+        refresh: async () => ({ agent: { id: "stage-chat-fail-1", status: "idle", archivedAt: null } }),
+        archive: stage1ArchiveSpy,
+        timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+      },
+    };
+
+    const mockPaseo = {
+      agents: {
+        list: async () => ({ entries: [] }),
+        ref: (id: string) => mockRefs[id] ?? {
+          timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+        },
+      },
+    };
+
+    const host = {
+      paseo: mockPaseo,
+      requirePaseo: () => mockPaseo,
+      chatOf: async () => ({ botId: "bot-stage-1", title: null, routineId: null, labels: {} }),
+      values: async () => ({ bots, groups: [] }),
+      library: async () => ({ skills: [], mcpServers: [] }),
+      bots: async () => bots,
+      bot: async (id: string) => bots.find((b) => b.id === id) ?? null,
+    } as unknown as BotsHost;
+
+    const relay = { mountTools: async () => [], mountApps: async () => null } as unknown as Relay;
+
+    const finalState = await runWorkflowDag({
+      host,
+      relay,
+      taskId: "task-wf-archive-failed",
+      workflow,
+      callerAgentId: "caller-chat-fail",
+      notifyCallerOnSettle: true,
+      dispatchStage: async () => {
+        return { ok: false, error: "Unrecoverable fatal failure", chatId: "stage-chat-fail-1" };
+      },
+    });
+
+    expect(finalState.status).toBe("failed");
+    expect(stage1ArchiveSpy).toHaveBeenCalledTimes(1);
+    expect(callerArchiveSpy).not.toHaveBeenCalled();
+  });
+
+  it("archiveWorkflowStageChats deduplicates, ignores empty/caller chatIds, and safely handles errors", async () => {
+    const { archiveWorkflowStageChats } = await import("../server/workflow-runner");
+
+    const archivedCalls: string[] = [];
+    const mockPaseo = {
+      agents: {
+        ref: (id: string) => {
+          if (id === "throwing-chat") {
+            return {
+              archive: vi.fn(async () => {
+                throw new Error("Simulated archive failure");
+              }),
+            };
+          }
+          return {
+            archive: vi.fn(async () => {
+              archivedCalls.push(id);
+            }),
+          };
+        },
+      },
+    };
+
+    const host = {
+      paseo: mockPaseo,
+    } as unknown as BotsHost;
+
+    await archiveWorkflowStageChats(host, {
+      stages: [
+        { chatId: "chat-duplicate" },
+        { chatId: "chat-duplicate" },
+        { chatId: "caller-chat" },
+        { chatId: "  " },
+        { chatId: null },
+        { chatId: "throwing-chat" },
+        { chatId: "chat-unique" },
+      ],
+      callerAgentId: "caller-chat",
+    });
+
+    expect(archivedCalls).toEqual(["chat-duplicate", "chat-unique"]);
+  });
+
+  it("immediately archives completed stage session on stage status 'done' before subsequent stages finish", async () => {
+    const { openTask } = await import("../server/tasks");
+    const { runWorkflowDag } = await import("../server/workflow-runner");
+
+    const bots = [
+      makeBot({ id: "bot-stage-1", name: "Worker 1" }),
+      makeBot({ id: "bot-stage-2", name: "Worker 2" }),
+    ];
+    const workflow = WorkflowDefinitionSchema.parse({
+      id: "wf-immediate-stage-archive",
+      name: "Immediate Stage Archive Pipeline",
+      stages: [
+        { id: "step1", name: "Step 1", botId: "bot-stage-1", prompt: "Work 1", engine: "auto" },
+        { id: "step2", name: "Step 2", botId: "bot-stage-2", prompt: "Work 2", engine: "auto", dependsOn: ["step1"] },
+      ],
+    });
+    const botMap = new Map(bots.map((b) => [b.id, b]));
+    const initial = initWorkflowRunState(workflow, (id) => botMap.get(id) ?? null, (id) => botMap.get(id)?.provider);
+    await openTask({
+      taskId: "task-wf-immediate-stage-archive",
+      title: "Workflow: Immediate Stage Archive",
+      acceptance: "Done",
+      workflow: initial,
+    });
+
+    const timeline: string[] = [];
+    const stage1ArchiveSpy = vi.fn(async () => {
+      timeline.push("archive:stage-1");
+    });
+    const stage2ArchiveSpy = vi.fn(async () => {
+      timeline.push("archive:stage-2");
+    });
+
+    const mockRefs: Record<string, any> = {
+      "stage-chat-seq-1": {
+        refresh: async () => ({ agent: { id: "stage-chat-seq-1", status: "idle", archivedAt: null } }),
+        archive: stage1ArchiveSpy,
+        timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+      },
+      "stage-chat-seq-2": {
+        refresh: async () => ({ agent: { id: "stage-chat-seq-2", status: "idle", archivedAt: null } }),
+        archive: stage2ArchiveSpy,
+        timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+      },
+    };
+
+    const mockPaseo = {
+      agents: {
+        list: async () => ({ entries: [] }),
+        ref: (id: string) => mockRefs[id] ?? {
+          timeline: { append: async () => {}, refetch: async () => ({ entries: [] }) },
+        },
+      },
+    };
+
+    const host = {
+      paseo: mockPaseo,
+      requirePaseo: () => mockPaseo,
+      chatOf: async () => ({ botId: "bot-stage-1", title: null, routineId: null, labels: {} }),
+      values: async () => ({ bots, groups: [] }),
+      library: async () => ({ skills: [], mcpServers: [] }),
+      bots: async () => bots,
+      bot: async (id: string) => bots.find((b) => b.id === id) ?? null,
+    } as unknown as BotsHost;
+
+    const relay = { mountTools: async () => [], mountApps: async () => null } as unknown as Relay;
+
+    const finalState = await runWorkflowDag({
+      host,
+      relay,
+      taskId: "task-wf-immediate-stage-archive",
+      workflow,
+      dispatchStage: async (ctx) => {
+        if (ctx.stage.id === "step1") {
+          timeline.push("finish:step1");
+          return { ok: true, output: "Step 1 result", chatId: "stage-chat-seq-1" };
+        }
+        if (ctx.stage.id === "step2") {
+          // Verify Stage 1 is ALREADY archived before Stage 2 completes!
+          expect(timeline).toContain("archive:stage-1");
+          timeline.push("finish:step2");
+          return { ok: true, output: "Step 2 result", chatId: "stage-chat-seq-2" };
+        }
+        return { ok: false, error: "unknown stage" };
+      },
+    });
+
+    expect(finalState.status).toBe("done");
+    expect(finalState.chatsArchivedAt).toBeTruthy();
+    expect(stage1ArchiveSpy).toHaveBeenCalled();
+    expect(stage2ArchiveSpy).toHaveBeenCalled();
+    // Stage 1 archive must have occurred before Step 2 finished
+    const archive1Index = timeline.indexOf("archive:stage-1");
+    const finish2Index = timeline.indexOf("finish:step2");
+    expect(archive1Index).toBeGreaterThan(-1);
+    expect(finish2Index).toBeGreaterThan(-1);
+    expect(archive1Index).toBeLessThan(finish2Index);
+  });
+
+  it("reconcileOrphanWorkflows archives stage chatIds of reconciled orphan workflows (excluding cardAgentId) and stamps chatsArchivedAt", async () => {
+    const { openTask, readTask, updateTaskWorkflow } = await import("../server/tasks");
+    const { reconcileOrphanWorkflows } = await import("../server/workflow-runner");
+
+    const workflow = WorkflowDefinitionSchema.parse({
+      id: "wf-orphan-archive",
+      name: "Orphan Archive Pipeline",
+      stages: [
+        { id: "stg1", name: "Stage 1", botId: "bot-worker", prompt: "Step 1" },
+        { id: "stg2", name: "Stage 2", botId: "bot-worker", prompt: "Step 2", dependsOn: ["stg1"] },
+      ],
+    });
+
+    const initWf = initWorkflowRunState(workflow);
+    await openTask({
+      taskId: "task-orphan-archive-test",
+      title: "Orphan Archive Task",
+      acceptance: "Done",
+      workflow: initWf,
+    });
+
+    // Populate stage chatIds and cardAgentId
+    await updateTaskWorkflow("task-orphan-archive-test", (wf) => ({
+      ...wf,
+      stages: wf.stages.map((s, idx) => ({
+        ...s,
+        status: idx === 0 ? "running" : "pending",
+        chatId: `orphan-stage-chat-${idx + 1}`,
+      })),
+    }));
+
+    const archivedChats: string[] = [];
+    const mockPaseo = {
+      agents: {
+        ref: (chatId: string) => ({
+          refresh: async () => ({ agent: { id: chatId, status: "idle", archivedAt: null } }),
+          archive: vi.fn(async () => {
+            archivedChats.push(chatId);
+          }),
+          timeline: {
+            refetch: async () => ({ entries: [] }),
+            append: async () => {},
+          },
+        }),
+      },
+    };
+
+    const host = {
+      paseo: mockPaseo,
+      requirePaseo: () => mockPaseo,
+      chatOf: async () => ({ botId: "bot-worker", title: null, routineId: null, labels: {} }),
+      values: async () => ({ bots: [], groups: [] }),
+    } as unknown as BotsHost;
+
+    const task = await readTask("task-orphan-archive-test");
+    expect(task).not.toBeNull();
+    task!.cardAgentId = "caller-card-chat-safe";
+
+    const reconciled = await reconcileOrphanWorkflows({ host, tasks: [task!], staleAfterMs: 0 });
+    expect(reconciled.length).toBe(1);
+    expect(archivedChats).toContain("orphan-stage-chat-1");
+    expect(archivedChats).toContain("orphan-stage-chat-2");
+    expect(archivedChats).not.toContain("caller-card-chat-safe");
+
+    const settled = await readTask("task-orphan-archive-test");
+    expect(settled?.workflow?.chatsArchivedAt).toBeTruthy();
+  });
+
+  it("archiveSettledWorkflowStageChats retroactively archives already-settled historical tasks and stamps chatsArchivedAt", async () => {
+    const { openTask, readTask, settleTask, updateTaskWorkflow } = await import("../server/tasks");
+    const { archiveSettledWorkflowStageChats } = await import("../server/workflow-runner");
+    const { MEMORY_CURATION_LABEL } = await import("../server/memory-curator");
+
+    const workflow = WorkflowDefinitionSchema.parse({
+      id: "wf-historical-1",
+      name: "Historical Pipeline 1",
+      stages: [
+        { id: "h1", name: "Hist 1", botId: "bot-worker", prompt: "Step 1" },
+      ],
+    });
+
+    // Pre-sweep any residue tasks on disk from prior tests in this suite
+    const cleanupHost = {
+      paseo: {
+        agents: {
+          ref: () => ({ refresh: async () => null, archive: async () => {} }),
+        },
+      },
+    } as unknown as BotsHost;
+    await archiveSettledWorkflowStageChats(cleanupHost);
+
+    const archivedChats: string[] = [];
+    const curationAgent = {
+      id: "stale-curation-agent-1",
+      status: "idle",
+      archivedAt: null as string | null,
+      labels: { [MEMORY_CURATION_LABEL]: "true" },
+    };
+    const mockPaseo = {
+      agents: {
+        list: async () => ({
+          entries: curationAgent.archivedAt ? [] : [{ agent: curationAgent }],
+        }),
+        ref: (chatId: string) => ({
+          refresh: async () => ({ agent: { id: chatId, status: "idle", archivedAt: null } }),
+          archive: vi.fn(async () => {
+            if (chatId === curationAgent.id) {
+              curationAgent.archivedAt = new Date().toISOString();
+            }
+            archivedChats.push(chatId);
+          }),
+        }),
+      },
+    };
+
+    const host = {
+      paseo: mockPaseo,
+      requirePaseo: () => mockPaseo,
+    } as unknown as BotsHost;
+
+    // Create 2 settled historical tasks
+    for (const id of ["wf-hist-task-1", "wf-hist-task-2"]) {
+      const initWf = initWorkflowRunState(workflow);
+      initWf.status = "done";
+      initWf.stages[0]!.status = "done";
+      initWf.stages[0]!.chatId = `chat-${id}`;
+      await openTask({
+        taskId: id,
+        title: `Historical ${id}`,
+        acceptance: "Done",
+        workflow: initWf,
+      });
+      await settleTask(id, { status: "done" });
+    }
+
+    // First call: retroactively archives the 2 tasks from disk and sweeps 1 stale memory curation chat
+    const count1 = await archiveSettledWorkflowStageChats(host);
+    expect(count1).toBe(2);
+    expect(archivedChats).toContain("chat-wf-hist-task-1");
+    expect(archivedChats).toContain("chat-wf-hist-task-2");
+    expect(archivedChats).toContain("stale-curation-agent-1");
+
+    const t1 = await readTask("wf-hist-task-1");
+    const t2 = await readTask("wf-hist-task-2");
+    expect(t1?.workflow?.chatsArchivedAt).toBeTruthy();
+    expect(t2?.workflow?.chatsArchivedAt).toBeTruthy();
+
+    // Second call: no-op since both tasks are stamped with chatsArchivedAt on disk
+    archivedChats.length = 0;
+    const count2 = await archiveSettledWorkflowStageChats(host);
+    expect(count2).toBe(0);
+    expect(archivedChats).toHaveLength(0);
+
+    // Also supports passing in-memory pre-fetched tasks directly
+    const countWithTasks = await archiveSettledWorkflowStageChats(host, { tasks: [t1!, t2!] });
+    expect(countWithTasks).toBe(0);
+
+    // If host.paseo is missing: returns 0
+    const count3 = await archiveSettledWorkflowStageChats({ paseo: null } as any);
+    expect(count3).toBe(0);
   });
 });

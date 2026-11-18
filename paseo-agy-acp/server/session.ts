@@ -619,6 +619,8 @@ export class SessionManager {
 
 /** Bound on the settled-turn background probe so a local SQLite read cannot eat the cancel budget. */
 const SETTLED_BACKGROUND_PROBE_MS = 300
+const CONTEXT_WARN_THRESHOLD_TOKENS = 280_000
+const CONTEXT_AUTO_COMPACT_THRESHOLD_TOKENS = 300_000
 
 /** Resolve `probe` within `timeoutMs`; a timeout means "work may exist", never a silent skip. */
 async function backgroundWorkWithin(
@@ -713,6 +715,9 @@ async function createSession(
     turnFinished: false,
     turnStartedAt: 0,
     turnLastProgressAt: 0,
+    contextWarned: false,
+    contextAutoCompactTried: false,
+    contextNoticeSeq: 0,
     turnToolFailure: undefined as { id: string; error: string } | undefined,
     interrupting: null as Promise<void> | null,
     failed: false,
@@ -796,6 +801,26 @@ async function createSession(
       turnId: state.turn || undefined,
       usage,
     })
+    const used = usage.contextWindowUsedTokens
+    if (used !== undefined) {
+      if (used < CONTEXT_WARN_THRESHOLD_TOKENS) {
+        state.contextWarned = false
+        state.contextAutoCompactTried = false
+      } else if (!state.contextWarned && !state.loading) {
+        state.contextWarned = true
+        const usedK = Math.round(used / 1000)
+        emit({
+          type: 'timeline.item',
+          sessionId: id,
+          item: {
+            id: `${id}:context-warn:${++state.contextNoticeSeq}`,
+            type: 'notification',
+            level: 'warning',
+            message: `Context usage reached ${usedK}K tokens (>= 280K). At 300K, /compact will run automatically before the next message.`,
+          },
+        })
+      }
+    }
   }
   function flushDeferredUsage() {
     if (!deferredUsage || !state.opened || state.silenced) return
@@ -1897,6 +1922,9 @@ async function createSession(
       stopIdleWatcher,
       get contextWindowMaxTokens() {
         return nativeWindowSizes.get(configState(state.metadata).model)
+      },
+      get contextWindowUsedTokens() {
+        return usage?.contextWindowUsedTokens
       },
       publishStepContext(lastStep: StepUsage) {
         publishStepContext(lastStep)
@@ -3167,6 +3195,56 @@ async function promptSession(
       )
     })
     armWatchdog()
+    const usedTokensBeforeTurn = session.contextWindowUsedTokens
+    if (
+      !isCompactCommand &&
+      usedTokensBeforeTurn !== undefined &&
+      usedTokensBeforeTurn >= CONTEXT_AUTO_COMPACT_THRESHOLD_TOKENS &&
+      !session.state.contextAutoCompactTried
+    ) {
+      session.state.contextAutoCompactTried = true
+      const usedK = Math.round(usedTokensBeforeTurn / 1000)
+      emit({
+        type: 'timeline.item',
+        sessionId: session.id,
+        item: {
+          id: `${session.id}:context-autocompact:${++session.state.contextNoticeSeq}`,
+          type: 'notification',
+          level: 'info',
+          message: `Context usage reached ${usedK}K tokens (>= 300K). Running /compact before sending your message...`,
+        },
+      })
+      try {
+        await waitPrompt(
+          session.transport.rpc.prompt({
+            sessionId: session.state.nativeId,
+            prompt: [{ type: 'text', text: '/compact' }],
+          }),
+        )
+        await session.drain()
+        if (!isCurrent() && !turnAbort.signal.aborted)
+          throw new Error('ACP runtime replaced during turn')
+      } catch (error) {
+        if (
+          turnAbort.signal.aborted ||
+          !isCurrent() ||
+          session.state.closing ||
+          session.state.silenced
+        ) {
+          throw error
+        }
+        emit({
+          type: 'timeline.item',
+          sessionId: session.id,
+          item: {
+            id: `${session.id}:context-autocompact-failed:${++session.state.contextNoticeSeq}`,
+            type: 'notification',
+            level: 'warning',
+            message: `Automatic /compact failed (${formatErrorMessage(error)}); continuing with your message.`,
+          },
+        })
+      }
+    }
     const result = await waitPrompt(
       session.transport.rpc.prompt({
         sessionId: session.state.nativeId,

@@ -1,11 +1,16 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { journalSummary, lastTurn, logLine, matchesAll, parseLog, parseSince, recentWork, redactSecrets, searchWords, snippet } from "../shared/activity";
 import { lineDiff } from "../shared/diff";
 import { newUuid } from "../shared/uuid";
 import { fakeHost, makeBot } from "./helpers";
+import { SESSION_ROLE_LABEL } from "../shared/chat";
+import { ASKED_BY_LABEL } from "../shared/handoff";
+import { WORKFLOW_STAGE_LABEL, WORKFLOW_TASK_LABEL } from "../server/workflow-runner";
+import { MEMORY_CURATION_LABEL } from "../server/memory-curator";
+import { WORKER_PROTOCOL_SUFFIX } from "../shared/workflows";
 
 const at = (day: number, hour: number, minute = 0) => new Date(2026, 8, day, hour, minute);
 
@@ -265,5 +270,306 @@ describe("memory journal, daily log and search_chats", () => {
     // Simulate bot editing memory during turn by restoring seen snapshot before end:
     await turnEnded(host, { end: async () => true } as never, scheduler, { agent: { id: "user-agent-2", workspaceId: null, parentAgentId: null, provider: "claude", cwd: "/", title: null }, turnId: "t3", outcome: { kind: "completed" }, timeline }, curator);
     expect(curated).toEqual(["user-agent"]);
+  });
+
+  it("prevents machine-dispatched chats (workflow tasks, stages, worker roles, handoffs, routines, brief messages) from triggering curateTurnFallback", async () => {
+    const { turnEnded } = await import("../server/activity");
+    const { MemoryJournal } = await import("../server/journal");
+
+    const host = fakeHost([makeBot({ id: "bot-w", name: "Worker" })]);
+    let currentLabels: Record<string, string> = {};
+    let currentRoutineId: string | null = null;
+    host.chatOf = async () => ({
+      botId: "bot-w",
+      title: "Worker Chat",
+      routineId: currentRoutineId,
+      labels: currentLabels,
+    });
+    const scheduler = { finished: async () => {} };
+    const journal = new MemoryJournal();
+    await journal.begin("bot-w");
+
+    const curated: string[] = [];
+    const curator = {
+      isCurationAgent: () => false,
+      curateTurnFallback: async (input: { agentId: string }) => {
+        curated.push(input.agentId);
+        return true;
+      },
+    };
+
+    const makeAgent = (id: string) => ({
+      id,
+      workspaceId: null,
+      parentAgentId: null,
+      provider: "claude",
+      cwd: "/",
+      title: null,
+    });
+
+    // 1. Workflow task label
+    currentLabels = { [WORKFLOW_TASK_LABEL]: "task-123" };
+    currentRoutineId = null;
+    await turnEnded(
+      host,
+      journal,
+      scheduler,
+      {
+        agent: makeAgent("wf-task-agent"),
+        outcome: { kind: "completed" },
+        timeline: [
+          { type: "user_message", text: "Please remember this instruction" },
+          { type: "assistant_message", text: "Done" },
+        ],
+      },
+      curator,
+    );
+    expect(curated).toEqual([]);
+
+    // 2. Workflow stage label
+    currentLabels = { [WORKFLOW_STAGE_LABEL]: "stage-456" };
+    await turnEnded(
+      host,
+      journal,
+      scheduler,
+      {
+        agent: makeAgent("wf-stage-agent"),
+        outcome: { kind: "completed" },
+        timeline: [
+          { type: "user_message", text: "Never do this again" },
+          { type: "assistant_message", text: "Done" },
+        ],
+      },
+      curator,
+    );
+    expect(curated).toEqual([]);
+
+    // 3. Worker session role ("worker")
+    currentLabels = { [SESSION_ROLE_LABEL]: "worker" };
+    await turnEnded(
+      host,
+      journal,
+      scheduler,
+      {
+        agent: makeAgent("worker-agent"),
+        outcome: { kind: "completed" },
+        timeline: [
+          { type: "user_message", text: "Always verify tests" },
+          { type: "assistant_message", text: "Done" },
+        ],
+      },
+      curator,
+    );
+    expect(curated).toEqual([]);
+
+    // 4. Dispatched-worker session role ("dispatched-worker")
+    currentLabels = { [SESSION_ROLE_LABEL]: "dispatched-worker" };
+    await turnEnded(
+      host,
+      journal,
+      scheduler,
+      {
+        agent: makeAgent("dispatched-worker-agent"),
+        outcome: { kind: "completed" },
+        timeline: [
+          { type: "user_message", text: "Remember to check diff" },
+          { type: "assistant_message", text: "Done" },
+        ],
+      },
+      curator,
+    );
+    expect(curated).toEqual([]);
+
+    // 5. Inter-bot handoff (asked-by label)
+    currentLabels = { [ASKED_BY_LABEL]: "bot-requester" };
+    await turnEnded(
+      host,
+      journal,
+      scheduler,
+      {
+        agent: makeAgent("handoff-agent"),
+        outcome: { kind: "completed" },
+        timeline: [
+          { type: "user_message", text: "Remember to follow up" },
+          { type: "assistant_message", text: "Done" },
+        ],
+      },
+      curator,
+    );
+    expect(curated).toEqual([]);
+
+    // 6. Routine chat
+    currentLabels = {};
+    currentRoutineId = "routine-789";
+    await turnEnded(
+      host,
+      journal,
+      scheduler,
+      {
+        agent: makeAgent("routine-agent"),
+        outcome: { kind: "completed" },
+        timeline: [
+          { type: "user_message", text: "Remember to run nightly" },
+          { type: "assistant_message", text: "Done" },
+        ],
+      },
+      curator,
+    );
+    expect(curated).toEqual([]);
+
+    // 7. Workflow brief dispatch with <worker_protocol> containing "Never fake passing tests"
+    currentLabels = {};
+    currentRoutineId = null;
+    const briefPrompt = [
+      "<task_brief>",
+      "- WORKFLOW: CI Workflow",
+      "- STAGE_ID: stage-1",
+      "- SPECIFICATION: Run verification",
+      "</task_brief>",
+      "",
+      WORKER_PROTOCOL_SUFFIX,
+    ].join("\n");
+    await turnEnded(
+      host,
+      journal,
+      scheduler,
+      {
+        agent: makeAgent("brief-dispatch-agent"),
+        outcome: { kind: "completed" },
+        timeline: [
+          { type: "user_message", text: briefPrompt },
+          { type: "assistant_message", text: "Stage complete" },
+        ],
+      },
+      curator,
+    );
+    expect(curated).toEqual([]);
+  });
+
+  it("prevents background memory curation chats from triggering fallback (even after restart) and auto-archives them on turn completion", async () => {
+    const { turnEnded } = await import("../server/activity");
+    const { MemoryJournal } = await import("../server/journal");
+
+    const host = fakeHost([makeBot({ id: "bot-curator", name: "CuratorBot" })]);
+    const archivedAgentIds: string[] = [];
+    host.attach({
+      agents: {
+        ref: (id: string) => ({
+          archive: vi.fn(async () => {
+            archivedAgentIds.push(id);
+          }),
+        }),
+      },
+    } as never);
+
+    host.chatOf = async () => ({
+      botId: "bot-curator",
+      title: "CuratorBot · Memory check",
+      routineId: null,
+      labels: { [MEMORY_CURATION_LABEL]: "true" },
+    });
+    const scheduler = { finished: async () => {} };
+    const journal = new MemoryJournal();
+    await journal.begin("bot-curator");
+
+    const curated: string[] = [];
+    // Simulate server restart: ownedAgents set in curator is EMPTY, isCurationAgent returns false
+    const curator = {
+      isCurationAgent: (_id: string) => false,
+      curateTurnFallback: async (input: { agentId: string }) => {
+        curated.push(input.agentId);
+        return true;
+      },
+    };
+
+    const curationTimeline = [
+      {
+        type: "user_message",
+        text: 'In a recent turn of "Chat", the user expressed something worth remembering... Never store secrets.\nUser: 记住以后用中文回复',
+      },
+      { type: "assistant_message", text: "Updated memory." },
+    ];
+
+    await turnEnded(
+      host,
+      journal,
+      scheduler,
+      {
+        agent: {
+          id: "restarted-curation-agent",
+          workspaceId: null,
+          parentAgentId: null,
+          provider: "claude",
+          cwd: "/",
+          title: "CuratorBot · Memory check",
+        },
+        outcome: { kind: "completed" },
+        timeline: curationTimeline,
+      },
+      curator,
+    );
+
+    // Must NOT trigger curateTurnFallback
+    expect(curated).toEqual([]);
+    // Must auto-archive to avoid cluttering the sidebar
+    expect(archivedAgentIds).toContain("restarted-curation-agent");
+  });
+
+  it("allows real human DM/group turns saying '记住以后用中文回复' to trigger curateTurnFallback", async () => {
+    const { turnEnded } = await import("../server/activity");
+    const { MemoryJournal } = await import("../server/journal");
+
+    const host = fakeHost([makeBot({ id: "bot-h", name: "HumanBot" })]);
+    host.chatOf = async () => ({
+      botId: "bot-h",
+      title: "Human DM Chat",
+      routineId: null,
+      labels: { [SESSION_ROLE_LABEL]: "dm" },
+    });
+    const scheduler = { finished: async () => {} };
+    const journal = new MemoryJournal();
+    await journal.begin("bot-h");
+
+    const curated: any[] = [];
+    const curator = {
+      isCurationAgent: () => false,
+      curateTurnFallback: async (input: any) => {
+        curated.push(input);
+        return true;
+      },
+    };
+
+    const humanTimeline = [
+      { type: "user_message", text: "记住以后用中文回复" },
+      { type: "assistant_message", text: "好的，我记住了。" },
+    ];
+
+    await turnEnded(
+      host,
+      journal,
+      scheduler,
+      {
+        agent: {
+          id: "human-agent-1",
+          workspaceId: null,
+          parentAgentId: null,
+          provider: "claude",
+          cwd: "/",
+          title: "Human DM Chat",
+        },
+        outcome: { kind: "completed" },
+        timeline: humanTimeline,
+      },
+      curator,
+    );
+
+    expect(curated).toHaveLength(1);
+    expect(curated[0]).toMatchObject({
+      botId: "bot-h",
+      agentId: "human-agent-1",
+      chatTitle: "Human DM Chat",
+      userText: "记住以后用中文回复",
+      reply: "好的，我记住了。",
+    });
   });
 });

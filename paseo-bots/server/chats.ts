@@ -135,6 +135,8 @@ export async function startChat(
     teamSessionId?: string;
     isWorkflowStage?: boolean;
     stageSeatKey?: string;
+    syncAgy?: boolean;
+    agyAgentsDir?: string;
   },
   onFallback?: (fromModel: string, toModel: string, error: unknown) => void,
 ): Promise<string> {
@@ -206,6 +208,8 @@ export async function startChat(
       agentId,
       isWorkflowStage: input.isWorkflowStage,
       askedByBotId: input.askedByBotId,
+      ...(input.syncAgy !== undefined ? { syncAgy: input.syncAgy } : {}),
+      ...(input.agyAgentsDir !== undefined ? { agyAgentsDir: input.agyAgentsDir } : {}),
     },
     library,
     paseo,

@@ -1360,6 +1360,8 @@ export const en = {
     modelCount: "{{count}} models",
     noMatchingModels: "No matching models",
     selectModel: "Select Model",
+    workflowLabel: "Workflows",
+    workflowFreeChat: "No Workflow",
   },
   workflows: {
     sidebarTitle: "Workflows",
@@ -1435,6 +1437,8 @@ export const en = {
     protocolTaskBrief: "Task Brief",
     protocolRepairBrief: "Repair Brief",
     protocolWorkerHandoff: "Worker Handoff",
+    protocolWorkerProtocol: "Worker Protocol",
+    protocolRules: "Protocol Rules",
     protocolVerificationProof: "Verification Proof",
     protocolDodChecklist: "DoD Checklist",
     protocolTouchedFiles: "Touched Files",

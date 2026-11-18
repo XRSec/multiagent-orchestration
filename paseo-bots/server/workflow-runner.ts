@@ -4,7 +4,14 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { lastTurn } from "../shared/activity";
 import type { Bot, BotGroup } from "../shared/bot";
-import { TEAM_SESSION_LABEL, sendBotMessage } from "../shared/chat";
+import {
+  TEAM_SESSION_LABEL,
+  WORKFLOW_TASK_LABEL,
+  WORKFLOW_STAGE_LABEL,
+  WORKFLOW_ID_LABEL,
+  WORKFLOW_STAGE_ID_LABEL,
+  sendBotMessage,
+} from "../shared/chat";
 import { ASKED_BY_LABEL, ASKED_IN_LABEL, ASK_NOTIFY_LABEL } from "../shared/handoff";
 import { newUuid } from "../shared/uuid";
 import {
@@ -21,6 +28,7 @@ import {
 import { directSessionBoardPath, teamSessionBoardPath } from "./bot-home";
 import { startChat } from "./chats";
 import type { BotsHost } from "./host";
+import { MEMORY_CURATION_LABEL } from "./memory-curator";
 import type { Relay } from "./relay";
 import { publishWorkflowCard, settleAndPublish } from "./task-cards";
 import {
@@ -90,6 +98,7 @@ export interface RunWorkflowOptions {
   group?: BotGroup | null;
   callerBotId?: string;
   callerAgentId?: string;
+  notifyCallerOnSettle?: boolean;
   stageTimeoutMs?: number;
   stallTimeoutMs?: number;
   hardTimeoutMs?: number;
@@ -371,6 +380,13 @@ export async function waitForStageWithHeartbeat(
   }
 }
 
+export {
+  WORKFLOW_TASK_LABEL,
+  WORKFLOW_STAGE_LABEL,
+  WORKFLOW_ID_LABEL,
+  WORKFLOW_STAGE_ID_LABEL,
+};
+
 /**
  * Default stage executor: dispatches via Route 1 ("native") or Route 2 ("paseo-bot")
  * using startChat, waits for turn completion, and audits optional <worker_handoff>.
@@ -388,6 +404,8 @@ async function defaultStageDispatcher(
   const paseo = host.requirePaseo();
   const labels: Record<string, string> = {
     [ASK_NOTIFY_LABEL]: "false",
+    [WORKFLOW_TASK_LABEL]: ctx.taskId,
+    [WORKFLOW_STAGE_LABEL]: ctx.stage.id,
     ...(ctx.callerBotId ? { [ASKED_BY_LABEL]: ctx.callerBotId } : {}),
     ...(ctx.callerAgentId ? { [ASKED_IN_LABEL]: ctx.callerAgentId } : {}),
   };
@@ -447,6 +465,7 @@ async function defaultStageDispatcher(
       teamSessionId: ctx.teamSessionId,
       isWorkflowStage: true,
       ...(stageSeatKey ? { stageSeatKey } : {}),
+      syncAgy: false,
     });
   }
 
@@ -532,6 +551,131 @@ async function acquireStageSlot(
 }
 
 /**
+ * Builds a concise distilled summary message of all stages for waking the caller agent.
+ */
+export function buildWorkflowCompletionSummary(
+  workflow: WorkflowDefinition,
+  state: WorkflowRunState,
+): string {
+  const header = `[Workflow Completion: ${workflow.name} — ${state.status.toUpperCase()}]`;
+
+  const stageLines = state.stages.map((s) => {
+    const parts = [`- **${s.name}** (\`${s.id}\`): \`${s.status}\``];
+    if (s.handoffFilePath) {
+      parts.push(`  - Handoff: \`${s.handoffFilePath}\``);
+    }
+    if (s.error) {
+      parts.push(`  - Error: ${s.error}`);
+    }
+    return parts.join("\n");
+  });
+
+  const stagesWithOutput = state.stages.filter((s) => !!s.output?.trim());
+  const finalStage = stagesWithOutput[stagesWithOutput.length - 1] ?? state.stages[state.stages.length - 1];
+  const finalOutput = finalStage?.output?.trim();
+
+  const sections = [
+    header,
+    `Workflow "${workflow.name}" has completed with status: **${state.status}**.`,
+    `### Stage Summary:\n${stageLines.join("\n")}`,
+  ];
+
+  if (finalOutput) {
+    sections.push(`### Final Stage Output (${finalStage?.name ?? "Final"}):\n${finalOutput}`);
+  }
+
+  sections.push("Please review the final results and deliver the report to the user.");
+
+  return sections.join("\n\n");
+}
+
+async function notifyWorkflowCallerOnSettle(
+  host: BotsHost,
+  options: {
+    callerAgentId: string;
+    callerBotId?: string;
+    workflow: WorkflowDefinition;
+    state: WorkflowRunState;
+  },
+): Promise<void> {
+  const { callerAgentId, callerBotId, workflow, state } = options;
+  const paseo = host.paseo ?? host.requirePaseo?.();
+  if (!paseo) return;
+
+  try {
+    const callerRef = paseo.agents?.ref ? paseo.agents.ref(callerAgentId) : null;
+    if (callerRef && typeof callerRef.refresh === "function") {
+      const snapshot = await callerRef.refresh().catch(() => null);
+      const agent = snapshot?.agent;
+      if (agent?.archivedAt) {
+        return;
+      }
+    }
+  } catch {
+    // ignore refresh errors
+  }
+
+  const callerBot = callerBotId ? await host.bot(callerBotId).catch(() => null) : null;
+  const summaryText = buildWorkflowCompletionSummary(workflow, state);
+
+  await sendBotMessage(paseo, {
+    agentId: callerAgentId,
+    text: summaryText,
+    ...(callerBot ? { bot: callerBot } : {}),
+  });
+}
+
+/**
+ * Cleanly archives unique stage child chats upon workflow terminal settlement
+ * so they are removed from the active sidebar while remaining viewable via
+ * TaskStageModal ("Open Agent Chat"). Strictly excludes callerAgentId and chats
+ * that are already archived.
+ */
+export async function archiveWorkflowStageChats(
+  host: BotsHost,
+  options: {
+    stages: readonly { chatId?: string | null }[];
+    callerAgentId?: string | null;
+  },
+): Promise<void> {
+  const { stages, callerAgentId } = options;
+  const paseo = host.paseo ?? host.requirePaseo?.();
+  if (!paseo?.agents?.ref) return;
+
+  const trimmedCaller = callerAgentId?.trim();
+  const chatIds = new Set<string>();
+  for (const stage of stages) {
+    const chatId = stage.chatId?.trim();
+    if (chatId && (!trimmedCaller || chatId !== trimmedCaller)) {
+      chatIds.add(chatId);
+    }
+  }
+
+  for (const chatId of chatIds) {
+    try {
+      const ref = paseo.agents.ref(chatId) as {
+        archive?: () => Promise<unknown>;
+        refresh?: () => Promise<{ agent?: { archivedAt?: string | null } } | null>;
+      } | null | undefined;
+
+      if (!ref || typeof ref.archive !== "function") continue;
+
+      if (typeof ref.refresh === "function") {
+        const snapshot = await ref.refresh().catch(() => null);
+        const agent = (snapshot as any)?.agent ?? snapshot;
+        if (agent?.archivedAt) {
+          continue;
+        }
+      }
+
+      await ref.archive().catch(() => null);
+    } catch {
+      // ignore archive failure for individual chat
+    }
+  }
+}
+
+/**
  * Executes a validated Workflow DAG on an existing TaskRecord:
  * - Topological dependency resolution (`readyStages`)
  * - Parallel execution of all ready stages per wave
@@ -549,6 +693,7 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
     group,
     callerBotId,
     callerAgentId,
+    notifyCallerOnSettle,
     stageTimeoutMs,
     stallTimeoutMs,
     hardTimeoutMs,
@@ -565,6 +710,7 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
   const effectiveStallTimeoutMs = stallTimeoutMs ?? Math.min(DEFAULT_STALL_TIMEOUT_MS, effectiveHardTimeoutMs);
 
   activeWorkflowTaskIds.add(taskId);
+  const archivedStageChatIds = new Set<string>();
   try {
     const stageDefMap = new Map(workflow.stages.map((s) => [s.id, s]));
   const bots = await host.bots().catch(() => [] as Bot[]);
@@ -616,6 +762,35 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
         completedAt,
       }));
       await settleAndPublish(host, taskId, callerAgentId);
+      if (notifyCallerOnSettle && callerAgentId) {
+        await notifyWorkflowCallerOnSettle(host, {
+          callerAgentId,
+          callerBotId,
+          workflow,
+          state: updated.workflow!,
+        }).catch((err) => {
+          console.warn(`paseo-bots: failed to wake caller agent "${callerAgentId}" on workflow settlement:`, err);
+        });
+      }
+      const unarchivedStages = (updated.workflow?.stages ?? stages).filter(
+        (s) => !s.chatId || !archivedStageChatIds.has(s.chatId),
+      );
+      await archiveWorkflowStageChats(host, {
+        stages: unarchivedStages,
+        callerAgentId,
+      }).catch((err) => {
+        console.warn(`paseo-bots: failed to archive workflow stage chats for task "${taskId}":`, err);
+      });
+      if (host.paseo) {
+        const archivedAtIso = new Date().toISOString();
+        const stamped = await updateTaskWorkflow(taskId, (wf) => ({
+          ...wf,
+          chatsArchivedAt: archivedAtIso,
+        })).catch(() => null);
+        if (stamped?.workflow) {
+          return stamped.workflow;
+        }
+      }
       return updated.workflow!;
     }
 
@@ -633,6 +808,35 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
         stages: wf.stages.map((s) => (s.status === "pending" ? { ...s, status: "skipped" } : s)),
       }));
       await settleAndPublish(host, taskId, callerAgentId);
+      if (notifyCallerOnSettle && callerAgentId) {
+        await notifyWorkflowCallerOnSettle(host, {
+          callerAgentId,
+          callerBotId,
+          workflow,
+          state: updated.workflow!,
+        }).catch((err) => {
+          console.warn(`paseo-bots: failed to wake caller agent "${callerAgentId}" on workflow settlement:`, err);
+        });
+      }
+      const unarchivedStages = (updated.workflow?.stages ?? stages).filter(
+        (s) => !s.chatId || !archivedStageChatIds.has(s.chatId),
+      );
+      await archiveWorkflowStageChats(host, {
+        stages: unarchivedStages,
+        callerAgentId,
+      }).catch((err) => {
+        console.warn(`paseo-bots: failed to archive workflow stage chats for task "${taskId}":`, err);
+      });
+      if (host.paseo) {
+        const archivedAtIso = new Date().toISOString();
+        const stamped = await updateTaskWorkflow(taskId, (wf) => ({
+          ...wf,
+          chatsArchivedAt: archivedAtIso,
+        })).catch(() => null);
+        if (stamped?.workflow) {
+          return stamped.workflow;
+        }
+      }
       return updated.workflow!;
     }
 
@@ -765,6 +969,13 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
                 : s,
             ),
           }));
+          await archiveWorkflowStageChats(host, {
+            stages: [{ chatId: effectiveChatId }],
+            callerAgentId,
+          }).catch(() => null);
+          if (effectiveChatId) {
+            archivedStageChatIds.add(effectiveChatId);
+          }
         } else {
           const errorMessage = result.error || `Stage "${stageDef.name}" failed.`;
           await upsertMember(taskId, {
@@ -956,9 +1167,126 @@ export async function reconcileOrphanWorkflows(options?: ReconcileOrphanWorkflow
       }).catch(() => null);
     }
 
-    const updated = await readTask(task.taskId).catch(() => null);
+    if (options?.host?.paseo) {
+      const currentTask = await readTask(task.taskId).catch(() => null);
+      const stagesToArchive = currentTask?.workflow?.stages ?? task.workflow.stages;
+      await archiveWorkflowStageChats(options.host, {
+        stages: stagesToArchive,
+        callerAgentId: task.cardAgentId,
+      }).catch((err) => {
+        console.warn(`paseo-bots: failed to archive orphan workflow stage chats for task "${task.taskId}":`, err);
+      });
+      const archivedAtIso = new Date().toISOString();
+      await updateTaskWorkflow(task.taskId, (wf) => ({
+        ...wf,
+        chatsArchivedAt: archivedAtIso,
+      })).catch(() => {
+        if (task.workflow) {
+          task.workflow.chatsArchivedAt = archivedAtIso;
+        }
+      });
+    }
+
+    const updated = await readTask(task.taskId).catch(() => null) ?? task;
     if (updated) reconciled.push(updated);
   }
 
   return reconciled;
+}
+
+/**
+ * Sweeps idle/completed background MemoryCurator chats that completed before this code loaded,
+ * archiving their agent sessions so stale "Memory check" / "Memory consolidation" chats don't linger.
+ */
+export async function archiveStaleMemoryCurationChats(host: BotsHost): Promise<number> {
+  const paseo = host.paseo;
+  if (!paseo?.agents || typeof (paseo.agents as any).list !== "function") return 0;
+  let count = 0;
+  try {
+    const listRes = await (paseo.agents as any).list({
+      filter: { includeArchived: false, includeBackground: true },
+    }).catch(() => null) ?? await (paseo.agents as any).list().catch(() => null);
+
+    const rawList: any[] = Array.isArray(listRes)
+      ? listRes
+      : Array.isArray(listRes?.entries)
+        ? listRes.entries
+        : [];
+
+    for (const item of rawList) {
+      const agent = item?.agent ?? item;
+      if (!agent || !agent.id) continue;
+      if (agent.archivedAt) continue;
+      if (agent.status === "running" || agent.status === "initializing") continue;
+
+      const labels = agent.labels ?? {};
+      const metadata = agent.metadata ?? {};
+      const isCuration = labels[MEMORY_CURATION_LABEL] === "true" ||
+        labels[MEMORY_CURATION_LABEL] === true ||
+        metadata[MEMORY_CURATION_LABEL] === "true" ||
+        metadata[MEMORY_CURATION_LABEL] === true;
+
+      if (isCuration) {
+        const ref = paseo.agents.ref ? paseo.agents.ref(agent.id) : null;
+        if (ref && typeof ref.archive === "function") {
+          await ref.archive().catch(() => null);
+          count++;
+        }
+      }
+    }
+  } catch {
+    // ignore session sweep errors
+  }
+  return count;
+}
+
+/**
+ * Retroactively archives unarchived stage chats of already-settled historical workflow tasks on disk,
+ * stamping `chatsArchivedAt` so subsequent startups and sweeps are no-ops.
+ * Also archives idle background memory curation chats.
+ */
+export async function archiveSettledWorkflowStageChats(
+  host: BotsHost,
+  options?: { tasks?: TaskRecord[] },
+): Promise<number> {
+  if (!host.paseo) return 0;
+
+  const tasks = options?.tasks ?? await listTasks();
+  const eligible = tasks.filter((task) =>
+    task.workflow &&
+    (task.settledAt || task.workflow.status === "done" || task.workflow.status === "failed") &&
+    !task.workflow.chatsArchivedAt &&
+    !activeWorkflowTaskIds.has(task.taskId)
+  );
+
+  let archivedCount = 0;
+  for (const task of eligible) {
+    if (!task.workflow) continue;
+    await archiveWorkflowStageChats(host, {
+      stages: task.workflow.stages,
+      callerAgentId: task.cardAgentId,
+    }).catch((err) => {
+      console.warn(`paseo-bots: failed to archive historical workflow stage chats for task "${task.taskId}":`, err);
+    });
+
+    const nowIso = new Date().toISOString();
+    await updateTaskWorkflow(task.taskId, (wf) => ({
+      ...wf,
+      chatsArchivedAt: nowIso,
+    })).catch(() => {
+      if (task.workflow) {
+        task.workflow.chatsArchivedAt = nowIso;
+      }
+    });
+    if (task.workflow) {
+      task.workflow.chatsArchivedAt = nowIso;
+    }
+    archivedCount++;
+  }
+
+  await archiveStaleMemoryCurationChats(host).catch((err) => {
+    console.warn("paseo-bots: failed to sweep stale memory curation chats:", err);
+  });
+
+  return archivedCount;
 }

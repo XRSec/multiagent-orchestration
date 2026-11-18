@@ -1,9 +1,9 @@
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { listOrphanedAgyAgents, resolveOrphanedAgyAgent, syncAllBotsToAgy, syncBotToAgyAgent } from "../server/agy-agents";
+import { defaultAgyAgentsDir, listOrphanedAgyAgents, resolveOrphanedAgyAgent, syncAllBotsToAgy, syncBotToAgyAgent } from "../server/agy-agents";
 import { buildAgentConfig, EMPTY_LIBRARY, resolveAgyAgent } from "../shared/bot";
 import { makeBot } from "./helpers";
 
@@ -299,5 +299,19 @@ describe("agy-agents", () => {
     await expect(resolveOrphanedAgyAgent("../escape.md", "delete", [], agentsDir)).rejects.toThrow("Invalid agent markdown filename");
     await expect(resolveOrphanedAgyAgent("sub/escape.md", "disable", [], agentsDir)).rejects.toThrow("Invalid agent markdown filename");
     await expect(resolveOrphanedAgyAgent("unmanaged.md", "delete", [], agentsDir)).rejects.toThrow("Orphaned paseo-bots agent file not found");
+  });
+
+  it("defaultAgyAgentsDir honors process.env.AGY_AGENTS_DIR with fallback to ~/.gemini/config/agents", () => {
+    const prev = process.env.AGY_AGENTS_DIR;
+    try {
+      delete process.env.AGY_AGENTS_DIR;
+      expect(defaultAgyAgentsDir()).toBe(join(homedir(), ".gemini", "config", "agents"));
+
+      process.env.AGY_AGENTS_DIR = "/custom/agy/agents";
+      expect(defaultAgyAgentsDir()).toBe("/custom/agy/agents");
+    } finally {
+      if (prev === undefined) delete process.env.AGY_AGENTS_DIR;
+      else process.env.AGY_AGENTS_DIR = prev;
+    }
   });
 });
