@@ -209,3 +209,28 @@ describe("avatar and image URL changes", () => {
     ).toThrow(/preset/i);
   });
 });
+
+describe("systemPromptMode changes", () => {
+  it("supports system_prompt_mode and systemPromptMode on create_bot and update_bot", () => {
+    const base = setup();
+    const created = applyChanges(
+      base,
+      [
+        { type: "create_bot", name: "CustomBot", system_prompt_mode: "replace" },
+      ],
+      context,
+    );
+    const custom = created.bots.find((b) => b.name === "CustomBot")!;
+    expect(custom.systemPromptMode).toBe("replace");
+
+    const updated = applyChanges(
+      created,
+      [
+        { type: "update_bot", bot: "CustomBot", systemPromptMode: "append" },
+      ],
+      context,
+    );
+    const updatedCustom = updated.bots.find((b) => b.name === "CustomBot")!;
+    expect(updatedCustom.systemPromptMode).toBe("append");
+  });
+});

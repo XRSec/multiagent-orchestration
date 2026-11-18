@@ -843,6 +843,33 @@ test('forwards systemPrompt via _meta.antigravity.systemPrompt.append on new and
   }
 })
 
+test('forwards systemPrompt via _meta.antigravity.systemPrompt.replace when systemPromptMode is replace', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agy-sysprompt-replace-'))
+  const log = join(home, 'calls')
+  const h = await harness({ HOME: home, AGY_TEST_LOG: log })
+  try {
+    await h.provider.send({
+      type: 'session.open',
+      requestId: 'new-sys-replace',
+      sessionId: 's-rep-1',
+      config: {
+        ...h.config,
+        systemPrompt: 'Standing instructions only.',
+        providerOptions: { systemPromptMode: 'replace' },
+      },
+      history: 'skip',
+    })
+    await h.wait((e) => e.type === 'session.ready' && e.sessionId === 's-rep-1')
+    assert.equal(
+      await readFile(log, 'utf8'),
+      'new:replace:Standing instructions only.\n',
+    )
+  } finally {
+    await h.provider.close()
+    await removeDir(home)
+  }
+})
+
 test('full-access mode launches with --dangerously-skip-permissions, auto-approves permissions, and hot-switches back without relaunching', async () => {
   const home = await mkdtemp(join(tmpdir(), 'agy-full-access-'))
   const log = join(home, 'calls')

@@ -297,13 +297,15 @@ export class SubagentRegistry {
     }
   }
 
-  closeAll(): void {
+  async closeAll(): Promise<void> {
+    const handles = Array.from(this.children.values())
     for (const [childId, stop] of this.children) {
       stop()
       this.opts.emit({ type: 'session.closed', sessionId: childId })
     }
     this.children.clear()
     this.childFailures.clear()
+    await Promise.all(handles.map((h) => h.drain().catch(() => undefined)))
   }
 
   /** Reconcile child ownership and close watchers pruned by a conversation revert. */

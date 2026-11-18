@@ -34,14 +34,23 @@ const writeLanes = new Map<string, Promise<void>>()
 function queue<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const prev = writeLanes.get(key) ?? Promise.resolve()
   const next = prev.catch(() => undefined).then(fn)
-  writeLanes.set(
-    key,
-    next.then(
-      () => undefined,
-      () => undefined,
-    ),
+  const settled = next.then(
+    () => undefined,
+    () => undefined,
   )
+  writeLanes.set(key, settled)
+  void settled.finally(() => {
+    if (writeLanes.get(key) === settled) writeLanes.delete(key)
+  })
   return next
+}
+
+/** Serialize arbitrary operations on a session's turn journal lane. */
+export function queueTurnJournalOp<T>(
+  nativeId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return queue(nativeId, fn)
 }
 
 function journalPath(appDataDir: string, nativeId: string): string {
@@ -111,6 +120,17 @@ export async function finishTurnJournal(
   })
 }
 
+/** Unqueued direct journal removal for use inside an already-queued session lane. */
+export async function internalRemoveTurnJournal(
+  appDataDir: string,
+  nativeId: string,
+): Promise<void> {
+  if (!sessionIdPattern.test(nativeId)) return
+  await rm(journalPath(appDataDir, nativeId), { force: true }).catch(
+    () => undefined,
+  )
+}
+
 /** Remove the journal with the rest of a disposable session's artifacts. */
 export async function removeTurnJournal(
   appDataDir: string,
@@ -118,11 +138,7 @@ export async function removeTurnJournal(
 ): Promise<void> {
   if (!sessionIdPattern.test(nativeId)) return
   // Queue behind in-flight writes; a bare rm can race a pending rename and lose the file.
-  await queue(nativeId, async () => {
-    await rm(journalPath(appDataDir, nativeId), { force: true }).catch(
-      () => undefined,
-    )
-  })
+  await queue(nativeId, () => internalRemoveTurnJournal(appDataDir, nativeId))
 }
 
 /**

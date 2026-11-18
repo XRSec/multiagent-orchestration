@@ -5,6 +5,7 @@ import { teamPrompt } from "../shared/groups";
 import { TaskCardSchema, taskCardOf } from "../shared/task-card";
 import {
   WorkflowDefinitionSchema,
+  WorkflowStageDefinitionSchema,
   buildStageBriefPrompt,
   initWorkflowRunState,
   parseWorkerHandoff,
@@ -221,5 +222,26 @@ describe("workflows schema & DAG validation", () => {
 
     const afterDelete = applyChanges(afterSave, [{ type: "delete_workflow", workflow_id: "wf-change" }], { now: NOW, provider: "agy" });
     expect(afterDelete.workflows).toHaveLength(0);
+  });
+
+  it("supports stage-level skillIds and mcpServerIds overrides in WorkflowStageDefinitionSchema", () => {
+    const stage = WorkflowStageDefinitionSchema.parse({
+      id: "stage-with-overrides",
+      name: "Specialized Stage",
+      botId: "bot-worker",
+      skillIds: ["skill-a", "skill-b"],
+      mcpServerIds: ["mcp-server-1"],
+    });
+
+    expect(stage.skillIds).toEqual(["skill-a", "skill-b"]);
+    expect(stage.mcpServerIds).toEqual(["mcp-server-1"]);
+
+    const wf = WorkflowDefinitionSchema.parse({
+      id: "wf-overrides",
+      name: "Overrides Flow",
+      stages: [stage],
+    });
+    expect(wf.stages[0]?.skillIds).toEqual(["skill-a", "skill-b"]);
+    expect(wf.stages[0]?.mcpServerIds).toEqual(["mcp-server-1"]);
   });
 });

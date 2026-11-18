@@ -154,6 +154,8 @@ export async function systemPrompt(
   if (syncAgy && local && isAgyProvider(effectiveBot.provider)) {
     await syncBotToAgyAgent(effectiveBot, { body: composed, soulsDir });
   }
+  let mcpConfigPath: string | null | undefined;
+  let skillsDir: string | null | undefined;
   if (syncClaude && local && isClaudeProvider(effectiveBot.provider)) {
     const effectiveBotDataDir = claudeBotDataDir ?? botDataPath(effectiveBot.id);
     const effectiveProjectDir = claudeProjectDir ?? context.workdir ?? effectiveBotDataDir;
@@ -162,7 +164,7 @@ export async function systemPrompt(
       ...(plugin?.apps ? { [APPS_MCP_NAME]: plugin.apps } : {}),
       ...(plugin?.tools ? { [TOOLS_MCP_NAME]: plugin.tools } : {}),
     };
-    await syncBotToClaudeAgent(effectiveBot, {
+    const claudeResult = await syncBotToClaudeAgent(effectiveBot, {
       ...(claudeAgentsDir !== undefined ? { agentsDir: claudeAgentsDir } : { projectDir: effectiveProjectDir }),
       projectDir: effectiveProjectDir,
       botDataDir: effectiveBotDataDir,
@@ -172,7 +174,15 @@ export async function systemPrompt(
       mcpServers: resolvedMcpServers,
       syncMcpConfig: true,
       syncSkills: true,
+      systemPromptMode: effectiveBot.systemPromptMode,
     });
+    mcpConfigPath = claudeResult.mcpConfigPath;
+    skillsDir = claudeResult.skillsDir;
   }
-  return { systemPrompt: composed, sections: promptSections(effectiveBot, context) };
+  return {
+    systemPrompt: composed,
+    sections: promptSections(effectiveBot, context),
+    ...(mcpConfigPath ? { mcpConfigPath } : {}),
+    ...(skillsDir ? { skillsDir } : {}),
+  };
 }

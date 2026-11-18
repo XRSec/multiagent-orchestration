@@ -22,6 +22,10 @@ export const WorkflowStageDefinitionSchema = z.object({
   dependsOn: z.array(z.string().trim().min(1).max(100)).default([]),
   /** Bounded retry attempts on stage failure (default 1). */
   maxRetries: z.number().int().min(0).max(10).default(1),
+  /** Optional stage-level skill overrides or additions. */
+  skillIds: z.array(z.string().trim().min(1).max(100)).optional(),
+  /** Optional stage-level MCP server overrides or additions. */
+  mcpServerIds: z.array(z.string().trim().min(1).max(100)).optional(),
 });
 export type WorkflowStageDefinition = z.infer<typeof WorkflowStageDefinitionSchema>;
 
@@ -53,6 +57,8 @@ export const TaskStageStateSchema = z.object({
   startedAt: z.string().nullable().default(null),
   completedAt: z.string().nullable().default(null),
   prompt: z.string().nullable().optional().default(null),
+  skillIds: z.array(z.string()).optional(),
+  mcpServerIds: z.array(z.string()).optional(),
 });
 export type TaskStageState = z.infer<typeof TaskStageStateSchema>;
 

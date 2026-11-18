@@ -36,4 +36,25 @@ describe("bot chat placement", () => {
     expect(api.workspaces.ref).toHaveBeenCalled();
     expect(api.workspaces.create).not.toHaveBeenCalled();
   });
+
+  it("propagates mcpConfigPath into agents.create config", async () => {
+    const { api } = fixture(true);
+    let capturedConfig: any = null;
+    (api as any).agents = {
+      create: vi.fn(async (opts: any) => {
+        capturedConfig = opts.config;
+        return { id: "chat-mcp" };
+      }),
+    };
+    await startBotChat(api, {
+      bot: makeBot({ model: "model", provider: "claude" }),
+      library: EMPTY_LIBRARY,
+      placement: { path: "/bots/inbox", projectRoot: "/bots" },
+      prompt: "Hello",
+      systemPrompt: "Help",
+      mcpConfigPath: "/bots/inbox/.mcp.json",
+    });
+    expect(capturedConfig).not.toBeNull();
+    expect(capturedConfig.mcpConfigPath).toBe("/bots/inbox/.mcp.json");
+  });
 });

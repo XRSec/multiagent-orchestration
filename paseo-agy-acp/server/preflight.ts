@@ -10,7 +10,10 @@ import type {
   ProviderStatus,
 } from '@getpaseo/plugin/server/provider'
 import { removeSessionCheckpoints } from './checkpoints.ts'
-import { removeTurnJournal } from './turn-journal.ts'
+import {
+  internalRemoveTurnJournal,
+  queueTurnJournalOp,
+} from './turn-journal.ts'
 import {
   formatErrorMessage,
   isMissingError,
@@ -132,29 +135,31 @@ export async function removeSessionArtifacts(
 ): Promise<void> {
   if (!sessionIdPattern.test(sessionId))
     throw new Error('Unsafe catalog session ID')
-  if (!(await realDirectory(appData))) return
-  for (const [directory, names] of [
-    [
-      join(appData, 'conversations'),
-      [`${sessionId}.db`, `${sessionId}.db-wal`, `${sessionId}.db-shm`],
-    ],
-    [join(appData, 'brain'), [sessionId]],
-  ] as const) {
-    if (!(await realDirectory(directory))) continue
-    for (const name of names) {
-      const path = join(directory, name)
-      let stat
-      try {
-        stat = await lstat(path)
-      } catch (error) {
-        if (isMissingError(error)) continue
-        throw error
+  return queueTurnJournalOp(sessionId, async () => {
+    if (!(await realDirectory(appData))) return
+    for (const [directory, names] of [
+      [
+        join(appData, 'conversations'),
+        [`${sessionId}.db`, `${sessionId}.db-wal`, `${sessionId}.db-shm`],
+      ],
+      [join(appData, 'brain'), [sessionId]],
+    ] as const) {
+      if (!(await realDirectory(directory))) continue
+      for (const name of names) {
+        const path = join(directory, name)
+        let stat
+        try {
+          stat = await lstat(path)
+        } catch (error) {
+          if (isMissingError(error)) continue
+          throw error
+        }
+        if (stat.isSymbolicLink())
+          throw new Error(`Refusing to remove symlink: ${path}`)
+        await rm(path, { recursive: stat.isDirectory(), force: true })
       }
-      if (stat.isSymbolicLink())
-        throw new Error(`Refusing to remove symlink: ${path}`)
-      await rm(path, { recursive: stat.isDirectory(), force: true })
     }
-  }
-  await removeSessionCheckpoints(appData, sessionId)
-  await removeTurnJournal(appData, sessionId)
+    await removeSessionCheckpoints(appData, sessionId)
+    await internalRemoveTurnJournal(appData, sessionId)
+  })
 }

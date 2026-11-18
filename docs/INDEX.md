@@ -30,7 +30,7 @@ sources: [AGENTS.md, MEMORY.md, docs/README.md, docs/_conventions.md]
 - [2.3] [protocols](protocols/INDEX.md) :: [LOAD_IF: agent-to-agent, host wire protocols, or native sub-agent markdown specifications]
 - [2.4] [proposals](proposals/INDEX.md) :: [LOAD_IF: designing a change to review, sessions or doc routing that awaits an owner ruling]
 - [2.5] [claude-managed-agents](claude-managed-agents/README.md) :: [LOAD_IF: upstream Anthropic platform reference]
-- [2.6] [paseo](paseo/INDEX.md) :: [LOAD_IF: Paseo bots configuration, version 4 envelope, teams, agy-agents sync, same-provider fallback models, partner settings UI, workflow engine, subagent routing, per-session CLI MCP/skills injection, or plugin settings/data storage]
+- [2.6] [paseo](paseo/INDEX.md) :: [LOAD_IF: Paseo bots configuration, teamwork seats, session blackboard, fallback models, partner settings UI, workflow engine, subagent routing, MCP/skills injection, or storage]
 
 ## [3] EVIDENCE
 - [3.1] [reviews](reviews/INDEX.md) :: [LOAD_IF: a doc cites a dispatch receipt]

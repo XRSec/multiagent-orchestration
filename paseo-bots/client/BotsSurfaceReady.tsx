@@ -782,21 +782,13 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, settings, la
     />
   ) : null;
 
-  if (libraryScreen && !layout.compact) {
-    return <View style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}>{libraryScreen}</View>;
-  }
-
-  if ((dataAnalysis || teamMap) && !layout.compact) {
-    return <View style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}>{pane}</View>;
-  }
-
   return (
     <>
       <View
         style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}
         onLayout={(event) => setSurfaceWidth(event.nativeEvent.layout.width)}
       >
-        {!orphansDismissed ? (
+        {!orphansDismissed && !libraryScreen && !dataAnalysis && !teamMap ? (
           <AgyOrphanBanner
             colors={colors}
             orphans={agyOrphans}
@@ -848,6 +840,10 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, settings, la
             {selection || teamMap || dataAnalysis ? <SlideOver onClose={() => (dataAnalysis ? setDataAnalysis(false) : teamMap ? setTeamMap(false) : setSelection(null))}>{pane}</SlideOver> : null}
             {libraryScreen ? <SlideOver onClose={() => setLibraryView(null)}>{libraryScreen}</SlideOver> : null}
           </View>
+        ) : libraryScreen ? (
+          libraryScreen
+        ) : dataAnalysis || teamMap ? (
+          pane
         ) : (
           <>
             {tabProps ? <TeamTabsRow {...tabProps} /> : null}
@@ -859,7 +855,7 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, settings, la
                 {sidebar}
               </View>
               {(() => {
-                const isLauncherPane = !dataAnalysis && !teamMap && !(panel.open && selectedBot) && Boolean(selection || (!layout.compact && listed.length > 0));
+                const isLauncherPane = !(panel.open && selectedBot) && Boolean(selection || (!layout.compact && listed.length > 0));
                 const minPaneHeight = 140;
                 const maxPaneHeight = splitHeight > 0 ? Math.max(minPaneHeight, splitHeight - 96) : 640;
                 const clampPane = (next: number) => Math.max(minPaneHeight, Math.min(maxPaneHeight, Math.round(next)));

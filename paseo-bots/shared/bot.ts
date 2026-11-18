@@ -207,6 +207,9 @@ export const FallbackModelSchema = z.object({
 });
 export type FallbackModel = z.infer<typeof FallbackModelSchema>;
 
+export const SystemPromptModeSchema = z.enum(["append", "replace"]);
+export type SystemPromptMode = z.infer<typeof SystemPromptModeSchema>;
+
 export const BotProviderConfigSchema = z.object({
   provider: z.string(),
   model: z.string().nullable().default(null),
@@ -240,6 +243,8 @@ export const BotSchema = z.object({
   baseTools: z.array(z.string()).optional(),
   /** Standing instructions, placed right after the persona in the system prompt. */
   soul: z.string().default(""),
+  /** System prompt mode: "append" (default) or "replace". */
+  systemPromptMode: z.enum(["append", "replace"]).optional(),
   /** Library MCP servers this bot gets. */
   mcpServerIds: z.array(z.string()).default([]),
   /** Exact MCP tool grants ("server/tool") the bot may use without asking. */
@@ -380,6 +385,7 @@ const PresetSchema = z.object({
   description: z.string().default(""),
   avatar: BotAvatarSchema,
   soul: z.string().default(""),
+  systemPromptMode: z.enum(["append", "replace"]).optional(),
   playbooks: z.array(PlaybookSchema).default([]),
   skillIds: z.array(z.string()).default([]),
   createdAt: z.string(),
@@ -546,7 +552,18 @@ function newPresetId(): string {
 }
 
 export function presetFromBot(bot: Bot, now: string = new Date().toISOString()): Preset {
-  return { id: newPresetId(), name: bot.name, title: bot.title, description: bot.description, avatar: bot.avatar, soul: bot.soul, playbooks: bot.playbooks, skillIds: bot.skillIds, createdAt: now };
+  return {
+    id: newPresetId(),
+    name: bot.name,
+    title: bot.title,
+    description: bot.description,
+    avatar: bot.avatar,
+    soul: bot.soul,
+    ...(bot.systemPromptMode ? { systemPromptMode: bot.systemPromptMode } : {}),
+    playbooks: bot.playbooks,
+    skillIds: bot.skillIds,
+    createdAt: now,
+  };
 }
 
 /** "Inbox", or "Inbox 2", "Inbox 3"... when a bot already has the name (OpenMausBot's import naming). */
@@ -614,15 +631,22 @@ export interface PromptSection {
  */
 export function promptSections(bot: Bot, context: PromptContext): PromptSection[] {
   const sections: PromptSection[] = [];
-  const persona = [`You are ${bot.name.trim()}, a personal bot running inside Paseo.`];
-  if (bot.title.trim()) persona.push(`Role: ${bot.title.trim()}`);
-  if (bot.description.trim()) persona.push(`About: ${bot.description.trim()}`);
-  sections.push({ title: "Persona", text: persona.join("\n") });
-  if (bot.soul.trim()) {
+  if (bot.systemPromptMode === "replace" && bot.soul.trim()) {
     sections.push({
       title: "Standing instructions",
-      text: `BEGIN STANDING INSTRUCTIONS\n${bot.soul.trim()}\nEND STANDING INSTRUCTIONS\nFollow these unless the user asks otherwise in this chat.`,
+      text: bot.soul.trim(),
     });
+  } else {
+    const persona = [`You are ${bot.name.trim()}, a personal bot running inside Paseo.`];
+    if (bot.title.trim()) persona.push(`Role: ${bot.title.trim()}`);
+    if (bot.description.trim()) persona.push(`About: ${bot.description.trim()}`);
+    sections.push({ title: "Persona", text: persona.join("\n") });
+    if (bot.soul.trim()) {
+      sections.push({
+        title: "Standing instructions",
+        text: `BEGIN STANDING INSTRUCTIONS\n${bot.soul.trim()}\nEND STANDING INSTRUCTIONS\nFollow these unless the user asks otherwise in this chat.`,
+      });
+    }
   }
   if (context.team) sections.push({ title: "Team", text: context.team });
   const workdir = context.workdir ?? bot.cwd;
@@ -743,7 +767,8 @@ export interface BotAgentConfig {
   thinkingOptionId?: string;
   fallbackModels?: FallbackModel[];
   systemPrompt?: string;
-  providerOptions?: { agent?: string; [key: string]: unknown };
+  systemPromptMode?: "append" | "replace";
+  providerOptions?: { agent?: string; systemPromptMode?: "append" | "replace"; [key: string]: unknown };
   mcpServers?: Record<string, McpServerConfig>;
   toolPolicy?: { preapproved: { kind: "mcp"; server: string; tool: string }[] };
   skills?: string[];
@@ -820,6 +845,22 @@ export function applyProviderConfig(bot: Bot, config: BotProviderConfig): Bot {
   };
 }
 
+/**
+ * Maps systemPromptMode to Claude Code CLI flags.
+ * "append" -> --append-system-prompt-file / --append-system-prompt
+ * "replace" -> --system-prompt-file / --system-prompt
+ */
+export function resolveClaudeSystemPromptFlag(
+  mode?: "append" | "replace" | null,
+  isFile = true,
+): string {
+  const isReplace = mode === "replace";
+  if (isFile) {
+    return isReplace ? "--system-prompt-file" : "--append-system-prompt-file";
+  }
+  return isReplace ? "--system-prompt" : "--append-system-prompt";
+}
+
 export function buildAgentConfig(
   bot: Bot,
   library: Library,
@@ -831,6 +872,7 @@ export function buildAgentConfig(
   engine?: SubagentEngine | null,
   skills?: readonly string[],
   mcpConfigPath?: string | null,
+  systemPromptMode?: "append" | "replace",
 ): BotAgentConfig {
   const mcpServers: Record<string, McpServerConfig> = {
     ...mcpServersRecord(botMcpServers(bot, library)),
@@ -850,6 +892,7 @@ export function buildAgentConfig(
   const resolvedModeId = resolveModeIdForProvider(bot.modeId, bot.provider);
   const effectiveFallbacks = fallbackModels !== undefined ? fallbackModels : (bot.fallbackModels ?? []);
   const resolvedSkills = skills !== undefined ? [...skills] : botSkills(bot, library).map((skill) => skill.id);
+  const effectiveSystemPromptMode = systemPromptMode ?? bot.systemPromptMode ?? "append";
 
   let providerOptions: { agent?: string; [key: string]: unknown } | undefined = undefined;
   if (agyAgent) {
@@ -873,6 +916,7 @@ export function buildAgentConfig(
     ...(effectiveFallbacks.length > 0 ? { fallbackModels: effectiveFallbacks } : {}),
     ...(providerOptions ? { providerOptions } : {}),
     ...(agyAgent ? {} : { systemPrompt }),
+    systemPromptMode: effectiveSystemPromptMode,
     ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
     ...(preapproved.length > 0 ? { toolPolicy: { preapproved } } : {}),
     ...(resolvedSkills.length > 0 ? { skills: resolvedSkills } : {}),

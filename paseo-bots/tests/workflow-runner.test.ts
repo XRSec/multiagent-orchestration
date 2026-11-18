@@ -237,4 +237,50 @@ describe("workflow-runner DAG execution", () => {
     expect(task?.status).toBe("blocked");
     expect(task?.settledAt).not.toBeNull();
   });
+
+  it("passes stage-level skillIds and mcpServerIds overrides in dispatch context", async () => {
+    const { openTask } = await import("../server/tasks");
+    const { runWorkflowDag } = await import("../server/workflow-runner");
+
+    const bots = [
+      makeBot({ id: "bot-lead", name: "Lead" }),
+      makeBot({ id: "bot-worker", name: "Worker", skillIds: ["bot-default-skill"], mcpServerIds: ["bot-default-mcp"] }),
+    ];
+    const workflow = WorkflowDefinitionSchema.parse({
+      id: "wf-overrides",
+      name: "Skill & MCP Overrides",
+      stages: [
+        {
+          id: "step1",
+          name: "Step 1",
+          botId: "bot-worker",
+          prompt: "Do work with stage skills",
+          skillIds: ["stage-skill-1"],
+          mcpServerIds: ["stage-mcp-1"],
+        },
+      ],
+    });
+    const initial = initWorkflowRunState(workflow);
+    await openTask({ taskId: "task-wf-overrides", title: "Workflow: Overrides", acceptance: "Done", workflow: initial });
+
+    const { host, relay } = makeFakeHost(bots, []);
+    let capturedCtx: any = null;
+
+    const finalState = await runWorkflowDag({
+      host,
+      relay,
+      taskId: "task-wf-overrides",
+      workflow,
+      callerAgentId: "lead-chat-1",
+      dispatchStage: async (ctx) => {
+        capturedCtx = ctx;
+        return { ok: true, output: "Success" };
+      },
+    });
+
+    expect(finalState.status).toBe("done");
+    expect(capturedCtx).not.toBeNull();
+    expect(capturedCtx.stage.skillIds).toEqual(["stage-skill-1"]);
+    expect(capturedCtx.stage.mcpServerIds).toEqual(["stage-mcp-1"]);
+  });
 });

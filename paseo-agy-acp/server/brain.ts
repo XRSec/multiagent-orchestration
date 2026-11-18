@@ -1020,6 +1020,8 @@ export type BrainWatchHandle = (() => void) & {
   /** Where a replacement watcher for the same child session should resume. */
   resumePoint: () => { afterStep: number; turnSeq: number }
   ready: Promise<void>
+  /** Stop reading and await any in-flight pollOnce() to settle before returning. */
+  drain: () => Promise<void>
 }
 
 /** Tail complete JSONL records; the returned handle stops future emissions or cancels an active child turn. */
@@ -1049,6 +1051,7 @@ export function watchBrain(
   let inflight: Promise<void> | undefined
   let cancelling: Promise<void> | undefined
   let warned = false
+  let consecutivePollErrors = 0
   let running = !resume
   let turnStartedEmitted = Boolean(resume)
   let turnSeq = resume?.turnSeq ?? 1
@@ -1237,9 +1240,11 @@ export function watchBrain(
             `Antigravity child session stalled for ${Math.round(idleLimitMs / 1000)}s without progress.`,
           )
         }
+        consecutivePollErrors = 0
       }
     } catch (error) {
       if (isMissing(error)) {
+        consecutivePollErrors = 0
         node.checkConversationError(root)
         if (node.retryPending() || node.sqliteError) {
           const failure = node.failure(retryTimeoutMs)
@@ -1248,6 +1253,7 @@ export function watchBrain(
           finishTurn('completed')
         return
       }
+      consecutivePollErrors++
       if (!warned && !stopped) {
         warned = true
         emit({
@@ -1259,6 +1265,14 @@ export function watchBrain(
             message: `Cannot read child transcript: ${formatErrorMessage(error)}`,
           },
         })
+      }
+      if (consecutivePollErrors >= 5 && !stopped) {
+        finishTurn(
+          'failed',
+          `Child transcript reading failed repeatedly: ${formatErrorMessage(error)}`,
+        )
+        stopped = true
+        clearInterval(timer)
       }
     }
   }
@@ -1285,6 +1299,11 @@ export function watchBrain(
       },
       resumePoint() {
         return { afterStep: lastStepIndex, turnSeq }
+      },
+      drain() {
+        stopped = true
+        clearInterval(timer)
+        return inflight ? inflight.catch(() => undefined) : Promise.resolve()
       },
       cancel() {
         if (stopped) return Promise.resolve()

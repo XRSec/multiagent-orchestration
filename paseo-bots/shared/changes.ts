@@ -87,6 +87,8 @@ const BotFields = {
   title: z.string().max(200).optional().describe("One line: what the bot does."),
   description: z.string().max(4000).optional().describe("Who the bot is; shown in the bot list and given to its agent."),
   instructions: z.string().max(24_000).optional().describe("Standing instructions (its Soul). Replaces the current ones."),
+  system_prompt_mode: z.enum(["append", "replace"]).optional().describe("System prompt mode: append (default) or replace."),
+  systemPromptMode: z.enum(["append", "replace"]).optional().describe("System prompt mode: append (default) or replace."),
   provider: z.string().min(1).max(60).optional().describe("Agent provider id from get_setup, like claude or codex."),
   model: z.string().max(200).nullable().optional().describe("Model id from get_setup; null for the provider's default."),
   mode: z.string().max(100).nullable().optional().describe("Approval mode id from get_setup; null for the provider's default."),
@@ -465,6 +467,8 @@ function withFields(bot: Bot, fields: BotFieldValues, context: ApplyContext): Bo
     }
     next.soul = context.stripSoulInSettings ? "" : instructions;
   }
+  const promptMode = fields.system_prompt_mode ?? fields.systemPromptMode;
+  if (promptMode !== undefined) next.systemPromptMode = promptMode;
   if (fields.contact_bots !== undefined) next.contactBots = fields.contact_bots;
   if (fields.working_folder !== undefined) {
     const folder = fields.working_folder?.trim() || null;

@@ -123,6 +123,22 @@ describe("promptSections", () => {
   it("leaves out memory and skills when the bot has no local folder", () => {
     expect(promptSections(bot({ soul: "" }), { memory: "", memoryPath: null, recentWork: [], playbooks: [], skills: [], paseoTools: false, botTools: false, apps: [] }).map((section) => section.title)).toEqual(["Persona"]);
   });
+
+  it("honors systemPromptMode 'replace' in promptSections", () => {
+    const sections = promptSections(bot({ soul: "Only follow these custom instructions.", systemPromptMode: "replace" }), {
+      memory: "",
+      memoryPath: null,
+      recentWork: [],
+      playbooks: [],
+      skills: [],
+      paseoTools: false,
+      botTools: false,
+      apps: [],
+    });
+    expect(sections.map((section) => section.title)).toEqual(["Standing instructions"]);
+    expect(sections[0]!.text).toBe("Only follow these custom instructions.");
+    expect(sections.find((s) => s.title === "Persona")).toBeUndefined();
+  });
 });
 
 describe("botProblems", () => {
@@ -342,5 +358,16 @@ describe("mounts and v4 migration", () => {
     expect(workspace).toBeDefined();
     expect(workspace?.text).toContain("Working directory: /Users/me/.paseo/plugin-data/paseo-bots/shared/Bots/bot-1");
     expect(workspace?.text).toContain("Mounted project paths:\n- /repo/one\n- /repo/two");
+  });
+
+  it("includes systemPromptMode in buildAgentConfig", () => {
+    const appendConfig = buildAgentConfig(bot({ systemPromptMode: "append" }), EMPTY_LIBRARY, "model", "prompt");
+    expect(appendConfig.systemPromptMode).toBe("append");
+
+    const replaceConfig = buildAgentConfig(bot({ systemPromptMode: "replace" }), EMPTY_LIBRARY, "model", "prompt");
+    expect(replaceConfig.systemPromptMode).toBe("replace");
+
+    const overrideConfig = buildAgentConfig(bot({ systemPromptMode: "append" }), EMPTY_LIBRARY, "model", "prompt", {}, null, undefined, null, undefined, null, "replace");
+    expect(overrideConfig.systemPromptMode).toBe("replace");
   });
 });

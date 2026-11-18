@@ -682,6 +682,7 @@ export class TranscriptReader {
         }
       } catch (error) {
         if (error instanceof SyntaxError) {
+          Object.assign(error, { code: 'ERR_TRANSCRIPT_SYNTAX' })
           const latestStat = await file.stat().catch(() => null)
           const racedRewrite =
             !startedAtZero ||

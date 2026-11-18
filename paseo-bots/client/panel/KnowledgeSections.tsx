@@ -2,7 +2,7 @@ import { useRpc } from "@getpaseo/plugin/client";
 import { copyText, Modal, SettingsAction, SettingsCard, SettingsRow, SettingsSection, useToast } from "@getpaseo/plugin/client/ui";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { newPlaybookId, SOUL_MAX_BYTES, utf8Bytes, type Playbook } from "../../shared/bot";
 import { parseTriggers } from "../../shared/playbooks";
 import { memoryDeleteRpc, memoryListRpc, memoryReadRpc, memoryWriteRpc } from "../../shared/rpc";
@@ -35,11 +35,49 @@ export function SoulSection({ colors, bot, onPatch }: PanelProps) {
   const { t } = useT();
   const [editing, setEditing] = useState(false);
   const bytes = utf8Bytes(bot.soul);
+  const mode = bot.systemPromptMode ?? "append";
   return (
     <>
       <SettingsSection title={t("panel.instructionsTitle")} info={t("panel.instructionsInfo")}>
         <SettingsCard>
           <SettingsAction label={t("panel.rowStandingInstructions")} hint={t("panel.standingInstructionsHint")} actionLabel={t("common.edit")} onPress={() => setEditing(true)} />
+          <SettingsRow
+            label={t("panel.systemPromptModeLabel")}
+            hint={mode === "replace" ? t("panel.systemPromptModeReplaceHint") : t("panel.systemPromptModeAppendHint")}
+          >
+            <View style={{ flexDirection: "row", gap: 4, padding: 3, borderRadius: 8, backgroundColor: colors.surface0 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("panel.systemPromptModeAppend")}
+                onPress={() => onPatch({ systemPromptMode: "append" })}
+                style={{
+                  paddingVertical: 4,
+                  paddingHorizontal: 10,
+                  borderRadius: 6,
+                  backgroundColor: mode === "append" ? colors.surface2 : "transparent",
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: mode === "append" ? "600" : "400", color: mode === "append" ? colors.foreground : colors.foregroundMuted }}>
+                  {t("panel.systemPromptModeAppend")}
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("panel.systemPromptModeReplace")}
+                onPress={() => onPatch({ systemPromptMode: "replace" })}
+                style={{
+                  paddingVertical: 4,
+                  paddingHorizontal: 10,
+                  borderRadius: 6,
+                  backgroundColor: mode === "replace" ? colors.surface2 : "transparent",
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: mode === "replace" ? "600" : "400", color: mode === "replace" ? colors.foreground : colors.foregroundMuted }}>
+                  {t("panel.systemPromptModeReplace")}
+                </Text>
+              </Pressable>
+            </View>
+          </SettingsRow>
           <SettingsRow
             label={t("panel.sizeLabel")}
             hint={bytes ? t("panel.sizeOfKb", { kb: kb(bytes), max: SOUL_MAX_BYTES / 1000 }) : t("panel.empty")}
@@ -51,9 +89,10 @@ export function SoulSection({ colors, bot, onPatch }: PanelProps) {
         <SoulSheet
           colors={colors}
           saved={bot.soul}
+          savedMode={mode}
           onClose={() => setEditing(false)}
-          onSave={(soul) => {
-            onPatch({ soul });
+          onSave={(soul, promptMode) => {
+            onPatch({ soul, ...(promptMode !== undefined ? { systemPromptMode: promptMode } : {}) });
             setEditing(false);
           }}
         />
@@ -62,14 +101,64 @@ export function SoulSection({ colors, bot, onPatch }: PanelProps) {
   );
 }
 
-function SoulSheet({ colors, saved, onClose, onSave }: { colors: Colors; saved: string; onClose(): void; onSave(soul: string): void }) {
+function SoulSheet({
+  colors,
+  saved,
+  savedMode = "append",
+  onClose,
+  onSave,
+}: {
+  colors: Colors;
+  saved: string;
+  savedMode?: "append" | "replace";
+  onClose(): void;
+  onSave(soul: string, mode?: "append" | "replace"): void;
+}) {
   const { t } = useT();
   const [draft, setDraft] = useState(saved);
+  const [mode, setMode] = useState<"append" | "replace">(savedMode);
   const bytes = utf8Bytes(draft);
-  const changed = draft !== saved;
+  const changed = draft !== saved || mode !== savedMode;
   return (
     <Modal title={t("panel.rowStandingInstructions")} open onOpenChange={(open) => !open && onClose()}>
       <Modal.Content>
+        <View style={{ marginBottom: 12, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+          <Text style={{ fontSize: 12, fontWeight: "600", color: colors.foregroundMuted }}>
+            {t("panel.systemPromptModeLabel")}
+          </Text>
+          <View style={{ flexDirection: "row", gap: 4, padding: 2, borderRadius: 8, backgroundColor: colors.surface0 }}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("panel.systemPromptModeAppend")}
+              onPress={() => setMode("append")}
+              style={{
+                paddingVertical: 4,
+                paddingHorizontal: 10,
+                borderRadius: 6,
+                backgroundColor: mode === "append" ? colors.surface2 : "transparent",
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: mode === "append" ? "600" : "400", color: mode === "append" ? colors.foreground : colors.foregroundMuted }}>
+                {t("panel.systemPromptModeAppend")}
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("panel.systemPromptModeReplace")}
+              onPress={() => setMode("replace")}
+              style={{
+                paddingVertical: 4,
+                paddingHorizontal: 10,
+                borderRadius: 6,
+                backgroundColor: mode === "replace" ? colors.surface2 : "transparent",
+              }}
+            >
+              <Text style={{ fontSize: 12, fontWeight: mode === "replace" ? "600" : "400", color: mode === "replace" ? colors.foreground : colors.foregroundMuted }}>
+                {t("panel.systemPromptModeReplace")}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
         <FormTextArea
           colors={colors}
           accessibilityLabel={t("panel.rowStandingInstructions")}
@@ -83,8 +172,17 @@ function SoulSheet({ colors, saved, onClose, onSave }: { colors: Colors; saved: 
             <SectionMeta colors={colors} text={t("panel.soulSizeRatio", { kb: kb(bytes), max: SOUL_MAX_BYTES / 1000 })} tone={bytes > SOUL_MAX_BYTES ? "danger" : bytes > SOUL_MAX_BYTES * 0.8 ? "warning" : undefined} />
           }
         >
-          <Button colors={colors} variant="ghost" label={t("common.reset")} disabled={!changed} onPress={() => setDraft(saved)} />
-          <Button colors={colors} variant="default" label={t("common.save")} disabled={!changed || bytes > SOUL_MAX_BYTES} onPress={() => onSave(draft)} />
+          <Button
+            colors={colors}
+            variant="ghost"
+            label={t("common.reset")}
+            disabled={!changed}
+            onPress={() => {
+              setDraft(saved);
+              setMode(savedMode);
+            }}
+          />
+          <Button colors={colors} variant="default" label={t("common.save")} disabled={!changed || bytes > SOUL_MAX_BYTES} onPress={() => onSave(draft, mode)} />
         </SheetActions>
       </Modal.Content>
     </Modal>

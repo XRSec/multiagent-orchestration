@@ -1614,7 +1614,7 @@ new AgentSideConnection((client) => ({
         'standalone invalid thinkingOption must reject before spawning a relaunch',
       )
 
-      // 7. Partial mutation { model: 'gemini-4-hydrogen', thinkingOption: 'invalid', mode: 'full-access' } publishes mutated model without relaunching
+      // 7. Partial mutation { model: 'gemini-4-hydrogen', thinkingOption: 'invalid', mode: 'full-access' } rolls back mutated model on failure
       events.length = 0
       await provider.send({
         type: 'session.configure',
@@ -1634,7 +1634,7 @@ new AgentSideConnection((client) => ({
         (e) => e.type === 'session.config' && e.sessionId === 's1',
       )
       assert.ok(partialCfg?.type === 'session.config')
-      assert.equal(partialCfg.config.model, 'gemini-4-hydrogen')
+      assert.equal(partialCfg.config.model, 'gemini-pro-orchestrator')
       assert.equal(partialCfg.config.mode, 'default')
       const spawnsFinal = (await readFile(logPath, 'utf8'))
         .trim()

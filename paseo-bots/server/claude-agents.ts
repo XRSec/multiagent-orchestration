@@ -4,12 +4,15 @@ import { dirname, join } from "node:path";
 import {
   CLAUDE_BASE_TOOLS,
   isClaudeProvider,
+  resolveClaudeSystemPromptFlag,
   resolveModeIdForProvider,
   resolveToolsForProvider,
   type Bot,
   type BotProviderConfig,
   type McpServerConfig,
 } from "../shared/bot";
+
+export { resolveClaudeSystemPromptFlag };
 import { botDataPath } from "./bot-home";
 import { librarySkillPath } from "./library";
 import { readBotSoul } from "./souls";
@@ -31,6 +34,7 @@ export interface ClaudeAgentOptions {
   mcpServers?: Record<string, McpServerConfig>;
   syncMcpConfig?: boolean;
   syncSkills?: boolean;
+  systemPromptMode?: "append" | "replace";
 }
 
 export interface ClaudeAgentSyncAllOptions {
@@ -339,11 +343,14 @@ function updateFrontmatter(
 }
 
 function renderClaudeAgentBody(
-  bot: Pick<Bot, "id" | "name" | "title" | "description" | "soul">,
+  bot: Pick<Bot, "id" | "name" | "title" | "description" | "soul"> & { systemPromptMode?: "append" | "replace" },
   claudeAgent: string,
   memoryFile: string,
   skills?: readonly string[],
 ): string {
+  if (bot.systemPromptMode === "replace" && bot.soul.trim()) {
+    return `${bot.soul.trim()}\n`;
+  }
   const memoryDir = join(dirname(memoryFile), "memory");
   const lines: string[] = [
     `You are ${bot.name.trim() || claudeAgent}.`,
@@ -377,7 +384,7 @@ function normalizeBody(body: string): string {
 }
 
 function renderClaudeAgentFile(
-  bot: Pick<Bot, "id" | "name" | "title" | "description" | "soul">,
+  bot: Pick<Bot, "id" | "name" | "title" | "description" | "soul"> & { systemPromptMode?: "append" | "replace" },
   claudeAgent: string,
   botDataDir: string,
   existingContent: string | null,
@@ -528,6 +535,7 @@ export async function syncBotToClaudeAgent(
     modeId?: string | null;
     baseTools?: string[];
     providerConfigs?: BotProviderConfig[];
+    systemPromptMode?: "append" | "replace";
   },
   options: ClaudeAgentOptions = {},
 ): Promise<ClaudeAgentSyncResult> {
@@ -542,7 +550,11 @@ export async function syncBotToClaudeAgent(
   assertNotGlobalUserConfig(agentsDir);
 
   const soul = await readBotSoul(bot.id, bot.soul, options.soulsDir);
-  const effectiveBot = { ...bot, soul };
+  const effectiveBot = {
+    ...bot,
+    soul,
+    ...(options.systemPromptMode !== undefined ? { systemPromptMode: options.systemPromptMode } : {}),
+  };
   await mkdir(agentsDir, { recursive: true });
 
   const claudeConfig = bot.providerConfigs?.find((cfg) => isClaudeProvider(cfg.provider));

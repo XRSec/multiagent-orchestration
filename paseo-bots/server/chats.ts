@@ -110,7 +110,19 @@ export async function startChat(
   host: BotsHost,
   relay: Relay,
   bot: Bot,
-  input: { prompt: string; title: string; labels: Record<string, string>; agentId?: string; group?: BotGroup | null; askedByBotId?: string; thinkingOptionId?: string | null; engine?: SubagentEngine },
+  input: {
+    prompt: string;
+    title: string;
+    labels: Record<string, string>;
+    agentId?: string;
+    group?: BotGroup | null;
+    askedByBotId?: string;
+    thinkingOptionId?: string | null;
+    engine?: SubagentEngine;
+    skillIds?: string[];
+    mcpServerIds?: string[];
+    mcpConfigPath?: string;
+  },
   onFallback?: (fromModel: string, toModel: string, error: unknown) => void,
 ): Promise<string> {
   const paseo = host.requirePaseo();
@@ -125,15 +137,21 @@ export async function startChat(
   const group = input.group !== undefined ? input.group : (sharedGroup ?? primaryGroupForBot(bot.id, groups));
   const home = await ensureBotHome({ botId: bot.id, ...(group ? { groupId: group.id, groupName: group.name } : {}) });
   const agentId = input.agentId ?? newUuid();
-  const effectiveBot = input.thinkingOptionId !== undefined ? { ...bot, thinkingOptionId: input.thinkingOptionId } : bot;
+  const effectiveBot: Bot = {
+    ...bot,
+    ...(input.thinkingOptionId !== undefined ? { thinkingOptionId: input.thinkingOptionId } : {}),
+    ...(input.skillIds !== undefined ? { skillIds: input.skillIds } : {}),
+    ...(input.mcpServerIds !== undefined ? { mcpServerIds: input.mcpServerIds } : {}),
+  };
   const placement = resolveBotPlacement(effectiveBot, group, home);
   const plugin = { tools: await relay.mountTools(bot.id, agentId), apps: bot.apps.length ? await relay.mountApps(bot.id) : null };
-  const { systemPrompt: system } = await systemPrompt(
+  const promptResult = await systemPrompt(
     { bot: effectiveBot, local: true, message: input.prompt, group, plugin, claudeProjectDir: placement.path },
     library,
     paseo,
     values,
   );
+  const resolvedMcpConfigPath = promptResult.mcpConfigPath ?? input.mcpConfigPath;
   return startBotChat(
     paseo,
     {
@@ -143,10 +161,11 @@ export async function startChat(
       plugin,
       placement,
       prompt: input.prompt,
-      systemPrompt: system,
+      systemPrompt: promptResult.systemPrompt,
       title: input.title,
       labels: chatLabels(input.labels, engine),
       ...(engine ? { engine } : {}),
+      ...(resolvedMcpConfigPath ? { mcpConfigPath: resolvedMcpConfigPath } : {}),
     },
     onFallback,
   );

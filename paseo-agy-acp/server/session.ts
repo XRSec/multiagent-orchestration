@@ -35,7 +35,14 @@ import {
   permissionKind,
   pickPermissionOption,
 } from './permissions.ts'
-import { buildTurnError, inspectConversationError } from './error-inspection.ts'
+import {
+  buildTurnError,
+  getFileIdentity,
+  inspectConversationError,
+  readLastStepIndexFromDb,
+  sameFile,
+  type UpstreamQuotaError,
+} from './error-inspection.ts'
 import { EditDiffTracker } from './tool-payload.ts'
 import {
   buildElicitationResponse,
@@ -116,12 +123,14 @@ type PendingQuestionPermission = {
   resolve: (r: PermissionResponseInput | null) => void
   fromElicitation: boolean
   fromBrain: boolean
+  timer?: NodeJS.Timeout
 }
 type PendingPermission =
   | {
       type: 'acp'
       request: RequestPermissionRequest
       resolve: (r: RequestPermissionResponse) => void
+      timer?: NodeJS.Timeout
     }
   | PendingQuestionPermission
 type Session = Awaited<ReturnType<typeof createSession>>
@@ -135,9 +144,60 @@ interface SessionOptions {
   toolStallTimeoutMs?: number
   toolNoticeMs?: number
   retryTimeoutMs?: number
+  permissionTimeoutMs?: number
 }
 
 const SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions'
+
+/**
+ * Run loadSession/resumeSession with an idle gate and bounded timeout to prevent hangs.
+ */
+export async function runLoadSessionWithReplayIdle<T>(opts: {
+  loadOperation: Promise<T>
+  fallbackResult: T
+  idleGapMs?: number
+  timeoutMs?: number
+  subscribeActivity?: (listener: () => void) => () => void
+}): Promise<T> {
+  const {
+    loadOperation,
+    fallbackResult,
+    idleGapMs = 2000,
+    timeoutMs = 90_000,
+    subscribeActivity,
+  } = opts
+
+  let idleTimer: NodeJS.Timeout | undefined
+  let overallTimer: NodeJS.Timeout | undefined
+  let cleanupActivity: (() => void) | undefined
+
+  const idlePromise = new Promise<T>((resolve) => {
+    let hadActivity = false
+    const onActivity = () => {
+      hadActivity = true
+      if (idleTimer) clearTimeout(idleTimer)
+      idleTimer = setTimeout(() => {
+        if (hadActivity) resolve(fallbackResult)
+      }, idleGapMs)
+      idleTimer.unref()
+    }
+    if (subscribeActivity) {
+      cleanupActivity = subscribeActivity(onActivity)
+    }
+    overallTimer = setTimeout(() => {
+      resolve(fallbackResult)
+    }, timeoutMs)
+    overallTimer.unref()
+  })
+
+  try {
+    return await Promise.race([loadOperation, idlePromise])
+  } finally {
+    if (idleTimer) clearTimeout(idleTimer)
+    if (overallTimer) clearTimeout(overallTimer)
+    cleanupActivity?.()
+  }
+}
 const TIER_CACHE_LIMIT = 100
 /**
  * Keychain-global credentials generation. A wrapper account switch bumps this once; every
@@ -187,6 +247,11 @@ function effectiveLaunch(
 }
 
 function sessionParams(cwd: string, config?: ProviderSessionConfig) {
+  const mode =
+    (config as { systemPromptMode?: string })?.systemPromptMode ??
+    (config?.providerOptions as { systemPromptMode?: string } | undefined)
+      ?.systemPromptMode
+  const isReplace = mode === 'replace'
   return {
     cwd,
     mcpServers: config ? mcpServers(config) : [],
@@ -194,7 +259,9 @@ function sessionParams(cwd: string, config?: ProviderSessionConfig) {
       ? {
           _meta: {
             antigravity: {
-              systemPrompt: { append: config.systemPrompt },
+              systemPrompt: isReplace
+                ? { replace: config.systemPrompt }
+                : { append: config.systemPrompt },
             },
           },
         }
@@ -248,8 +315,11 @@ export class SessionManager {
           if (!canResume && !session.initialized.agentCapabilities?.loadSession)
             throw new Error('agy does not support session/load')
           session.state.nativeId = data.sessionId as string
-          session.state.metadata = {
-            ...(await session.transport.request(
+          const fallbackResult: NewSessionResponse = {
+            sessionId: session.state.nativeId,
+          }
+          const loaded = await runLoadSessionWithReplayIdle({
+            loadOperation: session.transport.request(
               canResume
                 ? session.transport.rpc.resumeSession({
                     ...params,
@@ -259,7 +329,16 @@ export class SessionManager {
                     ...params,
                     sessionId: session.state.nativeId,
                   }),
-            )),
+              { timeoutMs: 90_000, fatalOnTimeout: false },
+            ),
+            fallbackResult,
+            idleGapMs: 2000,
+            timeoutMs: 90_000,
+            subscribeActivity: (listener) =>
+              session.subscribeReplayActivity(listener),
+          })
+          session.state.metadata = {
+            ...loaded,
             sessionId: session.state.nativeId,
           }
         } else {
@@ -404,6 +483,7 @@ export class SessionManager {
       const permission = session.permissions.get(input.permissionId)
       if (!permission) throw new Error('Permission is no longer pending')
       session.permissions.delete(input.permissionId)
+      if (permission.timer) clearTimeout(permission.timer)
       if (permission.type === 'acp') {
         const option = pickPermissionOption(
           permission.request.options,
@@ -1215,6 +1295,7 @@ async function createSession(
   }
   function cancelPermissions() {
     for (const [permissionId, p] of permissions) {
+      if (p.timer) clearTimeout(p.timer)
       if (p.type === 'acp') {
         state.deniedToolCallIds.add(p.request.toolCall.toolCallId)
         p.resolve({ outcome: { outcome: 'cancelled' } })
@@ -1267,6 +1348,24 @@ async function createSession(
     const promise = new Promise<PermissionResponseInput | null>((res) => {
       resolve = res
     })
+    const permissionId = randomUUID()
+    const permissionTimeoutMs = options.permissionTimeoutMs ?? 10 * 60_000
+    let timer: NodeJS.Timeout | undefined
+    if (permissionTimeoutMs > 0 && Number.isFinite(permissionTimeoutMs)) {
+      timer = setTimeout(() => {
+        if (!permissions.has(permissionId)) return
+        permissions.delete(permissionId)
+        resolve(null)
+        if (state.opened && !state.silenced) {
+          emit({
+            type: 'session.permission_resolved',
+            sessionId: id,
+            permissionId,
+          })
+        }
+      }, permissionTimeoutMs)
+      timer.unref()
+    }
     const entry: PendingQuestionPermission = {
       type: 'question',
       questions,
@@ -1274,8 +1373,8 @@ async function createSession(
       resolve,
       fromElicitation: source === 'elicitation',
       fromBrain: source === 'brain',
+      timer,
     }
-    const permissionId = randomUUID()
     permissions.set(permissionId, entry)
     emit({
       type: 'session.permission',
@@ -1295,8 +1394,16 @@ async function createSession(
     })
     return { promise, entry }
   }
+  const replayActivityListeners = new Set<() => void>()
   const client = {
     sessionUpdate: (notification: SessionNotification) => {
+      for (const listener of replayActivityListeners) {
+        try {
+          listener()
+        } catch {
+          /* ignore */
+        }
+      }
       notificationLane = notificationLane.then(() => update(notification))
       return notificationLane
     },
@@ -1387,7 +1494,25 @@ async function createSession(
       const securityPrompt = extractSecurityWarningPromptInfo(request.options)
       return new Promise<RequestPermissionResponse>((resolve) => {
         const permissionId = randomUUID()
-        permissions.set(permissionId, { type: 'acp', request, resolve })
+        const permissionTimeoutMs = options.permissionTimeoutMs ?? 10 * 60_000
+        let timer: NodeJS.Timeout | undefined
+        if (permissionTimeoutMs > 0 && Number.isFinite(permissionTimeoutMs)) {
+          timer = setTimeout(() => {
+            if (!permissions.has(permissionId)) return
+            permissions.delete(permissionId)
+            state.deniedToolCallIds.add(request.toolCall.toolCallId)
+            resolve({ outcome: { outcome: 'cancelled' } })
+            if (state.opened && !state.silenced) {
+              emit({
+                type: 'session.permission_resolved',
+                sessionId: id,
+                permissionId,
+              })
+            }
+          }, permissionTimeoutMs)
+          timer.unref()
+        }
+        permissions.set(permissionId, { type: 'acp', request, resolve, timer })
         emit({
           type: 'session.permission',
           sessionId: id,
@@ -1492,19 +1617,34 @@ async function createSession(
       state.replay = false
       let configChanged = false
       try {
+        const fallbackResult: NewSessionResponse = {
+          sessionId: opts.targetNativeId,
+        }
         const loaded =
           opts.preloaded ??
-          (await next.request(
-            opts.useResume
-              ? next.rpc.resumeSession({
-                  ...params,
-                  sessionId: opts.targetNativeId,
-                })
-              : next.rpc.loadSession({
-                  ...params,
-                  sessionId: opts.targetNativeId,
-                }),
-          ))
+          (await runLoadSessionWithReplayIdle({
+            loadOperation: next.request(
+              opts.useResume
+                ? next.rpc.resumeSession({
+                    ...params,
+                    sessionId: opts.targetNativeId,
+                  })
+                : next.rpc.loadSession({
+                    ...params,
+                    sessionId: opts.targetNativeId,
+                  }),
+              { timeoutMs: 90_000, fatalOnTimeout: false },
+            ),
+            fallbackResult,
+            idleGapMs: 2000,
+            timeoutMs: 90_000,
+            subscribeActivity: (listener) => {
+              replayActivityListeners.add(listener)
+              return () => {
+                replayActivityListeners.delete(listener)
+              }
+            },
+          }))
         opts.onRegistered?.()
         state.metadata = {
           ...loaded,
@@ -1624,7 +1764,14 @@ async function createSession(
       state.replay = false
       retiring.add(currentTransport)
       try {
-        await currentTransport.close()
+        await currentTransport.close().catch((err) => {
+          // If the retired transport did not exit before TERMINATION_DEADLINE_MS,
+          // close() finally block already killed process groups. Catch this deadline
+          // timeout so it does not trigger onExit() or fail the session relaunch.
+          const msg = err instanceof Error ? err.message : String(err)
+          if (msg.includes('did not exit after termination')) return
+          throw err
+        })
         if (state.closing) return
         if (state.failed)
           throw new Error('ACP runtime has exited; reopen the session')
@@ -1701,6 +1848,12 @@ async function createSession(
           pendingReplay: false,
           suppressEcho: false,
           carriedUsage: undefined,
+        }
+      },
+      subscribeReplayActivity(listener: () => void) {
+        replayActivityListeners.add(listener)
+        return () => {
+          replayActivityListeners.delete(listener)
         }
       },
       hasChild: (nativeId: string) => subagents.hasChild(nativeId),
@@ -2115,7 +2268,7 @@ async function createSession(
         resolveCommands()
         closing = (async () => {
           cancelPermissions()
-          subagents.closeAll()
+          await subagents.closeAll()
           if (closingTurnId) finishTurnOnce(closingTurnId, 'canceled')
           else terminalize('canceled')
           state.silenced = true
@@ -2134,11 +2287,11 @@ async function createSession(
               .catch(() => undefined)
           const dir = dataDirectory(launch, config?.env, cwd)
           await closingObservation?.dispose()
-          const stopped = await currentTransport.close().then(
+          await currentTransport.close().then(
             () => true,
             () => false,
           )
-          if (disposable && stopped)
+          if (disposable)
             await (
               config?.persist === false
                 ? removeForkedConversation
@@ -2308,6 +2461,12 @@ async function configureSession(
     ['mode', changes.mode],
   ] as const
   const initial = configState(session.state.metadata)
+  const initialModel = selectedConfigValue(initial, 'model')
+  const initialThinking = selectedConfigValue(initial, 'thought_level')
+  const initialMode = selectedConfigValue(initial, 'mode')
+  const initialFullAccess = session.state.metadata.fullAccess
+  const initialSkipPermissions = session.state.skipPermissions
+  const appliedKeys: NativeConfigKey[] = []
   for (const [key, value] of entries) {
     if (value == null) continue
     if (key === 'mode' && value === FULL_ACCESS_MODE_ID) continue
@@ -2335,6 +2494,7 @@ async function configureSession(
       if (key === 'mode' && value === FULL_ACCESS_MODE_ID) {
         session.state.metadata.fullAccess = true
         mutated = true
+        appliedKeys.push(key)
         const nativeModes = configState({
           ...session.state.metadata,
           fullAccess: false,
@@ -2357,6 +2517,7 @@ async function configureSession(
         }
         session.state.metadata.fullAccess = false
         mutated = true
+        appliedKeys.push(key)
       }
       if (
         options?.fallbackStored &&
@@ -2370,6 +2531,7 @@ async function configureSession(
           value,
         )
         mutated ||= stored.applied
+        if (stored.applied) appliedKeys.push(key)
         if (stored.unavailable)
           session.noticeConfigFallback(
             key,
@@ -2387,9 +2549,58 @@ async function configureSession(
         true,
       )
       mutated ||= applied
+      if (applied) appliedKeys.push(key)
     }
   } catch (error) {
-    if (mutated) session.publishConfig()
+    if (appliedKeys.length > 0) {
+      for (const key of appliedKeys.reverse()) {
+        try {
+          if (key === 'mode') {
+            session.state.metadata.fullAccess = initialFullAccess
+            if (initialSkipPermissions !== session.state.skipPermissions) {
+              await session
+                .relaunch(initialSkipPermissions)
+                .catch(() => undefined)
+            }
+            if (initialMode && initialMode !== FULL_ACCESS_MODE_ID) {
+              await applyNativeConfigOption(
+                session.transport,
+                session.state.nativeId,
+                session.state.metadata,
+                'mode',
+                initialMode,
+                false,
+              ).catch(() => undefined)
+            }
+          } else if (key === 'model') {
+            if (initialModel) {
+              await applyNativeConfigOption(
+                session.transport,
+                session.state.nativeId,
+                session.state.metadata,
+                'model',
+                initialModel,
+                false,
+              ).catch(() => undefined)
+            }
+          } else if (key === 'thought_level') {
+            if (initialThinking) {
+              await applyNativeConfigOption(
+                session.transport,
+                session.state.nativeId,
+                session.state.metadata,
+                'thought_level',
+                initialThinking,
+                false,
+              ).catch(() => undefined)
+            }
+          }
+        } catch {
+          /* best-effort rollback */
+        }
+      }
+    }
+    session.publishConfig()
     throw error
   }
   session.publishConfig()
@@ -2494,13 +2705,16 @@ async function promptSession(
     .map((c) => (c.type === 'text' ? c.text : '[image]'))
     .join('\n')
   const nativeId = session.state.nativeId
+  const dbPath = join(session.appDataDir, 'conversations', `${nativeId}.db`)
+  const preTurnDbIdentity = getFileIdentity(dbPath)
   let minStepIndex: number | undefined
   let checkpointId: string | undefined
   try {
+    const dbStep = readLastStepIndexFromDb(session.appDataDir, nativeId)
     const readStep = await readLastStepIndex(session.brainRoot, nativeId).catch(
       () => -1,
     )
-    minStepIndex = Math.max(session.state.lastKnownStepIndex, readStep)
+    minStepIndex = Math.max(session.state.lastKnownStepIndex, readStep, dbStep)
     session.state.lastKnownStepIndex = minStepIndex
     if (session.supportsRevertFiles) {
       const checkpoint = await captureTurnFileCheckpoint(
@@ -2508,7 +2722,13 @@ async function promptSession(
         nativeId,
         session.cwd,
         minStepIndex,
-      ).catch(() => undefined)
+      ).catch((err) => {
+        console.warn(
+          `[paseo-agy-acp] turn file checkpoint capture failed for nativeId=${nativeId}:`,
+          err,
+        )
+        return undefined
+      })
       if (checkpoint) {
         checkpointId = checkpoint.id
       }
@@ -3113,11 +3333,17 @@ async function promptSession(
     }
     // Inspection may enrich a failed terminal or resolve a refusal, but it must never
     // downgrade a turn that already has positive terminal evidence (legit stopReason).
+    const postTurnDbIdentity = getFileIdentity(dbPath)
+    const isSameDb = sameFile(preTurnDbIdentity, postTurnDbIdentity)
+    const effectiveMinStep = isSameDb ? minStepIndex : -1
+    let inspected: UpstreamQuotaError | undefined
     if (status === 'failed' || result.stopReason === 'refusal') {
-      const inspected = inspectConversationError(
+      inspected = inspectConversationError(
         session.appDataDir,
         session.state.nativeId,
-        minStepIndex,
+        effectiveMinStep,
+        Date.now(),
+        { dbIdentity: isSameDb ? postTurnDbIdentity : undefined },
       )
       const structuredError = buildTurnError(
         result.stopReason,
@@ -3128,6 +3354,19 @@ async function promptSession(
         status = 'failed'
         turnError = structuredError
       }
+    }
+    // Shubzkothekar invariant: advance step cursor even on failed turns so stale errors aren't re-read
+    const maxDbStep = readLastStepIndexFromDb(
+      session.appDataDir,
+      session.state.nativeId,
+    )
+    const candidateStep = Math.max(
+      inspected?.stepIndex ?? -1,
+      maxDbStep,
+      observation?.usage.latestStepIndex ?? -1,
+    )
+    if (candidateStep > session.state.lastKnownStepIndex) {
+      session.state.lastKnownStepIndex = candidateStep
     }
     settleTurnUsageAndWakeup(false)
     await disposeTurnWork()
@@ -3157,6 +3396,18 @@ async function promptSession(
         ? 'canceled'
         : 'failed'
     const message = formatErrorMessage(turnError)
+    // Advance step cursor on error
+    const maxDbStep = readLastStepIndexFromDb(
+      session.appDataDir,
+      session.state.nativeId,
+    )
+    const candidateStep = Math.max(
+      maxDbStep,
+      observation?.usage.latestStepIndex ?? -1,
+    )
+    if (candidateStep > session.state.lastKnownStepIndex) {
+      session.state.lastKnownStepIndex = candidateStep
+    }
     await disposeTurnWork()
     await syncTurnCountFromTranscript(session)
     session.finishTurnOnce(turnId, status, message)

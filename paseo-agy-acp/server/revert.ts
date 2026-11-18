@@ -292,7 +292,11 @@ export async function revertSession(options: {
     retainedCutoffStepIndex = forkResult.retainedCutoffStepIndex
     lastRetainedStepIndex = forkResult.lastRetainedStepIndex
   } catch (error) {
-    if (options.fallbackToFreshOnForkError === false) {
+    const allowFallback =
+      scope === 'both'
+        ? options.fallbackToFreshOnForkError === true
+        : options.fallbackToFreshOnForkError !== false
+    if (!allowFallback) {
       throw error
     }
     newNativeId = await createFreshSession()

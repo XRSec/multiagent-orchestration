@@ -162,10 +162,14 @@ new AgentSideConnection((client) => {
       if (!initialSessionId) initialSessionId = nativeId
       hasRegisteredSession = true
       openSessions.add(nativeId)
-      const append = (
-        params._meta?.antigravity as { systemPrompt?: { append?: string } }
-      )?.systemPrompt?.append
-      log(append ? `new:${append}` : 'new')
+      const agyPrompt = (
+        params._meta?.antigravity as {
+          systemPrompt?: { append?: string; replace?: string }
+        }
+      )?.systemPrompt
+      const append = agyPrompt?.append
+      const replace = agyPrompt?.replace
+      log(replace ? `new:replace:${replace}` : append ? `new:${append}` : 'new')
       if (process.env.AGY_TEST_STALE_EVENTS) await staleEvents(previousId)
       sendCommands(nativeId)
       return { sessionId: nativeId, configOptions }
@@ -181,10 +185,15 @@ new AgentSideConnection((client) => {
       if (!initialSessionId) initialSessionId = sessionId
       hasRegisteredSession = true
       openSessions.add(sessionId)
-      const append = (
-        _meta?.antigravity as { systemPrompt?: { append?: string } }
-      )?.systemPrompt?.append
-      if (append) log(`load:${append}`)
+      const agyPrompt = (
+        _meta?.antigravity as {
+          systemPrompt?: { append?: string; replace?: string }
+        }
+      )?.systemPrompt
+      const append = agyPrompt?.append
+      const replace = agyPrompt?.replace
+      if (replace) log(`load:replace:${replace}`)
+      else if (append) log(`load:${append}`)
       else if (process.env.AGY_TEST_LOG_LOAD) log('load')
       sendCommands(sessionId)
       const isRevertPlanStream = Boolean(
@@ -284,10 +293,20 @@ new AgentSideConnection((client) => {
       if (!initialSessionId) initialSessionId = sessionId
       hasRegisteredSession = true
       openSessions.add(sessionId)
-      const append = (
-        _meta?.antigravity as { systemPrompt?: { append?: string } }
-      )?.systemPrompt?.append
-      log(append ? `resume:${append}` : 'resume')
+      const agyPrompt = (
+        _meta?.antigravity as {
+          systemPrompt?: { append?: string; replace?: string }
+        }
+      )?.systemPrompt
+      const append = agyPrompt?.append
+      const replace = agyPrompt?.replace
+      log(
+        replace
+          ? `resume:replace:${replace}`
+          : append
+            ? `resume:${append}`
+            : 'resume',
+      )
       sendCommands(sessionId)
       return { configOptions }
     },

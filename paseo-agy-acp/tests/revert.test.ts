@@ -4312,6 +4312,7 @@ test('revertSession degrades to a fresh session and still restores files when st
         text: 'First',
       },
       createFreshSession: async () => '22222222-2222-4222-8222-222222222222',
+      fallbackToFreshOnForkError: true,
     })
 
     assert.equal(res.newNativeId, '22222222-2222-4222-8222-222222222222')

@@ -8,6 +8,7 @@ import {
   defaultClaudeMcpPath,
   defaultClaudeSkillsDir,
   renderClaudeMcpConfig,
+  resolveClaudeSystemPromptFlag,
   sessionClaudeMcpPath,
   syncAllBotsToClaude,
   syncBotToClaudeAgent,
@@ -350,6 +351,8 @@ describe("Claude Agent Per-Session MCP & Skill Injection", () => {
     );
 
     expect(res.systemPrompt).toContain("WeatherBot");
+    expect(res.mcpConfigPath).toBe(join(root, ".mcp.json"));
+    expect(res.skillsDir).toBe(join(root, ".claude", "skills"));
 
     const agentFile = join(agentsDir, "bot-weather.md");
     const agentContent = await readFile(agentFile, "utf8");
@@ -357,5 +360,46 @@ describe("Claude Agent Per-Session MCP & Skill Injection", () => {
     expect(agentContent).toContain("skills:\n  - forecast");
     expect(agentContent).toContain("weather:");
     expect(agentContent).toContain("bots:"); // TOOLS_MCP_NAME ("bots")
+  });
+
+  it("honors systemPromptMode 'replace' vs 'append' in claude agent and CLI flag mapping", async () => {
+    const root = await makeTempDir("claude-sysprompt-mode-");
+    const agentsDir = join(root, "agents");
+
+    const appendBot = makeBot({
+      id: "bot-append",
+      name: "AppendBot",
+      provider: "claude",
+      soul: "Follow strict rules.",
+      systemPromptMode: "append",
+    });
+
+    const replaceBot = makeBot({
+      id: "bot-replace",
+      name: "ReplaceBot",
+      provider: "claude",
+      soul: "Exact custom prompt only.",
+      systemPromptMode: "replace",
+    });
+
+    await syncBotToClaudeAgent(appendBot, { agentsDir, projectDir: root });
+    await syncBotToClaudeAgent(replaceBot, { agentsDir, projectDir: root });
+
+    const appendContent = await readFile(join(agentsDir, "bot-append.md"), "utf8");
+    const replaceContent = await readFile(join(agentsDir, "bot-replace.md"), "utf8");
+
+    expect(appendContent).toContain("You are AppendBot.");
+    expect(appendContent).toContain("## Standing Instructions");
+    expect(appendContent).toContain("Follow strict rules.");
+
+    expect(replaceContent).toContain("Exact custom prompt only.");
+    expect(replaceContent).not.toContain("You are ReplaceBot.");
+    expect(replaceContent).not.toContain("## Standing Instructions");
+
+    // CLI flag resolution test
+    expect(resolveClaudeSystemPromptFlag("append", true)).toBe("--append-system-prompt-file");
+    expect(resolveClaudeSystemPromptFlag("append", false)).toBe("--append-system-prompt");
+    expect(resolveClaudeSystemPromptFlag("replace", true)).toBe("--system-prompt-file");
+    expect(resolveClaudeSystemPromptFlag("replace", false)).toBe("--system-prompt");
   });
 });

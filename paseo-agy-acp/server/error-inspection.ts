@@ -5,7 +5,7 @@
  * Prerequisites: Node >= 22.18.0 with node:sqlite DatabaseSync.
  * Size: ~589 lines (500-800 band) because payload parsing, blob sanitization and read-only SQLite inspection stay co-located.
  */
-import { existsSync } from 'node:fs'
+import { existsSync, lstatSync } from 'node:fs'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import type { ProviderError } from '@getpaseo/plugin/server/provider'
@@ -513,69 +513,152 @@ function attemptFollowedByAssistant(
   return Boolean(db.prepare(sql).get(...params))
 }
 
+export interface FileIdentity {
+  dev: number
+  ino: number
+}
+
+export function getFileIdentity(path: string): FileIdentity | undefined {
+  try {
+    const stat = lstatSync(path)
+    return { dev: stat.dev, ino: stat.ino }
+  } catch {
+    return undefined
+  }
+}
+
+export function sameFile(a?: FileIdentity, b?: FileIdentity): boolean {
+  return (
+    a !== undefined && b !== undefined && a.dev === b.dev && a.ino === b.ino
+  )
+}
+
+export function readLastStepIndexFromDb(
+  appDataDir: string,
+  nativeId: string,
+): number {
+  if (!nativeId) return -1
+  const dbPath = join(appDataDir, 'conversations', `${nativeId}.db`)
+  if (!existsSync(dbPath)) return -1
+  let db: DatabaseSync | undefined
+  try {
+    db = new DatabaseSync(dbPath, { readOnly: true })
+    db.exec('PRAGMA busy_timeout = 100')
+    const row = db.prepare('SELECT MAX(idx) AS maxIdx FROM steps').get() as
+      { maxIdx?: number } | undefined
+    return typeof row?.maxIdx === 'number' ? row.maxIdx : -1
+  } catch {
+    return -1
+  } finally {
+    try {
+      db?.close()
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function isSqliteBusy(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+  const code = (err as { code?: string }).code
+  const message = (err as { message?: string }).message ?? ''
+  return code === 'SQLITE_BUSY' || message.includes('busy')
+}
+
+function spinWaitMs(ms: number) {
+  const start = Date.now()
+  while (Date.now() - start < ms) {
+    // synchronous spin wait
+  }
+}
+
 /** Read-only inspection of conversations/<sessionId>.db for step_type = 17 errors. */
 export function inspectConversationError(
   appDataDir: string,
   nativeId: string,
   minStepIndex?: number,
   nowMs = Date.now(),
+  options?: { dbIdentity?: FileIdentity },
 ): UpstreamQuotaError | undefined {
   if (!nativeId) return undefined
   const dbPath = join(appDataDir, 'conversations', `${nativeId}.db`)
   if (!existsSync(dbPath)) return undefined
+  if (options?.dbIdentity) {
+    const currentIdentity = getFileIdentity(dbPath)
+    if (!sameFile(options.dbIdentity, currentIdentity)) return undefined
+  }
   let db: DatabaseSync | undefined
-  try {
-    db = new DatabaseSync(dbPath, { readOnly: true })
-    const cols = new Set(
-      (
-        db.prepare('PRAGMA table_info(steps)').all() as Array<{ name: string }>
-      ).map((c) => c.name),
-    )
-    if (!cols.has('idx') || !cols.has('step_type')) return undefined
-    const selectCols = ['idx']
-    if (cols.has('status')) selectCols.push('status')
-    for (const col of STEP_PAYLOAD_COLUMNS) {
-      if (cols.has(col)) selectCols.push(col)
-    }
-    const hasFloor =
-      typeof minStepIndex === 'number' &&
-      Number.isInteger(minStepIndex) &&
-      minStepIndex >= 0
-    const sql = hasFloor
-      ? `SELECT ${selectCols.join(', ')} FROM steps WHERE step_type = ? AND idx >= ? ORDER BY idx DESC LIMIT 5`
-      : `SELECT ${selectCols.join(', ')} FROM steps WHERE step_type = ? ORDER BY idx DESC LIMIT 5`
-    const rows = (
-      hasFloor
-        ? db.prepare(sql).all(ERROR_STEP_TYPE, minStepIndex)
-        : db.prepare(sql).all(ERROR_STEP_TYPE)
-    ) as Array<Record<string, unknown> & { idx: number; status?: number }>
-    for (const row of rows) {
-      if (attemptFollowedByAssistant(db, row.idx, cols.has('status'))) continue
+  const MAX_RETRIES = 3
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      db = new DatabaseSync(dbPath, { readOnly: true })
+      db.exec('PRAGMA busy_timeout = 100')
+      const cols = new Set(
+        (
+          db.prepare('PRAGMA table_info(steps)').all() as Array<{
+            name: string
+          }>
+        ).map((c) => c.name),
+      )
+      if (!cols.has('idx') || !cols.has('step_type')) return undefined
+      const selectCols = ['idx']
+      if (cols.has('status')) selectCols.push('status')
       for (const col of STEP_PAYLOAD_COLUMNS) {
-        const parsed = parseBlobErrorPayload(row[col], nowMs)
-        if (parsed) return { ...parsed, stepIndex: row.idx }
+        if (cols.has(col)) selectCols.push(col)
       }
-      // A schema without `status` cannot distinguish attempt rows from terminal failures;
-      // never drop a step_type = 17 row just because the column is missing.
-      if (!cols.has('status') || row.status === AGY_STEP_STATUS_DONE) {
-        return {
-          message: 'Upstream provider error (step_type=17)',
-          quotaExhausted: false,
-          retryable: false,
-          stepIndex: row.idx,
+      const hasFloor =
+        typeof minStepIndex === 'number' &&
+        Number.isInteger(minStepIndex) &&
+        minStepIndex >= 0
+      const sql = hasFloor
+        ? `SELECT ${selectCols.join(', ')} FROM steps WHERE step_type = ? AND idx > ? ORDER BY idx DESC`
+        : `SELECT ${selectCols.join(', ')} FROM steps WHERE step_type = ? ORDER BY idx DESC`
+      const rows = (
+        hasFloor
+          ? db.prepare(sql).all(ERROR_STEP_TYPE, minStepIndex)
+          : db.prepare(sql).all(ERROR_STEP_TYPE)
+      ) as Array<Record<string, unknown> & { idx: number; status?: number }>
+      for (const row of rows) {
+        if (attemptFollowedByAssistant(db, row.idx, cols.has('status')))
+          continue
+        for (const col of STEP_PAYLOAD_COLUMNS) {
+          const parsed = parseBlobErrorPayload(row[col], nowMs)
+          if (parsed) return { ...parsed, stepIndex: row.idx }
+        }
+        // A schema without `status` cannot distinguish attempt rows from terminal failures;
+        // never drop a step_type = 17 row just because the column is missing.
+        if (!cols.has('status') || row.status === AGY_STEP_STATUS_DONE) {
+          return {
+            message: 'Upstream provider error (step_type=17)',
+            quotaExhausted: false,
+            retryable: false,
+            stepIndex: row.idx,
+          }
         }
       }
-    }
-    return undefined
-  } catch {
-    return undefined
-  } finally {
-    try {
-      db?.close()
-    } catch {
-      /* Ignore close errors on best-effort read-only inspection. */
+      return undefined
+    } catch (error) {
+      try {
+        db?.close()
+      } catch {
+        /* Ignore close errors on best-effort read-only inspection. */
+      }
+      db = undefined
+      if (isSqliteBusy(error) && attempt < MAX_RETRIES - 1) {
+        spinWaitMs(15)
+        continue
+      }
+      console.warn('[paseo-agy-acp] inspectConversationError failed:', error)
+      return undefined
+    } finally {
+      try {
+        db?.close()
+      } catch {
+        /* Ignore close errors on best-effort read-only inspection. */
+      }
     }
   }
+  return undefined
 }
 
 /** Build a structured ProviderError from stopReason and inspected SQLite error state. */

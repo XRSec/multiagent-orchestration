@@ -29,7 +29,11 @@ import {
 } from './common.ts'
 
 const execFileAsync = promisify(execFile)
-const GIT_TIMEOUT_MS = 5000
+export let GIT_TIMEOUT_MS = Number(process.env.PASEO_GIT_TIMEOUT_MS) || 15_000
+
+export function setGitTimeoutMs(timeoutMs: number): void {
+  GIT_TIMEOUT_MS = timeoutMs
+}
 const GIT_DIFF_MAX_BUFFER = 32 * 1024 * 1024
 
 function gitEnv(extra?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

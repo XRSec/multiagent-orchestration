@@ -39,7 +39,12 @@ const PromptSectionSchema = z.object({ title: z.string(), text: z.string() });
 export const systemPromptRpc = defineRpc({
   name: "bots.system-prompt",
   input: z.object({ bot: BotSchema, local: z.boolean(), message: z.string().max(100_000).optional() }),
-  output: z.object({ systemPrompt: z.string(), sections: z.array(PromptSectionSchema) }),
+  output: z.object({
+    systemPrompt: z.string(),
+    sections: z.array(PromptSectionSchema),
+    mcpConfigPath: z.string().optional(),
+    skillsDir: z.string().optional(),
+  }),
 });
 
 const MemoryFileSchema = z.object({ name: MemoryFileName, bytes: z.number(), lines: z.number(), topic: z.boolean() });

@@ -76,6 +76,7 @@ export function newBot(provider: string, template?: BotTemplate, existingIds?: I
     fallbackModels: [],
     providerConfigs: [],
     soul: template?.soul ?? "",
+    systemPromptMode: "append",
     mcpServerIds: [],
     alwaysAllow: [],
     skillIds: [],

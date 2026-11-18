@@ -140,6 +140,42 @@ export function resolveAcpArgs(launch: ProviderLaunch | undefined): string[] {
   return args.length > 0 ? args : ['acp']
 }
 
+/**
+ * Redact sensitive credentials, authorization tokens, URLs and local home directory paths from stderr output.
+ */
+export function sanitizeAcpStderrExcerpt(
+  raw: string,
+  homeDir = process.env.HOME,
+): string {
+  if (!raw) return ''
+  let sanitized = raw
+  sanitized = sanitized.replace(
+    /https?:\/\/accounts\.google\.com[^\s'")]+/gi,
+    '[REDACTED_AUTH_URL]',
+  )
+  sanitized = sanitized.replace(
+    /https?:\/\/[^\s'")]+?\/pair#[^\s'")]+/gi,
+    '[REDACTED_PAIR_URL]',
+  )
+  sanitized = sanitized.replace(/\/pair#[^\s'")]+/gi, '[REDACTED_PAIR_URL]')
+  sanitized = sanitized.replace(
+    /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/-]+=*/gi,
+    '$1 [REDACTED_TOKEN]',
+  )
+  sanitized = sanitized.replace(
+    /\b(x-api-key|api[_-]?key)([:=\s]+)[A-Za-z0-9_\-]{8,}/gi,
+    '$1$2[REDACTED_KEY]',
+  )
+  sanitized = sanitized.replace(
+    /([?&](?:token|key|auth|access_token|secret)=)[^\s&'")]+/gi,
+    '$1[REDACTED_SECRET]',
+  )
+  if (homeDir && homeDir.length > 1) {
+    sanitized = sanitized.replaceAll(homeDir, '$HOME')
+  }
+  return sanitized.slice(-4096)
+}
+
 /** Own one ACP process, bounded control requests, and shutdown of its tracked process groups. */
 export function connectAcp(
   launch: ProviderLaunch | undefined,
@@ -214,7 +250,7 @@ export function connectAcp(
     resolveStopped = resolve
   })
   function formatExitError(fallback: string): Error {
-    const detail = stderr.trim()
+    const detail = sanitizeAcpStderrExcerpt(stderr.trim())
     if (exitInfo) {
       const status =
         exitInfo.code !== null
@@ -296,11 +332,13 @@ export function connectAcp(
           'id' in message &&
           !RequestPermissionRequestSchema.safeParse(message.params).success
         ) {
-          await writer.write({
-            jsonrpc: '2.0',
-            id: message.id,
-            result: { outcome: { outcome: 'cancelled' } },
-          })
+          await writer
+            .write({
+              jsonrpc: '2.0',
+              id: message.id,
+              result: { outcome: { outcome: 'cancelled' } },
+            })
+            .catch(() => undefined)
           return
         }
         if ('result' in message) {

@@ -78,6 +78,13 @@ async function defaultStageDispatcher(
     ...(ctx.callerBotId ? { [ASKED_BY_LABEL]: ctx.callerBotId } : {}),
     ...(ctx.callerAgentId ? { [ASKED_IN_LABEL]: ctx.callerAgentId } : {}),
   };
+  const stageSkillIds = ctx.stage.skillIds !== undefined
+    ? Array.from(new Set([...(targetBot.skillIds ?? []), ...ctx.stage.skillIds]))
+    : undefined;
+  const stageMcpServerIds = ctx.stage.mcpServerIds !== undefined
+    ? Array.from(new Set([...(targetBot.mcpServerIds ?? []), ...ctx.stage.mcpServerIds]))
+    : undefined;
+
   const chatId = await startChat(host, relay, targetBot, {
     prompt: ctx.prompt,
     title: `[${ctx.workflow.name}] ${ctx.stage.name}`,
@@ -86,6 +93,8 @@ async function defaultStageDispatcher(
     ...(ctx.group !== undefined ? { group: ctx.group } : {}),
     ...(ctx.callerBotId ? { askedByBotId: ctx.callerBotId } : {}),
     engine: ctx.engine,
+    ...(stageSkillIds !== undefined ? { skillIds: stageSkillIds } : {}),
+    ...(stageMcpServerIds !== undefined ? { mcpServerIds: stageMcpServerIds } : {}),
   });
 
   if (chatId !== ctx.chatId) {

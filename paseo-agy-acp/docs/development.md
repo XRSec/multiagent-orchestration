@@ -45,6 +45,8 @@ Paseo compiles the TypeScript plugin; no separate build output is required. Git/
 | `server/questions.ts`                                                     | Normalize `elicitation/create` schemas and `ask_question` calls into `QuestionCard`s.   |
 | `server/permissions.ts`                                                   | Classify permission requests, MCP `toolPolicy` preapprovals and option selection.       |
 | `server/transport.ts`                                                     | ACP stdio process, `elicitation/create` interception, metadata capture and shutdown.    |
+| `server/turn-journal.ts`                                                  | Crash recovery journal, serialize running turns, and queued session lane cleanup.       |
+| `server/error-inspection.ts`                                              | Read-only SQLite inspection for step_type=17 errors, retryable tokens and sanitization. |
 | `server/mapping.ts`                                                       | Timeline state machine, configuration, attachment and context/token usage mapping.      |
 | `server/brain-io.ts`                                                      | Realpath-contained Brain file readers, `O_TRUNC` cursor detection and inbox/subagents.  |
 | `server/brain-observer.ts`                                                | Live turn transcript observation, step dedupe and usage snapshot reconciliation.        |
