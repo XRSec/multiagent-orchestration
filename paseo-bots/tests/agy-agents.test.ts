@@ -154,8 +154,25 @@ describe("agy-agents", () => {
       const bot = makeBot({ provider });
       expect(resolveAgyAgent(bot)).toBe(bot.id);
       const config = buildAgentConfig(bot, EMPTY_LIBRARY, "flash", "sys");
-      expect(config.providerOptions).toEqual({ agent: bot.id });
-      expect("systemPrompt" in config).toBe(false);
+      expect(config.providerOptions).toBeUndefined();
+      expect(config.systemPrompt).toBe("sys");
+
+      const staticConfig = buildAgentConfig(
+        bot,
+        EMPTY_LIBRARY,
+        "flash",
+        "sys",
+        {},
+        null,
+        undefined,
+        null,
+        undefined,
+        null,
+        "append",
+        { useStaticAgyAgent: true },
+      );
+      expect(staticConfig.providerOptions).toEqual({ agent: bot.id });
+      expect("systemPrompt" in staticConfig).toBe(false);
     }
 
     const claudeBot = makeBot({ provider: "claude" });

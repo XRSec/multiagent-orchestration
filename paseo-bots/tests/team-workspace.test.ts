@@ -46,17 +46,28 @@ describe("Team-scoped workspace (cwd & mounts)", () => {
     const groupWithoutCwd = makeGroup({ cwd: null });
 
     expect(resolveBotPlacement(botWithCwd, groupWithCwd, home)).toEqual({
-      path: "/team/cwd",
-      projectRoot: null,
+      path: "/shared/Bots/bot-1",
+      projectRoot: "/shared/Bots",
+      projectTitle: "Core Team",
+      targetProjectDirs: ["/team/cwd"],
+    });
+    expect(resolveBotPlacement(botWithCwd, null, home)).toEqual({
+      path: "/shared/Bots/bot-1",
+      projectRoot: "/shared/Bots",
+      projectTitle: null,
+      targetProjectDirs: ["/bot/cwd"],
     });
     expect(resolveBotPlacement(botWithCwd, groupWithoutCwd, home)).toEqual({
-      path: "/bot/cwd",
-      projectRoot: null,
+      path: "/shared/Bots/bot-1",
+      projectRoot: "/shared/Bots",
+      projectTitle: "Core Team",
+      targetProjectDirs: [],
     });
     expect(resolveBotPlacement(botWithoutCwd, groupWithoutCwd, home)).toEqual({
       path: "/shared/Bots/bot-1",
       projectRoot: "/shared/Bots",
       projectTitle: "Core Team",
+      targetProjectDirs: [],
     });
   });
 

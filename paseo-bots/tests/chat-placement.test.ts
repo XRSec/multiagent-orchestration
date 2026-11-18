@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { startBotChat, type ChatApi } from "../shared/chat";
+import { resolveBotPlacement, startBotChat, type ChatApi } from "../shared/chat";
 import { EMPTY_LIBRARY } from "../shared/bot";
 import { makeBot } from "./helpers";
 
@@ -56,5 +56,17 @@ describe("bot chat placement", () => {
     });
     expect(capturedConfig).not.toBeNull();
     expect(capturedConfig.mcpConfigPath).toBe("/bots/inbox/.mcp.json");
+  });
+
+  it("keeps placement.path equal to home.path and moves cwd into targetProjectDirs", () => {
+    const home = { path: "/shared/Bots/bot-mocode", root: "/shared/Bots" };
+    const placement = resolveBotPlacement(
+      makeBot({ id: "bot-mocode", cwd: "/repo/target" }),
+      null,
+      home,
+    );
+    expect(placement.path).toBe("/shared/Bots/bot-mocode");
+    expect(placement.projectRoot).toBe("/shared/Bots");
+    expect(placement.targetProjectDirs).toEqual(["/repo/target"]);
   });
 });

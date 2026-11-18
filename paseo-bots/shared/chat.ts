@@ -9,6 +9,12 @@
 import type { WireAttachment } from "./attachments";
 import { BOT_LABEL, buildAgentConfig, defaultModelId, type Bot, type BotGroup, type FallbackModel, type Library, type PluginServers } from "./bot";
 
+/** Label on chats carrying the team session correlation ID (teamSessionId). */
+export const TEAM_SESSION_LABEL = "paseo-bots.team-session";
+
+/** Label on chats carrying the session role (dm, team-lead, team-direct-specialist, dispatched-worker). */
+export const SESSION_ROLE_LABEL = "paseo-bots.session-role";
+
 /** Label on chats started by a routine, carrying the routine id. */
 export const ROUTINE_LABEL = "paseo-bots.routine";
 
@@ -48,24 +54,59 @@ export function displayTitle(title: string | null | undefined): string {
 
 /** Where a bot's chats live. */
 export interface BotPlacement {
-  /** The bot's own folder: its workspace's working folder. */
+  /** The bot's own folder: its workspace's working folder / managed CWD. */
   path: string;
   /** Folder of the shared Bots/Team project, or null when the bot has its own working folder. */
   projectRoot: string | null;
   /** Display title for the project (e.g. team name) when grouped under a team. */
   projectTitle?: string | null;
+  /** Personal home Bots/<botId> for personal MEMORY.md lookup. */
+  botHomePath?: string;
+  /** Team root Teams/<team> for team MEMORY.md lookup. */
+  teamRootPath?: string | null;
+  /** Shared session blackboard directory for this conversation or workflow run. */
+  sessionBoardPath?: string;
+  /** External code repositories attached from group.cwd, bot.cwd, and mounts (deduplicated). */
+  targetProjectDirs?: string[];
 }
 
-/** Resolves session placement: `group.cwd` -> `bot.cwd` -> `ensureBotHome` managed folder. */
+/** Resolves session placement: managed-seat placement plus explicit targetProjectDirs. */
 export function resolveBotPlacement(
-  bot: Pick<Bot, "cwd">,
-  group: Pick<BotGroup, "id" | "name" | "cwd"> | null | undefined,
-  home: { path: string; root: string },
-): BotPlacement {
-  const effectiveCwd = group?.cwd ?? bot.cwd;
-  return effectiveCwd
-    ? { path: effectiveCwd, projectRoot: null }
-    : { path: home.path, projectRoot: home.root, projectTitle: group?.name ?? null };
+  bot: Pick<Bot, "cwd"> & Partial<Pick<Bot, "mounts">>,
+  group: (Pick<BotGroup, "id" | "name" | "cwd"> & Partial<Pick<BotGroup, "mounts">>) | null | undefined,
+  home: {
+    path: string;
+    root: string;
+    botHomePath?: string;
+    teamRootPath?: string | null;
+    sessionBoardPath?: string;
+  },
+): BotPlacement & { targetProjectDirs: string[] } {
+  const rawDirs: (string | null | undefined)[] = group
+    ? [group.cwd, ...(group.mounts ?? []), ...(bot.mounts ?? [])]
+    : [bot.cwd, ...(bot.mounts ?? [])];
+
+  const seen = new Set<string>();
+  const targetProjectDirs: string[] = [];
+  for (const dir of rawDirs) {
+    if (typeof dir === "string") {
+      const trimmed = dir.trim();
+      if (trimmed.length > 0 && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        targetProjectDirs.push(trimmed);
+      }
+    }
+  }
+
+  return {
+    path: home.path,
+    projectRoot: home.root,
+    projectTitle: group?.name ?? null,
+    ...(home.botHomePath !== undefined ? { botHomePath: home.botHomePath } : {}),
+    ...(home.teamRootPath !== undefined ? { teamRootPath: home.teamRootPath } : {}),
+    ...(home.sessionBoardPath !== undefined ? { sessionBoardPath: home.sessionBoardPath } : {}),
+    targetProjectDirs,
+  };
 }
 
 const normalize = (path: string | null | undefined) => (path ?? "").replace(/\/+$/, "");
@@ -171,7 +212,7 @@ async function botsProjectId(api: ChatApi, root: string, projectTitle?: string |
 async function findBotWorkspace(
   api: ChatApi,
   bot: Bot,
-  placement: BotPlacement,
+  placement: BotPlacement | (Pick<BotPlacement, "path" | "projectRoot"> & Partial<BotPlacement>),
   targetProjectId: string | undefined,
 ): Promise<ChatWorkspace | undefined> {
   const { entries } = await api.workspaces.list({ filter: { includeBackground: true } });
@@ -186,7 +227,11 @@ async function findBotWorkspace(
 }
 
 /** Finds the bot's workspace (by its folder) or creates it, and keeps its title in step with the bot's name. */
-async function ensureBotWorkspace(api: ChatApi, bot: Bot, placement: BotPlacement) {
+async function ensureBotWorkspace(
+  api: ChatApi,
+  bot: Bot,
+  placement: BotPlacement | (Pick<BotPlacement, "path" | "projectRoot"> & Partial<BotPlacement>),
+) {
   const targetProjectId =
     placement.projectRoot !== null ? await botsProjectId(api, placement.projectRoot, placement.projectTitle) : undefined;
   const mine = await findBotWorkspace(api, bot, placement, targetProjectId);
@@ -206,7 +251,11 @@ async function ensureBotWorkspace(api: ChatApi, bot: Bot, placement: BotPlacemen
 }
 
 /** Renames the bot's workspace after the bot is renamed; does nothing if it doesn't exist yet. */
-export async function syncBotWorkspaceTitle(api: ChatApi, bot: Bot, placement: BotPlacement): Promise<void> {
+export async function syncBotWorkspaceTitle(
+  api: ChatApi,
+  bot: Bot,
+  placement: BotPlacement | (Pick<BotPlacement, "path" | "projectRoot"> & Partial<BotPlacement>),
+): Promise<void> {
   if (placement.projectRoot === null) return;
   const targetProjectId = await botsProjectId(api, placement.projectRoot, placement.projectTitle);
   const mine = await findBotWorkspace(api, bot, placement, targetProjectId);
@@ -224,7 +273,7 @@ export interface StartChatInput {
   agentId?: string;
   /** The plugin's servers for this chat (tools, connected apps), from the relay on the bot's host. */
   plugin?: PluginServers;
-  placement: BotPlacement;
+  placement: BotPlacement | (Pick<BotPlacement, "path" | "projectRoot"> & Partial<BotPlacement>);
   prompt: string;
   systemPrompt: string;
   /** Defaults to Paseo's own title derived from the prompt. */

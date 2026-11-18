@@ -5,7 +5,10 @@ import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import { LibrarySkillSchema, type LibrarySkill } from "../shared/bot";
 import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName } from "../shared/skills";
 import { botDataPath, botsHomePath, pluginDataPath } from "./bot-home";
+import { assertInsideManagedDataDir, isInsideManagedDataDir } from "./claude-agents";
 import { atomicWrite, ensureRealDirectory, missingFile, readRegularText, safeFileParts } from "./files";
+
+export { assertInsideManagedDataDir, isInsideManagedDataDir };
 
 // The shared skill library: one folder per skill under plugin-data/library/skills.
 // Bots that use the managed folder get a link to each of their skills in
@@ -493,5 +496,91 @@ export async function linkBotSkills(botId: string, ids: readonly string[]): Prom
     }
     paths.set(id, join(linked ? link : target, "SKILL.md"));
   }
+  return paths;
+}
+
+export interface SyncSeatSkillsOptions {
+  allowedRootOverride?: string;
+  resolveTargetPath?: (skillId: string) => string;
+}
+
+/**
+ * Creates/updates symlinks in BOTH `<seatDir>/.agents/skills/<id>` and `<seatDir>/.claude/skills/<id>`,
+ * pruning stale symlinks ONLY within those two directories, and returning
+ * `Map<skillId, "<seatDir>/.agents/skills/<id>/SKILL.md">`.
+ */
+export async function syncSeatSkills(
+  seatDir: string,
+  skillIds: readonly string[],
+  options?: string | SyncSeatSkillsOptions,
+): Promise<Map<string, string>> {
+  const allowedRootOverride = typeof options === "string" ? options : options?.allowedRootOverride;
+  const resolveTarget = typeof options === "object" && options?.resolveTargetPath ? options.resolveTargetPath : undefined;
+
+  assertInsideManagedDataDir(seatDir, allowedRootOverride);
+
+  const agentsSkillsDir = join(seatDir, ".agents", "skills");
+  const claudeSkillsDir = join(seatDir, ".claude", "skills");
+
+  assertInsideManagedDataDir(agentsSkillsDir, allowedRootOverride);
+  assertInsideManagedDataDir(claudeSkillsDir, allowedRootOverride);
+
+  await mkdir(agentsSkillsDir, { recursive: true });
+  await mkdir(claudeSkillsDir, { recursive: true });
+
+  // Prune stale symlinks ONLY within those two directories
+  const existingAgents = await readdir(agentsSkillsDir, { withFileTypes: true }).catch(() => []);
+  for (const entry of existingAgents) {
+    if (entry.isSymbolicLink() && !skillIds.includes(entry.name)) {
+      await unlink(join(agentsSkillsDir, entry.name)).catch(() => {});
+    }
+  }
+
+  const existingClaude = await readdir(claudeSkillsDir, { withFileTypes: true }).catch(() => []);
+  for (const entry of existingClaude) {
+    if (entry.isSymbolicLink() && !skillIds.includes(entry.name)) {
+      await unlink(join(claudeSkillsDir, entry.name)).catch(() => {});
+    }
+  }
+
+  const paths = new Map<string, string>();
+
+  for (const id of skillIds) {
+    const target = resolveTarget ? resolveTarget(id) : librarySkillPath(id);
+
+    // Symlink in <seatDir>/.agents/skills/<id>
+    const agentsLink = join(agentsSkillsDir, id);
+    const agentsInfo = await lstat(agentsLink).catch(() => null);
+    let agentsLinked = false;
+    if (agentsInfo?.isSymbolicLink()) {
+      agentsLinked = (await readlink(agentsLink).catch(() => "")) === target;
+      if (!agentsLinked) await unlink(agentsLink).catch(() => {});
+    }
+    if (!agentsInfo || (agentsInfo.isSymbolicLink() && !agentsLinked)) {
+      agentsLinked = await symlink(target, agentsLink, "junction").then(
+        () => true,
+        () => false,
+      );
+    }
+
+    // Symlink in <seatDir>/.claude/skills/<id>
+    const claudeLink = join(claudeSkillsDir, id);
+    const claudeInfo = await lstat(claudeLink).catch(() => null);
+    let claudeLinked = false;
+    if (claudeInfo?.isSymbolicLink()) {
+      claudeLinked = (await readlink(claudeLink).catch(() => "")) === target;
+      if (!claudeLinked) await unlink(claudeLink).catch(() => {});
+    }
+    if (!claudeInfo || (claudeInfo.isSymbolicLink() && !claudeLinked)) {
+      claudeLinked = await symlink(target, claudeLink, "junction").then(
+        () => true,
+        () => false,
+      );
+    }
+
+    // Return Map<skillId, "<seatDir>/.agents/skills/<id>/SKILL.md">
+    paths.set(id, join(agentsLinked ? agentsLink : target, "SKILL.md"));
+  }
+
   return paths;
 }

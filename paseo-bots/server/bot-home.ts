@@ -150,3 +150,94 @@ export async function ensureBotHome({ botId, groupId, groupName }: { botId: stri
   await adoptLegacyData(botId, path);
   return { root, path };
 }
+
+export interface ManagedHomePaths {
+  /** Paseo sidebar grouping root: Bots/ for DM, Teams/<team>/ for teamwork. */
+  root: string;
+  /** Process CWD: Bots/<botId> for DM, Teams/<team>/agents/<botId> (or stage override seat) for teamwork. */
+  path: string;
+  /** Always Bots/<botId>, holding personal MEMORY.md regardless of DM or teamwork mode. */
+  botHomePath: string;
+  /** Teams/<team> when groupId is present, else null. */
+  teamRootPath: string | null;
+  /** Bots/<botId>/sessions/<sessionId> or Teams/<team>/sessions/<sessionId>. */
+  sessionBoardPath: string;
+  /** Directory under sessionBoardPath/runs for <agentId>.prompt.md and <agentId>.mcp.json. */
+  runsPath: string;
+}
+
+export function teamAgentSeatPath(groupId: string, botId: string, groupName?: string): string {
+  if (!botId || botId === "." || botId === ".." || /[\\/\0]/.test(botId)) throw new Error("Invalid bot ID.");
+  return join(teamHomePath(groupId, groupName), "agents", botId);
+}
+
+export function teamSessionBoardPath(groupId: string, teamSessionId: string, groupName?: string): string {
+  if (!teamSessionId || teamSessionId === "." || teamSessionId === ".." || /[\\/\0]/.test(teamSessionId)) {
+    throw new Error("Invalid session ID.");
+  }
+  return join(teamHomePath(groupId, groupName), "sessions", teamSessionId);
+}
+
+export function directSessionBoardPath(botId: string, sessionId: string): string {
+  if (!sessionId || sessionId === "." || sessionId === ".." || /[\\/\0]/.test(sessionId)) {
+    throw new Error("Invalid session ID.");
+  }
+  return join(botDataPath(botId), "sessions", sessionId);
+}
+
+export async function ensureManagedSessionHome(input: {
+  botId: string;
+  sessionId: string;
+  groupId?: string;
+  groupName?: string;
+  stageSeatKey?: string; // "<stageId>-<botId>" when stage.skillIds overrides bot.skillIds
+}): Promise<ManagedHomePaths> {
+  const { botId, sessionId, groupId, groupName, stageSeatKey } = input;
+  const { path: botsRoot } = await ensureBotsHome();
+  const botHome = botDataPath(botId);
+  await mkdir(botHome, { recursive: true });
+  await adoptLegacyData(botId, botHome);
+
+  let root = botsRoot;
+  let teamRootPath: string | null = null;
+  let sessionBoardPath: string;
+  let path: string;
+
+  if (groupId) {
+    teamRootPath = teamHomePath(groupId, groupName);
+    root = teamRootPath;
+    await mkdir(teamRootPath, { recursive: true });
+    await writeFile(join(teamRootPath, "icon.svg"), PROJECT_ICON, { flag: "w" });
+
+    sessionBoardPath = teamSessionBoardPath(groupId, sessionId, groupName);
+    if (stageSeatKey) {
+      if (!stageSeatKey || stageSeatKey === "." || stageSeatKey === ".." || /[\\/\0]/.test(stageSeatKey)) {
+        throw new Error("Invalid stage seat key.");
+      }
+      path = join(sessionBoardPath, "seats", stageSeatKey);
+    } else {
+      path = teamAgentSeatPath(groupId, botId, groupName);
+    }
+  } else {
+    root = botsRoot;
+    teamRootPath = null;
+    sessionBoardPath = directSessionBoardPath(botId, sessionId);
+    path = botHome;
+  }
+
+  await mkdir(path, { recursive: true });
+
+  const runsPath = join(sessionBoardPath, "runs");
+  await mkdir(join(sessionBoardPath, "handoffs"), { recursive: true });
+  await mkdir(join(sessionBoardPath, "artifacts"), { recursive: true });
+  await mkdir(runsPath, { recursive: true });
+
+  return {
+    root,
+    path,
+    botHomePath: botHome,
+    teamRootPath,
+    sessionBoardPath,
+    runsPath,
+  };
+}

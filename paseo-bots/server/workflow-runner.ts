@@ -1,5 +1,8 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { lastTurn } from "../shared/activity";
 import type { Bot, BotGroup } from "../shared/bot";
+import { TEAM_SESSION_LABEL } from "../shared/chat";
 import { ASKED_BY_LABEL, ASKED_IN_LABEL, ASK_NOTIFY_LABEL } from "../shared/handoff";
 import { newUuid } from "../shared/uuid";
 import {
@@ -13,6 +16,7 @@ import {
   type WorkflowRunState,
   type WorkflowStageDefinition,
 } from "../shared/workflows";
+import { directSessionBoardPath, teamSessionBoardPath } from "./bot-home";
 import { startChat } from "./chats";
 import type { BotsHost } from "./host";
 import type { Relay } from "./relay";
@@ -35,6 +39,9 @@ export interface StageDispatchContext {
   group?: BotGroup | null;
   callerBotId?: string;
   callerAgentId?: string;
+  teamSessionId?: string;
+  sessionBoardPath?: string;
+  stageSeatKey?: string;
 }
 
 export interface StageDispatchResult {
@@ -54,6 +61,8 @@ export interface RunWorkflowOptions {
   callerBotId?: string;
   callerAgentId?: string;
   stageTimeoutMs?: number;
+  teamSessionId?: string;
+  sessionBoardPath?: string;
   /** Optional hook for testing or custom stage dispatch. */
   dispatchStage?: (ctx: StageDispatchContext) => Promise<StageDispatchResult>;
 }
@@ -85,6 +94,10 @@ async function defaultStageDispatcher(
     ? Array.from(new Set([...(targetBot.mcpServerIds ?? []), ...ctx.stage.mcpServerIds]))
     : undefined;
 
+  const stageSeatKey = ctx.stageSeatKey ?? (ctx.stage.skillIds && ctx.stage.skillIds.length > 0
+    ? `${ctx.stage.id}-${targetBot.id}`
+    : undefined);
+
   const chatId = await startChat(host, relay, targetBot, {
     prompt: ctx.prompt,
     title: `[${ctx.workflow.name}] ${ctx.stage.name}`,
@@ -95,6 +108,9 @@ async function defaultStageDispatcher(
     engine: ctx.engine,
     ...(stageSkillIds !== undefined ? { skillIds: stageSkillIds } : {}),
     ...(stageMcpServerIds !== undefined ? { mcpServerIds: stageMcpServerIds } : {}),
+    teamSessionId: ctx.teamSessionId,
+    isWorkflowStage: true,
+    ...(stageSeatKey ? { stageSeatKey } : {}),
   });
 
   if (chatId !== ctx.chatId) {
@@ -173,6 +189,29 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
   const botMap = new Map(bots.map((b) => [b.id, b]));
 
   await publishWorkflowCard(host, taskId, callerAgentId).catch(() => false);
+
+  const callerChat = callerAgentId ? await host.chatOf(callerAgentId).catch(() => null) : null;
+  const initialTask = await readTask(taskId);
+  const teamSessionId = options.teamSessionId
+    ?? initialTask?.workflow?.teamSessionId
+    ?? callerChat?.labels?.[TEAM_SESSION_LABEL]
+    ?? `wf-${taskId}`;
+
+  const sessionBoardPath = options.sessionBoardPath
+    ?? initialTask?.workflow?.sessionBoardPath
+    ?? (group
+      ? teamSessionBoardPath(group.id, teamSessionId, group.name)
+      : directSessionBoardPath(callerBotId ?? workflow.stages[0]?.botId ?? "workflow", teamSessionId));
+
+  await mkdir(join(sessionBoardPath, "handoffs"), { recursive: true });
+  await mkdir(join(sessionBoardPath, "artifacts"), { recursive: true });
+  await mkdir(join(sessionBoardPath, "runs"), { recursive: true });
+
+  await updateTaskWorkflow(taskId, (wf) => ({
+    ...wf,
+    teamSessionId: wf.teamSessionId ?? teamSessionId,
+    sessionBoardPath: wf.sessionBoardPath ?? sessionBoardPath,
+  }));
 
   while (true) {
     const task = await readTask(taskId);
@@ -256,7 +295,12 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
         const upstreamOutputs = stageDef.dependsOn
           .map((depId) => stageLookup.get(depId))
           .filter((dep): dep is TaskStageState => !!dep && dep.status === "done" && !!dep.output)
-          .map((dep) => ({ stageId: dep.id, stageName: dep.name, output: dep.output! }));
+          .map((dep) => ({
+            stageId: dep.id,
+            stageName: dep.name,
+            output: dep.output!,
+            handoffFilePath: dep.handoffFilePath,
+          }));
 
         const prompt = buildStageBriefPrompt({
           workflowName: workflow.name,
@@ -266,6 +310,10 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
           attempt: stageState.retries + 1,
           previousError: stageState.error,
         });
+
+        const stageSeatKey = stageDef.skillIds && stageDef.skillIds.length > 0
+          ? `${stageDef.id}-${stageDef.botId}`
+          : undefined;
 
         let result: StageDispatchResult;
         try {
@@ -281,6 +329,9 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
             group,
             callerBotId,
             callerAgentId,
+            teamSessionId,
+            sessionBoardPath,
+            stageSeatKey,
           };
           result = dispatchStage
             ? await dispatchStage(ctx)
@@ -293,6 +344,10 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
         const now = new Date().toISOString();
 
         if (result.ok) {
+          const handoffFileName = `${stageDef.id}-${stageDef.botId}.md`;
+          const handoffFilePath = join(sessionBoardPath, "handoffs", handoffFileName);
+          await writeFile(handoffFilePath, result.output ?? "", "utf-8");
+
           await upsertMember(taskId, {
             engine: resolvedEngine,
             botId: stageDef.botId,
@@ -303,7 +358,16 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
             ...wf,
             stages: wf.stages.map((s) =>
               s.id === stageState.id
-                ? { ...s, engine: resolvedEngine, status: "done", output: result.output ?? "", error: null, chatId: effectiveChatId, completedAt: now }
+                ? {
+                    ...s,
+                    engine: resolvedEngine,
+                    status: "done",
+                    output: result.output ?? "",
+                    handoffFilePath,
+                    error: null,
+                    chatId: effectiveChatId,
+                    completedAt: now,
+                  }
                 : s,
             ),
           }));

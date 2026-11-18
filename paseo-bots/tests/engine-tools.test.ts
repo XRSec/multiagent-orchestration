@@ -85,7 +85,8 @@ describe("subagent engine", () => {
     expect(paseoTools).toEqual(AGY_BASE_TOOLS.filter((tool) => tool !== INVOKE_SUBAGENT_TOOL));
 
     const nativeConfig = buildAgentConfig(agyBot, EMPTY_LIBRARY, "m", "sys", {}, null, undefined, "native");
-    expect(nativeConfig.providerOptions).toEqual({ agent: "bot-a" });
+    expect(nativeConfig.providerOptions).toBeUndefined();
+    expect(nativeConfig.systemPrompt).toBe("sys");
     expect(engineBaseTools(agyBot, "native")).toBeUndefined();
     expect(engineBaseTools(makeBot({ provider: "agy", baseTools: [...AGY_BASE_TOOLS] }), "native")).toContain(INVOKE_SUBAGENT_TOOL);
 
@@ -114,7 +115,8 @@ describe("subagent engine", () => {
   it("writes the engine into the chat labels, where chatOf reads it back", async () => {
     const created = await startedChat("native");
     expect(created.labels[ENGINE_LABEL]).toBeUndefined();
-    expect(created.config.providerOptions).toMatchObject({ agent: "bot-a" });
+    expect(created.config.providerOptions).toBeUndefined();
+    expect(created.config.systemPrompt).toBe("Help");
 
     // startChat merges the engine into the labels it passes on; chatOf reads them back.
     const labels = chatLabels(created.labels, "native");

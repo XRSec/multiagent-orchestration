@@ -172,7 +172,7 @@ describe("Base Tools Catalog and Permissions", () => {
 
     const backToAgy = applyProviderConfig(toClaude, configs[0]!);
     const agyAgentConfig = buildAgentConfig(backToAgy, EMPTY_LIBRARY, "gemini-4-hydrogen", "sys");
-    expect(agyAgentConfig.providerOptions).toEqual({ agent: "bot-test" });
+    expect(agyAgentConfig.providerOptions).toEqual({ tools: agyTools });
   });
 
   it("enforces baseTools in buildAgentConfig for claude and codex", () => {

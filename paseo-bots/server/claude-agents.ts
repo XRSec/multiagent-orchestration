@@ -1,6 +1,6 @@
 import { lstat, mkdir, readFile, readdir, readlink, symlink, unlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
   CLAUDE_BASE_TOOLS,
   isClaudeProvider,
@@ -13,7 +13,7 @@ import {
 } from "../shared/bot";
 
 export { resolveClaudeSystemPromptFlag };
-import { botDataPath } from "./bot-home";
+import { botDataPath, pluginDataPath } from "./bot-home";
 import { librarySkillPath } from "./library";
 import { readBotSoul } from "./souls";
 
@@ -35,6 +35,7 @@ export interface ClaudeAgentOptions {
   syncMcpConfig?: boolean;
   syncSkills?: boolean;
   systemPromptMode?: "append" | "replace";
+  allowedRootOverride?: string;
 }
 
 export interface ClaudeAgentSyncAllOptions {
@@ -47,6 +48,7 @@ export interface ClaudeAgentSyncAllOptions {
   soulsDir?: string;
   syncMcpConfig?: boolean;
   syncSkills?: boolean;
+  allowedRootOverride?: string;
 }
 
 export interface ClaudeAgentSyncResult {
@@ -71,6 +73,67 @@ export function assertNotGlobalUserConfig(targetPath: string): void {
   ) {
     throw new Error(`Attempted to write bot-specific configuration to global user config: ${targetPath}`);
   }
+}
+
+/**
+ * Throws if a path resolves outside the managed plugin data directory,
+ * complementing assertNotGlobalUserConfig.
+ */
+export function assertInsideManagedDataDir(targetPath: string, allowedRootOverride?: string): void {
+  assertNotGlobalUserConfig(targetPath);
+  const root = resolve(allowedRootOverride ?? process.env.PASEO_BOTS_DATA_DIR ?? pluginDataPath());
+  const target = resolve(targetPath);
+  const rel = relative(root, target);
+  const isInside = rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  if (!isInside) {
+    throw new Error(`Attempted to access path outside managed data directory: ${targetPath} (allowed root: ${root})`);
+  }
+}
+
+/** Returns true if targetPath is inside the managed data directory and not a global user config. */
+export function isInsideManagedDataDir(targetPath: string, allowedRootOverride?: string): boolean {
+  try {
+    assertInsideManagedDataDir(targetPath, allowedRootOverride);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface SessionRunArtifactsInput {
+  runsDir: string;
+  agentId: string;
+  systemPrompt?: string;
+  mcpServers?: Record<string, McpServerConfig>;
+  allowedRootOverride?: string;
+}
+
+export interface SessionRunArtifactsResult {
+  promptPath: string;
+  mcpPath: string;
+}
+
+/**
+ * Writes per-session run artifacts (<agentId>.prompt.md and <agentId>.mcp.json)
+ * into <runsDir>, guarded by assertInsideManagedDataDir and assertNotGlobalUserConfig.
+ */
+export async function writeSessionRunArtifacts(
+  input: SessionRunArtifactsInput,
+): Promise<SessionRunArtifactsResult> {
+  const { runsDir, agentId: rawAgentId, systemPrompt, mcpServers, allowedRootOverride } = input;
+  assertInsideManagedDataDir(runsDir, allowedRootOverride);
+  const agentId = assertValidAgentName(rawAgentId);
+  const promptPath = join(runsDir, `${agentId}.prompt.md`);
+  const mcpPath = join(runsDir, `${agentId}.mcp.json`);
+  assertInsideManagedDataDir(promptPath, allowedRootOverride);
+  assertInsideManagedDataDir(mcpPath, allowedRootOverride);
+
+  await mkdir(runsDir, { recursive: true });
+  await writeFile(promptPath, systemPrompt ?? "", "utf8");
+  const mcpConfig = renderClaudeMcpConfig(mcpServers ?? {});
+  await writeFile(mcpPath, mcpConfig, "utf8");
+
+  return { promptPath, mcpPath };
 }
 
 /** Resolves the project-scoped `.claude/agents` directory without touching host `~/.claude`. */
@@ -439,13 +502,16 @@ export function renderClaudeMcpConfig(mcpServers: Record<string, McpServerConfig
 
 /**
  * Idempotently writes or merges project-scoped `.mcp.json`.
- * Enforces Zero Global Pollution by rejecting global configuration paths.
+ * Enforces Zero Global Pollution by rejecting global configuration paths
+ * and verifying target is inside managed data directory.
  */
 export async function syncClaudeMcpConfig(
   targetPath: string,
   mcpServers: Record<string, McpServerConfig>,
+  allowedRootOverride?: string,
 ): Promise<{ path: string; changed: boolean }> {
   assertNotGlobalUserConfig(targetPath);
+  assertInsideManagedDataDir(targetPath, allowedRootOverride);
   await mkdir(dirname(targetPath), { recursive: true });
   const existingText = await readOptionalFile(targetPath);
   let mergedServers: Record<string, unknown> = {};
@@ -488,14 +554,16 @@ export async function syncClaudeMcpConfig(
 
 /**
  * Links bot skills into project-scoped `.claude/skills/<skillId>` and cleans up stale links.
- * Enforces Zero Global Pollution by rejecting global configuration paths.
+ * Enforces Zero Global Pollution and verifies skillsDir is inside managed data directory.
  */
 export async function syncClaudeSkills(
   skillsDir: string,
   skillIds: readonly string[],
   resolveTargetPath?: (skillId: string) => string,
+  allowedRootOverride?: string,
 ): Promise<{ linked: string[]; removed: string[] }> {
   assertNotGlobalUserConfig(skillsDir);
+  assertInsideManagedDataDir(skillsDir, allowedRootOverride);
   await mkdir(skillsDir, { recursive: true }).catch(() => {});
   const existing = await readdir(skillsDir, { withFileTypes: true }).catch(() => []);
   const removed: string[] = [];
@@ -544,9 +612,10 @@ export async function syncBotToClaudeAgent(
     return { synced: false, claudeAgent: null, path: null, changed: false };
   }
   const claudeAgent = assertValidAgentName(bot.id);
-  const agentsDir = options.agentsDir ?? defaultClaudeAgentsDir(options.projectDir);
   const botDataDir = options.botDataDir ?? botDataPath(bot.id);
   const projectDir = options.projectDir ?? botDataDir;
+  const isManagedProject = isInsideManagedDataDir(projectDir, options.allowedRootOverride);
+  const agentsDir = options.agentsDir ?? defaultClaudeAgentsDir(isManagedProject ? projectDir : botDataDir);
   assertNotGlobalUserConfig(agentsDir);
 
   const soul = await readBotSoul(bot.id, bot.soul, options.soulsDir);
@@ -574,18 +643,25 @@ export async function syncBotToClaudeAgent(
 
   let mcpConfigPath: string | null = null;
   if (options.mcpServers && Object.keys(options.mcpServers).length > 0 && options.syncMcpConfig !== false) {
-    const projectMcpPath = defaultClaudeMcpPath(projectDir);
-    await syncClaudeMcpConfig(projectMcpPath, options.mcpServers);
+    if (isManagedProject) {
+      const projectMcpPath = defaultClaudeMcpPath(projectDir);
+      await syncClaudeMcpConfig(projectMcpPath, options.mcpServers, options.allowedRootOverride);
+      mcpConfigPath = projectMcpPath;
+    }
     const sessionMcpPath = sessionClaudeMcpPath(botDataDir);
-    await syncClaudeMcpConfig(sessionMcpPath, options.mcpServers);
-    mcpConfigPath = projectMcpPath;
+    await syncClaudeMcpConfig(sessionMcpPath, options.mcpServers, options.allowedRootOverride ?? (isManagedProject ? projectDir : undefined));
+    if (!mcpConfigPath) {
+      mcpConfigPath = sessionMcpPath;
+    }
   }
 
   let skillsDir: string | null = null;
   if (options.skills && options.skills.length > 0 && options.syncSkills !== false) {
-    const targetSkillsDir = defaultClaudeSkillsDir(projectDir);
-    await syncClaudeSkills(targetSkillsDir, options.skills);
-    skillsDir = targetSkillsDir;
+    if (isManagedProject) {
+      const targetSkillsDir = defaultClaudeSkillsDir(projectDir);
+      await syncClaudeSkills(targetSkillsDir, options.skills, undefined, options.allowedRootOverride);
+      skillsDir = targetSkillsDir;
+    }
   }
 
   const agentFile = join(agentsDir, `${claudeAgent}.md`);
@@ -638,6 +714,7 @@ export async function syncAllBotsToClaude(
       ...(options.syncMcpConfig !== undefined ? { syncMcpConfig: options.syncMcpConfig } : {}),
       ...(options.syncSkills !== undefined ? { syncSkills: options.syncSkills } : {}),
       ...(options.soulsDir !== undefined ? { soulsDir: options.soulsDir } : {}),
+      ...(options.allowedRootOverride !== undefined ? { allowedRootOverride: options.allowedRootOverride } : {}),
     };
     results.push(await syncBotToClaudeAgent(bot, syncOptions));
   }

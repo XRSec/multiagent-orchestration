@@ -9,6 +9,7 @@ import { AgyUsageSource } from '../server/usage.ts'
 import { record } from '../server/common.ts'
 import { dataDirectory } from '../server/preflight.ts'
 import { createProvider } from '../server/provider.ts'
+import { effectiveLaunch, sessionParams } from '../server/session.ts'
 import { collectProviderEvents } from './helpers.ts'
 import { removeDir } from './helpers/cleanup.ts'
 
@@ -2080,6 +2081,157 @@ test('denied permission marks stranded tool card canceled and concurrent close c
     )
     assert.equal(toolItem.item.status, 'canceled')
     assert.equal(toolItem.item.error, null)
+  } finally {
+    await h.provider.close()
+    await removeDir(home)
+  }
+})
+
+test('effectiveLaunch omits --agent when agent is absent and appends --agent when agent is specified', () => {
+  const defaultLaunch = { command: 'agy', args: ['acp'], env: {} }
+
+  // When agent is absent/undefined, --agent is omitted
+  const noAgentLaunch = effectiveLaunch(defaultLaunch, false, undefined)
+  assert.ok(noAgentLaunch)
+  assert.deepEqual(noAgentLaunch.args, ['acp'])
+  assert.equal(noAgentLaunch.args.includes('--agent'), false)
+
+  // With skipPermissions but no agent
+  const skipLaunch = effectiveLaunch(defaultLaunch, true, undefined)
+  assert.ok(skipLaunch)
+  assert.deepEqual(skipLaunch.args, ['acp', '--dangerously-skip-permissions'])
+  assert.equal(skipLaunch.args.includes('--agent'), false)
+
+  // When agent is provided, --agent is added
+  const withAgentLaunch = effectiveLaunch(defaultLaunch, false, 'bot-specialist')
+  assert.ok(withAgentLaunch)
+  assert.deepEqual(withAgentLaunch.args, ['acp', '--agent', 'bot-specialist'])
+})
+
+test('sessionParams forwards systemPrompt and workspaceRoots under _meta.antigravity without --agent', () => {
+  const cwd = '/workspace/primary'
+  const baseConfig = {
+    cwd,
+    env: {},
+    mcpServers: {},
+    settings: {},
+    persist: true,
+  }
+
+  // Dynamic main session: systemPrompt + additionalDirectories, no agent
+  const mainConfig = {
+    ...baseConfig,
+    systemPrompt: 'Follow dynamic teamwork orchestration rules.',
+    providerOptions: {
+      additionalDirectories: ['/repo/backend', '/repo/frontend'],
+    },
+  }
+  const params = sessionParams(cwd, mainConfig)
+  assert.equal(params.cwd, cwd)
+  assert.deepEqual(params._meta?.antigravity, {
+    systemPrompt: {
+      append: 'Follow dynamic teamwork orchestration rules.',
+    },
+    workspaceRoots: ['/repo/backend', '/repo/frontend'],
+  })
+
+  // Mode replace
+  const replaceConfig = {
+    ...baseConfig,
+    systemPrompt: 'Standing instructions only.',
+    systemPromptMode: 'replace' as const,
+    providerOptions: {
+      additionalDirectories: ['/repo/shared'],
+    },
+  }
+  const replaceParams = sessionParams(cwd, replaceConfig)
+  assert.deepEqual(replaceParams._meta?.antigravity, {
+    systemPrompt: {
+      replace: 'Standing instructions only.',
+    },
+    workspaceRoots: ['/repo/shared'],
+  })
+
+  // Empty additionalDirectories leaves workspaceRoots omitted
+  const emptyDirsConfig = {
+    ...baseConfig,
+    systemPrompt: 'Only prompt.',
+    providerOptions: {
+      additionalDirectories: [],
+    },
+  }
+  const emptyDirsParams = sessionParams(cwd, emptyDirsConfig)
+  assert.deepEqual(emptyDirsParams._meta?.antigravity, {
+    systemPrompt: {
+      append: 'Only prompt.',
+    },
+  })
+
+  // Only additionalDirectories without systemPrompt
+  const dirsOnlyConfig = {
+    ...baseConfig,
+    providerOptions: {
+      additionalDirectories: ['/repo/docs'],
+    },
+  }
+  const dirsOnlyParams = sessionParams(cwd, dirsOnlyConfig)
+  assert.deepEqual(dirsOnlyParams._meta?.antigravity, {
+    workspaceRoots: ['/repo/docs'],
+  })
+
+  // Neither provided: _meta omitted
+  const bareConfig = { ...baseConfig }
+  const bareParams = sessionParams(cwd, bareConfig)
+  assert.equal('_meta' in bareParams, false)
+})
+
+test('AGY main session open carries systemPrompt + workspaceRoots and omits --agent in effectiveLaunch', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agy-main-session-roots-'))
+  const log = join(home, 'calls')
+  const h = await harness({ HOME: home, AGY_TEST_LOG: log })
+  try {
+    const mainSessionConfig = {
+      ...h.config,
+      systemPrompt: 'Main session dynamic orchestrator persona.',
+      providerOptions: {
+        additionalDirectories: ['/workspace/target-repo-1', '/workspace/target-repo-2'],
+      },
+    }
+
+    // Verify effectiveLaunch does not include --agent when providerOptions.agent is absent
+    const launch = effectiveLaunch(
+      undefined,
+      false,
+      mainSessionConfig.providerOptions &&
+        'agent' in mainSessionConfig.providerOptions
+        ? (mainSessionConfig.providerOptions as { agent?: string }).agent
+        : undefined,
+    )
+    assert.ok(launch === undefined || !launch.args.includes('--agent'))
+
+    // Verify sessionParams builds systemPrompt + workspaceRoots
+    const params = sessionParams(mainSessionConfig.cwd, mainSessionConfig)
+    assert.deepEqual(params._meta?.antigravity, {
+      systemPrompt: {
+        append: 'Main session dynamic orchestrator persona.',
+      },
+      workspaceRoots: ['/workspace/target-repo-1', '/workspace/target-repo-2'],
+    })
+
+    // Verify session opens and becomes ready
+    await h.provider.send({
+      type: 'session.open',
+      requestId: 'open-main-session',
+      sessionId: 'main-s1',
+      config: mainSessionConfig,
+      history: 'skip',
+    })
+    await h.wait((e) => e.type === 'session.ready' && e.sessionId === 'main-s1')
+
+    assert.equal(
+      await readFile(log, 'utf8'),
+      'new:Main session dynamic orchestrator persona.\n',
+    )
   } finally {
     await h.provider.close()
     await removeDir(home)

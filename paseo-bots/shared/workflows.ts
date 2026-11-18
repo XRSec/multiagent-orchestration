@@ -53,6 +53,7 @@ export const TaskStageStateSchema = z.object({
   maxRetries: z.number().int().nonnegative().default(1),
   error: z.string().nullable().default(null),
   output: z.string().nullable().default(null),
+  handoffFilePath: z.string().optional(),
   chatId: z.string().nullable().default(null),
   startedAt: z.string().nullable().default(null),
   completedAt: z.string().nullable().default(null),
@@ -70,6 +71,8 @@ export const WorkflowRunStateSchema = z.object({
   currentStageIds: z.array(z.string()).default([]),
   startedAt: z.string(),
   completedAt: z.string().nullable().default(null),
+  teamSessionId: z.string().optional(),
+  sessionBoardPath: z.string().optional(),
 });
 export type WorkflowRunState = z.infer<typeof WorkflowRunStateSchema>;
 
@@ -201,6 +204,7 @@ export function initWorkflowRunState(
   workflow: WorkflowDefinition,
   botLookup?: (botId: string) => { soul?: string; playbooks?: unknown[]; contactBots?: string } | null,
   providerLookup?: (botId: string) => string | undefined,
+  context?: { teamSessionId?: string; sessionBoardPath?: string },
 ): WorkflowRunState {
   const now = new Date().toISOString();
   const stages: TaskStageState[] = workflow.stages.map((stage) => {
@@ -235,6 +239,8 @@ export function initWorkflowRunState(
     currentStageIds: ready,
     startedAt: now,
     completedAt: null,
+    ...(context?.teamSessionId ? { teamSessionId: context.teamSessionId } : {}),
+    ...(context?.sessionBoardPath ? { sessionBoardPath: context.sessionBoardPath } : {}),
   };
 }
 
@@ -280,11 +286,18 @@ OPEN_ISSUES: <None | exact blocker>
 </worker_handoff>
 </worker_protocol>`;
 
+export const MAX_INLINE_UPSTREAM_CHARS = 2000;
+
 export interface StageBriefInput {
   workflowName: string;
   stage: WorkflowStageDefinition;
   userInput?: string;
-  upstreamOutputs?: Array<{ stageId: string; stageName: string; output: string }>;
+  upstreamOutputs?: Array<{
+    stageId: string;
+    stageName: string;
+    output: string;
+    handoffFilePath?: string | null;
+  }>;
   attempt: number;
   previousError?: string | null;
 }
@@ -310,7 +323,18 @@ export function buildStageBriefPrompt(input: StageBriefInput): string {
 
   const upstreamBlock = input.upstreamOutputs && input.upstreamOutputs.length > 0
     ? input.upstreamOutputs
-        .map((up) => `### From "${up.stageName}" (${up.stageId}):\n${up.output.trim()}`)
+        .map((up) => {
+          let text = up.output.trim();
+          const handoffMatch = /<worker_handoff>([\s\S]*?)<\/worker_handoff>/i.exec(text);
+          if (handoffMatch) {
+            text = handoffMatch[0].trim();
+          }
+          if (text.length > MAX_INLINE_UPSTREAM_CHARS) {
+            text = text.slice(0, MAX_INLINE_UPSTREAM_CHARS) + "\n...[truncated]";
+          }
+          const citation = up.handoffFilePath ? `\nFull upstream output saved at: ${up.handoffFilePath}` : "";
+          return `### From "${up.stageName}" (${up.stageId}):\n${text}${citation}`;
+        })
         .join("\n\n")
     : "";
 

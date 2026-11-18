@@ -31,10 +31,12 @@ const tempDirs: string[] = [];
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix));
   tempDirs.push(dir);
+  process.env.PASEO_BOTS_DATA_DIR = dir;
   return dir;
 }
 
 afterEach(async () => {
+  delete process.env.PASEO_BOTS_DATA_DIR;
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 

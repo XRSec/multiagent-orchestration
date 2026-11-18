@@ -9,16 +9,26 @@ import {
   resolveBotPlacement,
   resolveCandidateModels,
   sendBotMessage,
+  SESSION_ROLE_LABEL,
   startBotChat,
   switchAgentModel,
+  TEAM_SESSION_LABEL,
   type SubagentEngine,
 } from "../shared/chat";
-import { teamsOf } from "../shared/groups";
+import { resolveSessionRole, teamsOf } from "../shared/groups";
+import { ASKED_IN_LABEL } from "../shared/handoff";
 import { newUuid } from "../shared/uuid";
-import { ensureBotHome } from "./bot-home";
+import { ensureManagedSessionHome } from "./bot-home";
 import type { BotsHost } from "./host";
 import { systemPrompt } from "./prompt";
 import type { Relay } from "./relay";
+
+declare module "../shared/chat" {
+  interface StartChatInput {
+    promptFilePath?: string;
+    additionalDirectories?: string[];
+  }
+}
 
 export {
   isFallbackEligibleError,
@@ -122,6 +132,9 @@ export async function startChat(
     skillIds?: string[];
     mcpServerIds?: string[];
     mcpConfigPath?: string;
+    teamSessionId?: string;
+    isWorkflowStage?: boolean;
+    stageSeatKey?: string;
   },
   onFallback?: (fromModel: string, toModel: string, error: unknown) => void,
 ): Promise<string> {
@@ -135,8 +148,18 @@ export async function startChat(
     ? teamsOf(bot.id, groups).find((candidate) => candidate.leadId === input.askedByBotId || candidate.memberIds.includes(input.askedByBotId!)) ?? null
     : null;
   const group = input.group !== undefined ? input.group : (sharedGroup ?? primaryGroupForBot(bot.id, groups));
-  const home = await ensureBotHome({ botId: bot.id, ...(group ? { groupId: group.id, groupName: group.name } : {}) });
+
   const agentId = input.agentId ?? newUuid();
+  const callerChat = input.labels?.[ASKED_IN_LABEL] ? await host.chatOf(input.labels[ASKED_IN_LABEL]).catch(() => null) : null;
+  const teamSessionId = input.teamSessionId ?? input.labels?.[TEAM_SESSION_LABEL] ?? callerChat?.labels?.[TEAM_SESSION_LABEL] ?? agentId;
+
+  const home = await ensureManagedSessionHome({
+    botId: bot.id,
+    sessionId: teamSessionId,
+    ...(group ? { groupId: group.id, groupName: group.name } : {}),
+    ...(input.stageSeatKey ? { stageSeatKey: input.stageSeatKey } : {}),
+  });
+
   const effectiveBot: Bot = {
     ...bot,
     ...(input.thinkingOptionId !== undefined ? { thinkingOptionId: input.thinkingOptionId } : {}),
@@ -144,14 +167,45 @@ export async function startChat(
     ...(input.mcpServerIds !== undefined ? { mcpServerIds: input.mcpServerIds } : {}),
   };
   const placement = resolveBotPlacement(effectiveBot, group, home);
+
+  const sessionRole = resolveSessionRole({
+    botId: bot.id,
+    group,
+    askedByBotId: input.askedByBotId,
+    isWorkflowStage: input.isWorkflowStage,
+  });
+
   const plugin = { tools: await relay.mountTools(bot.id, agentId), apps: bot.apps.length ? await relay.mountApps(bot.id) : null };
   const promptResult = await systemPrompt(
-    { bot: effectiveBot, local: true, message: input.prompt, group, plugin, claudeProjectDir: placement.path },
+    {
+      bot: effectiveBot,
+      local: true,
+      message: input.prompt,
+      group,
+      plugin,
+      claudeProjectDir: placement.path,
+      seatDir: home.path,
+      runsDir: home.runsPath,
+      teamRootPath: home.teamRootPath,
+      sessionBoardPath: home.sessionBoardPath,
+      targetProjectDirs: placement.targetProjectDirs,
+      sessionRole,
+      agentId,
+      isWorkflowStage: input.isWorkflowStage,
+      askedByBotId: input.askedByBotId,
+    },
     library,
     paseo,
     values,
   );
   const resolvedMcpConfigPath = promptResult.mcpConfigPath ?? input.mcpConfigPath;
+
+  const labels: Record<string, string> = {
+    ...input.labels,
+    [TEAM_SESSION_LABEL]: teamSessionId,
+    [SESSION_ROLE_LABEL]: sessionRole,
+  };
+
   return startBotChat(
     paseo,
     {
@@ -163,9 +217,13 @@ export async function startChat(
       prompt: input.prompt,
       systemPrompt: promptResult.systemPrompt,
       title: input.title,
-      labels: chatLabels(input.labels, engine),
+      labels: chatLabels(labels, engine),
       ...(engine ? { engine } : {}),
       ...(resolvedMcpConfigPath ? { mcpConfigPath: resolvedMcpConfigPath } : {}),
+      ...(promptResult.promptFilePath ? { promptFilePath: promptResult.promptFilePath } : {}),
+      ...(placement.targetProjectDirs && placement.targetProjectDirs.length > 0
+        ? { additionalDirectories: placement.targetProjectDirs }
+        : {}),
     },
     onFallback,
   );

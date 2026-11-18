@@ -224,7 +224,7 @@ const TURN_PROGRESS_UPDATES = new Set<SessionUpdate['sessionUpdate']>([
   'session_message_chunk',
 ])
 
-function effectiveLaunch(
+export function effectiveLaunch(
   launch: ProviderLaunch | undefined,
   skipPermissions?: boolean,
   agent?: string,
@@ -246,23 +246,44 @@ function effectiveLaunch(
       }
 }
 
-function sessionParams(cwd: string, config?: ProviderSessionConfig) {
+export function sessionParams(cwd: string, config?: ProviderSessionConfig) {
   const mode =
     (config as { systemPromptMode?: string })?.systemPromptMode ??
     (config?.providerOptions as { systemPromptMode?: string } | undefined)
       ?.systemPromptMode
   const isReplace = mode === 'replace'
+
+  const rawDirs = (
+    config?.providerOptions as { additionalDirectories?: unknown } | undefined
+  )?.additionalDirectories
+  const additionalDirectories = Array.isArray(rawDirs)
+    ? rawDirs.filter(
+        (dir): dir is string => typeof dir === 'string' && dir.trim().length > 0,
+      )
+    : []
+
+  const antigravityMeta: {
+    systemPrompt?: { replace: string } | { append: string }
+    workspaceRoots?: string[]
+  } = {}
+
+  if (config?.systemPrompt?.trim()) {
+    antigravityMeta.systemPrompt = isReplace
+      ? { replace: config.systemPrompt }
+      : { append: config.systemPrompt }
+  }
+
+  if (additionalDirectories.length > 0) {
+    antigravityMeta.workspaceRoots = additionalDirectories
+  }
+
   return {
     cwd,
     mcpServers: config ? mcpServers(config) : [],
-    ...(config?.systemPrompt?.trim()
+    ...(Object.keys(antigravityMeta).length > 0
       ? {
           _meta: {
-            antigravity: {
-              systemPrompt: isReplace
-                ? { replace: config.systemPrompt }
-                : { append: config.systemPrompt },
-            },
+            antigravity: antigravityMeta,
           },
         }
       : {}),

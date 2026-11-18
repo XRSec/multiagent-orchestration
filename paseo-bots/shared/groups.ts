@@ -1,5 +1,9 @@
 import type { Bot, BotGroup, TeamLogo } from "./bot";
-import { ORCHESTRATOR_WORKFLOW_PROTOCOL, type WorkflowDefinition } from "./workflows";
+import {
+  ORCHESTRATOR_WORKFLOW_PROTOCOL,
+  WORKER_PROTOCOL_SUFFIX,
+  type WorkflowDefinition,
+} from "./workflows";
 
 // OpenMausBot's teams: a bot can belong to one or more teams, every member gets
 // each team's roster and shared instructions in its prompt, and each team's
@@ -35,18 +39,120 @@ function rosterLine(bot: Bot, lead: boolean): string {
   return `- ${bot.name}${lead ? " (Chief of Staff)" : ""}${about ? `: ${about}` : ""}`;
 }
 
+export type SessionRoleKind =
+  | "dm"
+  | "team-lead"
+  | "team-direct-specialist"
+  | "dispatched-worker";
+
+export function resolveSessionRole(input: {
+  botId: string;
+  group?: Pick<BotGroup, "id" | "leadId"> | null;
+  askedByBotId?: string | null;
+  isWorkflowStage?: boolean;
+}): SessionRoleKind {
+  if (input.isWorkflowStage || input.askedByBotId) return "dispatched-worker";
+  if (!input.group) return "dm";
+  if (input.group.leadId === input.botId) return "team-lead";
+  return "team-direct-specialist";
+}
+
+export interface SessionRolePromptContext {
+  bot?: Pick<Bot, "id" | "name"> | null;
+  group?: Pick<BotGroup, "id" | "name" | "leadId"> | null;
+  leadBot?: Pick<Bot, "id" | "name"> | null;
+  sessionBoardPath?: string | null;
+}
+
+export function sessionRolePrompt(
+  role: SessionRoleKind,
+  context: SessionRolePromptContext = {},
+): string {
+  switch (role) {
+    case "dm":
+      return [
+        "Session Role: Direct Assistant",
+        "You are interacting directly with the user as a personal assistant.",
+        "Understand the request, execute tasks directly within your granted tools, and communicate results concisely.",
+      ].join("\n");
+    case "team-lead": {
+      const manifestPath = context.sessionBoardPath
+        ? `${context.sessionBoardPath}/TASK_MANIFEST.md`
+        : "the session blackboard TASK_MANIFEST.md";
+      return [
+        "Session Role: Team Lead / Chief of Staff",
+        "You are the Chief of Staff and Orchestrator for the team.",
+        `- Maintain execution state in ${manifestPath}.`,
+        "- Delegate implementation, research, and verification to specialist teammates via ask_bot or run_workflow.",
+        "- Audit <worker_handoff> proof blocks rather than accepting bare claims.",
+        "- Limit repair rounds to a maximum of 3 before escalating blockers to the user.",
+        "",
+        ORCHESTRATOR_WORKFLOW_PROTOCOL,
+      ].join("\n");
+    }
+    case "team-direct-specialist": {
+      const leadName = context.leadBot
+        ? `${context.leadBot.name} (${context.leadBot.id})`
+        : context.group?.leadId
+          ? context.group.leadId
+          : "the team lead";
+      return [
+        "Session Role: Team Specialist",
+        "You are a domain-bounded specialist on this team.",
+        `Handle requests within your specialization directly. For cross-domain requests, workflow orchestration, or tasks outside your domain, escalate or coordinate with ${leadName} via ask_bot.`,
+      ].join("\n");
+    }
+    case "dispatched-worker":
+      return [
+        "Session Role: Dispatched Worker",
+        WORKER_PROTOCOL_SUFFIX,
+      ].join("\n");
+  }
+}
+
+export interface TeamPromptOptions {
+  globalWorkflows?: readonly WorkflowDefinition[];
+  role?: SessionRoleKind;
+  teamMemory?: { path: string; content: string } | null;
+}
+
+function isTeamPromptOptions(val: unknown): val is TeamPromptOptions {
+  return typeof val === "object" && val !== null && !Array.isArray(val);
+}
+
 /** A team member's prompt section: its teammates, the shared instructions and, for the lead, how to lead. */
-export function teamPrompt(group: BotGroup, bot: Bot, bots: readonly Bot[], globalWorkflows?: readonly WorkflowDefinition[]): string {
+export function teamPrompt(
+  group: BotGroup,
+  bot: Bot,
+  bots: readonly Bot[],
+  globalWorkflowsOrOptions?: readonly WorkflowDefinition[] | TeamPromptOptions,
+  role?: SessionRoleKind,
+  teamMemory?: { path: string; content: string } | null,
+): string {
+  let globalWorkflows: readonly WorkflowDefinition[] | undefined;
+  let effectiveRole = role;
+  let effectiveTeamMemory = teamMemory;
+
+  if (isTeamPromptOptions(globalWorkflowsOrOptions)) {
+    globalWorkflows = globalWorkflowsOrOptions.globalWorkflows;
+    if (globalWorkflowsOrOptions.role !== undefined) effectiveRole = globalWorkflowsOrOptions.role;
+    if (globalWorkflowsOrOptions.teamMemory !== undefined) effectiveTeamMemory = globalWorkflowsOrOptions.teamMemory;
+  } else if (Array.isArray(globalWorkflowsOrOptions)) {
+    globalWorkflows = globalWorkflowsOrOptions as readonly WorkflowDefinition[];
+  }
+
   const { lead, members } = groupBots(group, bots);
-  const isLead = lead?.id === bot.id;
+  const isLead = effectiveRole !== undefined ? effectiveRole === "team-lead" : lead?.id === bot.id;
+  const canSeeWorkflows = effectiveRole !== undefined ? effectiveRole === "team-lead" : isLead;
+
   const others = [...(lead && !isLead ? [lead] : []), ...members.filter((member) => member.id !== bot.id)].slice(0, ROSTER_MAX);
   const name = group.name.trim() || "Untitled";
   const teamWorkflows = group.workflows ?? [];
   const teamWorkflowIds = new Set(teamWorkflows.map((w) => w.id));
-  const combinedWorkflows = isLead
+  const combinedWorkflows = canSeeWorkflows
     ? [...teamWorkflows, ...(globalWorkflows ?? []).filter((w) => !teamWorkflowIds.has(w.id))]
     : [];
-  const workflowsSection = isLead && combinedWorkflows.length > 0
+  const workflowsSection = canSeeWorkflows && combinedWorkflows.length > 0
     ? [
         `Available workflows for "${name}" (trigger with run_workflow):`,
         ...combinedWorkflows.map((w) => {
@@ -58,20 +164,36 @@ export function teamPrompt(group: BotGroup, bot: Bot, bots: readonly Bot[], glob
         ORCHESTRATOR_WORKFLOW_PROTOCOL,
       ].join("\n")
     : "";
+
+  const memorySection = effectiveTeamMemory?.content?.trim()
+    ? `Team shared memory (${effectiveTeamMemory.path}):\n${effectiveTeamMemory.content.trim()}`
+    : "";
+
   const parts = [
     isLead
       ? `You are the Chief of Staff of the "${name}" team and the user's main contact for it. Own the outcome: understand the request, decide what to handle yourself, hand parts to the teammates who fit them with ask_bot when that helps, and return one concise answer. Don't delegate trivial work to look busy, and never invent a teammate's progress or result.`
       : `You're on the "${name}" team.${lead ? ` ${lead.name} leads it.` : ""}`,
     others.length ? `Teammates:\n${others.map((other) => rosterLine(other, other.id === lead?.id)).join("\n")}` : "",
     group.instructions.trim() ? `Shared instructions for the team. The user manages them for every bot on the team; you can't edit them.\n${group.instructions.trim()}` : "",
+    memorySection,
     workflowsSection,
   ];
   return parts.filter(Boolean).join("\n\n");
 }
 
 /** Combined prompt sections for all teams a bot belongs to. */
-export function teamsPrompt(groups: readonly BotGroup[], bot: Bot, bots: readonly Bot[], globalWorkflows?: readonly WorkflowDefinition[]): string {
-  return groups.map((group) => teamPrompt(group, bot, bots, globalWorkflows)).filter(Boolean).join("\n\n");
+export function teamsPrompt(
+  groups: readonly BotGroup[],
+  bot: Bot,
+  bots: readonly Bot[],
+  globalWorkflowsOrOptions?: readonly WorkflowDefinition[] | TeamPromptOptions,
+  role?: SessionRoleKind,
+  teamMemory?: { path: string; content: string } | null,
+): string {
+  return groups
+    .map((group) => teamPrompt(group, bot, bots, globalWorkflowsOrOptions, role, teamMemory))
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export interface TeamDraft {

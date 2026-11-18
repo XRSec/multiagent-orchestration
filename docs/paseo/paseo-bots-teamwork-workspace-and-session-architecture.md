@@ -1,6 +1,6 @@
 ---
 doc_id: PASEO-BOTS-TEAMWORK-SESSION-ARCH
-status: TARGET
+status: CURRENT
 version: 1.0.0
 last_verified: 2026-11-18
 language: en-US
@@ -341,12 +341,12 @@ Execute in topological order (`WP-1` -> `WP-2` & `WP-3` in parallel -> `WP-4` ->
 | Component / Symbol | File Path | Status | Verification Command |
 | :--- | :--- | :--- | :--- |
 | `botsHomePath`, `teamsHomePath`, `teamHomePath`, `botDataPath` | `paseo-bots/server/bot-home.ts` | `CURRENT` | `npm --prefix paseo-bots run typecheck` |
-| `teamAgentSeatPath`, `teamSessionBoardPath`, `ensureManagedSessionHome` | `paseo-bots/server/bot-home.ts` | `TARGET` (`WP-1`) | `npx --prefix paseo-bots vitest run tests/bot-home-seats.test.ts` |
-| `BotPlacement.targetProjectDirs`, seat-preserving `resolveBotPlacement` | `paseo-bots/shared/chat.ts` | `TARGET` (`WP-1`) | `npx --prefix paseo-bots vitest run tests/bot-home-seats.test.ts` |
+| `teamAgentSeatPath`, `teamSessionBoardPath`, `ensureManagedSessionHome` | `paseo-bots/server/bot-home.ts` | `CURRENT` | `npx --prefix paseo-bots vitest run tests/bot-home-seats.test.ts` |
+| `BotPlacement.targetProjectDirs`, seat-preserving `resolveBotPlacement` | `paseo-bots/shared/chat.ts` | `CURRENT` | `npx --prefix paseo-bots vitest run tests/bot-home-seats.test.ts` |
 | `assertNotGlobalUserConfig` | `paseo-bots/server/claude-agents.ts` | `CURRENT` | `npx --prefix paseo-bots vitest run tests/claude-agents.test.ts` |
-| `assertInsideManagedDataDir`, `syncSeatSkills`, `writeSessionRunArtifacts` | `paseo-bots/server/library.ts`, `paseo-bots/server/claude-agents.ts` | `TARGET` (`WP-2`) | `npx --prefix paseo-bots vitest run tests/seat-isolation.test.ts` |
+| `assertInsideManagedDataDir`, `syncSeatSkills`, `writeSessionRunArtifacts` | `paseo-bots/server/library.ts`, `paseo-bots/server/claude-agents.ts` | `CURRENT` | `npx --prefix paseo-bots vitest run tests/seat-isolation.test.ts` |
 | `systemPromptMode` (`append` \| `replace`), `resolveClaudeSystemPromptFlag` | `paseo-bots/shared/bot.ts`, `paseo-agy-acp/server/session.ts` | `CURRENT` | `npx --prefix paseo-bots vitest run tests/bot.test.ts && npm --prefix paseo-agy-acp test` |
-| Main-session dynamic prompt (`useStaticAgyAgent = false`) & `workspaceRoots` | `paseo-bots/shared/bot.ts`, `paseo-agy-acp/server/session.ts` | `TARGET` (`WP-3`) | `npx --prefix paseo-bots vitest run tests/session-prompt-channel.test.ts` |
-| `resolveSessionRole`, 6-block `promptSections`, `loadTargetProjectRules` | `paseo-bots/shared/groups.ts`, `paseo-bots/shared/bot.ts`, `paseo-bots/server/prompt.ts` | `TARGET` (`WP-4`) | `npx --prefix paseo-bots vitest run tests/teamwork-prompt-assembly.test.ts` |
+| Main-session dynamic prompt (`useStaticAgyAgent = false`) & `workspaceRoots` | `paseo-bots/shared/bot.ts`, `paseo-agy-acp/server/session.ts` | `CURRENT` | `npx --prefix paseo-bots vitest run tests/session-prompt-channel.test.ts` |
+| `resolveSessionRole`, 6-block `promptSections`, `loadTargetProjectRules` | `paseo-bots/shared/groups.ts`, `paseo-bots/shared/bot.ts`, `paseo-bots/server/prompt.ts` | `CURRENT` | `npx --prefix paseo-bots vitest run tests/teamwork-prompt-assembly.test.ts` |
 | `runWorkflowDag`, `buildStageBriefPrompt`, `parseWorkerHandoff` | `paseo-bots/server/workflow-runner.ts`, `paseo-bots/shared/workflows.ts` | `CURRENT` | `npx --prefix paseo-bots vitest run tests/workflow-runner.test.ts` |
-| File-backed stage handoffs (`handoffs/<stageId>-<botId>.md`) & shared `sessionBoardPath` | `paseo-bots/server/workflow-runner.ts`, `paseo-bots/shared/workflows.ts` | `TARGET` (`WP-5`) | `npx --prefix paseo-bots vitest run tests/workflow-blackboard.test.ts` |
+| File-backed stage handoffs (`handoffs/<stageId>-<botId>.md`) & shared `sessionBoardPath` | `paseo-bots/server/workflow-runner.ts`, `paseo-bots/shared/workflows.ts` | `CURRENT` | `npx --prefix paseo-bots vitest run tests/workflow-blackboard.test.ts` |

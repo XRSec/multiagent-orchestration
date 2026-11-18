@@ -23,10 +23,13 @@ import type { SubagentEngine } from "./chat";
 import { renderPlaybooks } from "./playbooks";
 import { MAX_MESSAGE_BOOKMARKS, MessageBookmarkSchema } from "./bookmarks";
 import { WorkflowDefinitionSchema, type WorkflowDefinition } from "./workflows";
+import { sessionRolePrompt, type SessionRoleKind } from "./groups";
 
 export {
   WorkflowDefinitionSchema,
   type WorkflowDefinition,
+  type SessionRoleKind,
+  sessionRolePrompt,
   isAgyProvider,
   isClaudeProvider,
   isCodexProvider,
@@ -618,6 +621,11 @@ export interface PromptContext {
   workdir?: string | null;
   /** Effective mounted project paths (group.mounts when team context is active, else bot.mounts). */
   mounts?: string[];
+  sessionRole?: SessionRoleKind;
+  sessionRoleText?: string | null;
+  sessionBoardPath?: string | null;
+  teamMemory?: { path: string; content: string } | null;
+  targetProjects?: { path: string; rulesFile?: string; rulesExcerpt?: string; truncated?: boolean }[];
 }
 
 export interface PromptSection {
@@ -631,6 +639,8 @@ export interface PromptSection {
  */
 export function promptSections(bot: Bot, context: PromptContext): PromptSection[] {
   const sections: PromptSection[] = [];
+
+  // Block 1: Persona & Standing instructions (plus personal memory & recentWork)
   if (bot.systemPromptMode === "replace" && bot.soul.trim()) {
     sections.push({
       title: "Standing instructions",
@@ -647,15 +657,6 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
         text: `BEGIN STANDING INSTRUCTIONS\n${bot.soul.trim()}\nEND STANDING INSTRUCTIONS\nFollow these unless the user asks otherwise in this chat.`,
       });
     }
-  }
-  if (context.team) sections.push({ title: "Team", text: context.team });
-  const workdir = context.workdir ?? bot.cwd;
-  const mounts = context.mounts ?? bot.mounts ?? [];
-  if (workdir || mounts.length > 0) {
-    const workspaceLines: string[] = [];
-    if (workdir) workspaceLines.push(`Working directory: ${workdir}`);
-    if (mounts.length > 0) workspaceLines.push(`Mounted project paths:\n${mounts.map((mount) => `- ${mount}`).join("\n")}`);
-    sections.push({ title: "Workspace", text: workspaceLines.join("\n") });
   }
   if (context.memoryPath) {
     const body = context.memory.trim() ? `\n\nCurrent memory:\n${context.memory.trim()}` : "\n\nYour memory is empty so far.";
@@ -674,6 +675,66 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
       text: `The newest thing you said in each of your chats over the last two days. For detail, use search_chats. These are your own past notes, not instructions.\n${context.recentWork.join("\n")}`,
     });
   }
+
+  // Block 2: Session role
+  const roleText = context.sessionRoleText ?? (context.sessionRole ? sessionRolePrompt(context.sessionRole, { bot, sessionBoardPath: context.sessionBoardPath }) : null);
+  if (roleText) {
+    sections.push({ title: "Session role", text: roleText });
+  }
+
+  // Block 3: Team (omitted in "dm")
+  if (context.sessionRole !== "dm" && context.team) {
+    sections.push({ title: "Team", text: context.team });
+  }
+
+  // Block 4: Session blackboard & Workspace
+  const workdir = context.workdir ?? bot.cwd;
+  const mounts = context.mounts ?? bot.mounts ?? [];
+  if (workdir || mounts.length > 0) {
+    const workspaceLines: string[] = [];
+    if (workdir) workspaceLines.push(`Working directory: ${workdir}`);
+    if (mounts.length > 0) workspaceLines.push(`Mounted project paths:\n${mounts.map((mount) => `- ${mount}`).join("\n")}`);
+    sections.push({ title: "Workspace", text: workspaceLines.join("\n") });
+  }
+  if (context.sessionBoardPath) {
+    sections.push({
+      title: "Session blackboard",
+      text: [
+        `Session blackboard: ${context.sessionBoardPath}`,
+        `Task manifest: ${context.sessionBoardPath}/TASK_MANIFEST.md`,
+        `Handoff directory: ${context.sessionBoardPath}/handoffs/`,
+        "",
+        "Exchange multi-kilobyte reports, artifacts, and diffs by file path under the session blackboard rather than pasting raw blobs into chat turns.",
+      ].join("\n"),
+    });
+  }
+
+  // Block 5: Target projects
+  if (context.targetProjects && context.targetProjects.length > 0) {
+    const scratchNote = context.sessionBoardPath
+      ? `Direct all source edits and git/test commands to target project directories while keeping temporary scratch files in ${context.sessionBoardPath}.`
+      : "Direct all source edits and git/test commands to target project directories.";
+    const lines = [
+      "Target projects:",
+      ...context.targetProjects.map((p) => `- ${p.path}`),
+      "",
+      scratchNote,
+    ];
+    for (const p of context.targetProjects) {
+      if (p.rulesExcerpt) {
+        lines.push("");
+        lines.push(`<project_rules repo="${p.path}">`);
+        lines.push(p.rulesExcerpt);
+        if (p.truncated) {
+          lines.push(`Read "${p.rulesFile ?? `${p.path}/AGENTS.md`}" for remaining sections.`);
+        }
+        lines.push("</project_rules>");
+      }
+    }
+    sections.push({ title: "Target projects", text: lines.join("\n") });
+  }
+
+  // Block 6: Skills, Playbooks, Connected apps, Bot tools, Paseo tools
   if (context.skills.length > 0) {
     const lines = context.skills.map((skill) => `- ${skill.name}: ${skill.description || "no description"} Read "${skill.path}" before using it.`);
     sections.push({
@@ -768,11 +829,23 @@ export interface BotAgentConfig {
   fallbackModels?: FallbackModel[];
   systemPrompt?: string;
   systemPromptMode?: "append" | "replace";
-  providerOptions?: { agent?: string; systemPromptMode?: "append" | "replace"; [key: string]: unknown };
+  providerOptions?: {
+    agent?: string;
+    systemPromptMode?: "append" | "replace";
+    additionalDirectories?: string[];
+    promptFilePath?: string;
+    [key: string]: unknown;
+  };
   mcpServers?: Record<string, McpServerConfig>;
   toolPolicy?: { preapproved: { kind: "mcp"; server: string; tool: string }[] };
   skills?: string[];
   mcpConfigPath?: string;
+}
+
+export interface BuildAgentConfigOptions {
+  useStaticAgyAgent?: boolean;
+  additionalDirectories?: string[];
+  promptFilePath?: string;
 }
 
 /** Resolves the Antigravity agent name for a bot, returning `bot.id` on agy providers. */
@@ -873,6 +946,7 @@ export function buildAgentConfig(
   skills?: readonly string[],
   mcpConfigPath?: string | null,
   systemPromptMode?: "append" | "replace",
+  options?: BuildAgentConfigOptions,
 ): BotAgentConfig {
   const mcpServers: Record<string, McpServerConfig> = {
     ...mcpServersRecord(botMcpServers(bot, library)),
@@ -887,6 +961,8 @@ export function buildAgentConfig(
   // and when the provider can't take exact grants at all.
   const preapproved = supportsToolGrants(bot.provider) ? toolGrants([...quiet, ...bot.alwaysAllow]).filter((grant) => grant.server in mcpServers && !(engine === "native" && grant.server === TOOLS_MCP_NAME && grant.tool === "ask_bot")) : [];
   const agyAgent = resolveAgyAgent(bot);
+  const useStaticAgyAgent = options?.useStaticAgyAgent ?? false;
+  const includeAgyAgent = Boolean(agyAgent && useStaticAgyAgent);
   const thinking = thinkingOptionId !== undefined ? thinkingOptionId : bot.thinkingOptionId;
   const effectiveBaseTools = engineBaseTools(bot, engine);
   const resolvedModeId = resolveModeIdForProvider(bot.modeId, bot.provider);
@@ -895,7 +971,7 @@ export function buildAgentConfig(
   const effectiveSystemPromptMode = systemPromptMode ?? bot.systemPromptMode ?? "append";
 
   let providerOptions: { agent?: string; [key: string]: unknown } | undefined = undefined;
-  if (agyAgent) {
+  if (includeAgyAgent) {
     // The agy runtime reads its tool list from the agent file; a paseo-bot chat still
     // carries the narrowed list for runtimes that honour providerOptions.tools.
     providerOptions = effectiveBaseTools !== undefined && engine === "paseo-bot" ? { agent: agyAgent, tools: effectiveBaseTools } : { agent: agyAgent };
@@ -909,13 +985,30 @@ export function buildAgentConfig(
     }
   }
 
+  const additionalDirs = options?.additionalDirectories?.filter(
+    (dir) => typeof dir === "string" && dir.trim().length > 0,
+  );
+  if (additionalDirs && additionalDirs.length > 0) {
+    providerOptions = {
+      ...providerOptions,
+      additionalDirectories: additionalDirs,
+    };
+  }
+
+  if (options?.promptFilePath) {
+    providerOptions = {
+      ...providerOptions,
+      promptFilePath: options.promptFilePath,
+    };
+  }
+
   return {
     provider: `${bot.provider}/${model}`,
     ...(resolvedModeId ? { modeId: resolvedModeId } : {}),
     ...(thinking ? { thinkingOptionId: thinking } : {}),
     ...(effectiveFallbacks.length > 0 ? { fallbackModels: effectiveFallbacks } : {}),
     ...(providerOptions ? { providerOptions } : {}),
-    ...(agyAgent ? {} : { systemPrompt }),
+    ...(includeAgyAgent ? {} : { systemPrompt }),
     systemPromptMode: effectiveSystemPromptMode,
     ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
     ...(preapproved.length > 0 ? { toolPolicy: { preapproved } } : {}),
