@@ -6,14 +6,17 @@ import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } 
 import { ActivityIndicator, Platform, Pressable, Text, View, useWindowDimensions, type TextInput as NativeTextInput } from "react-native";
 import { newAttachmentId, normalizeMimeType, preflightFile, toWire, type ComposerAttachment } from "../../shared/attachments";
 import type { Bot } from "../../shared/bot";
-import { uploadRpc } from "../../shared/rpc";
+import { uploadRpc, companionCompileRpc } from "../../shared/rpc";
+import { shouldBypassCompanionIntent } from "../../shared/companion-intent";
 import { expandLearn, LEARN_COMMAND } from "../../shared/skills";
 import { AttachmentPill, PendingAttachmentPill } from "../AttachmentPill";
 import type { BotHost } from "../data";
+import { useT } from "../i18n";
 import { homeIndicatorInset } from "../keyboard";
 import { CONTENT_MAX_WIDTH, errorText, nativeTokens, placeholderColor, useHover } from "../native";
 import { newMessageId, rememberSent } from "../sent-attachments";
 import { stopAgent } from "../stop-agent";
+import { useCompanionIntentEnabled } from "../ui-state";
 import { measureAnchor, useMenu, type MenuEntry } from "../ui/Menu";
 import { decodeUtf8, domNode, focusWithRetries, listenForFileDrop, listenForImagePaste, pickFileHandles, surfaceIsVisible, type FileHandle } from "../web";
 import { content, ui } from "../typography";
@@ -94,8 +97,11 @@ const commandCache = new Map<string, Promise<{ commands: SlashCommand[]; error: 
 // meter and send/stop button on the right.
 function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpen, agent, onStart, draftKey }: ComposerProps & { draftKey: string }) {
   const toast = useToast();
+  const { t } = useT();
   const menu = useMenu();
   const upload = useRpc(uploadRpc);
+  const compileCompanion = useRpc(companionCompileRpc);
+  const [companionIntentEnabled, setCompanionIntentEnabled] = useCompanionIntentEnabled();
   const tokens = nativeTokens(colors);
   const { height: windowHeight } = useWindowDimensions();
   const drafts = useDraftStore();
@@ -309,7 +315,23 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
   const deliver = async (message: { text: string; attachments: ComposerAttachment[] }) => {
     const typed = message.text.trim();
     // /learn only works where the plugin's tools are mounted (bots on this host).
-    const outgoing = (agentId && host.isLocal ? expandLearn(typed) : null) ?? (typed || "See the attached files.");
+    let outgoing = (agentId && host.isLocal ? expandLearn(typed) : null) ?? (typed || "See the attached files.");
+
+    if (agentId && host.isLocal && companionIntentEnabled && !shouldBypassCompanionIntent(outgoing)) {
+      try {
+        const res = await compileCompanion({
+          mainAgentId: agentId,
+          botId: bot.id,
+          rawText: outgoing,
+        });
+        if (res?.outgoingText && !res.bypassed) {
+          outgoing = res.outgoingText;
+        }
+      } catch {
+        // fail-open
+      }
+    }
+
     const messageId = newMessageId();
     const wire = toWire(message.attachments);
     rememberSent(messageId, outgoing, message.attachments);
@@ -586,8 +608,36 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
               ]}
             />
             <View style={{ flexShrink: 0, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginHorizontal: -6 }}>
-              <View style={{ minWidth: 0, flexShrink: 1, flexGrow: 1, flexDirection: "row", alignItems: "flex-end" }}>
+              <View style={{ minWidth: 0, flexShrink: 1, flexGrow: 1, flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <AttachButton colors={colors} anchorRef={attachRef} iconSize={buttonIconSize} disabled={!host.api || creationPending} onPress={() => void openAttachMenu()} />
+                {agentId && host.isLocal ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={t("companion.intentDistillPill")}
+                    accessibilityState={{ selected: companionIntentEnabled }}
+                    onPress={() => setCompanionIntentEnabled(!companionIntentEnabled)}
+                    style={({ pressed, hovered }: any) => [
+                      {
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 4,
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 14,
+                        borderWidth: 1,
+                        borderColor: companionIntentEnabled ? colors.accent : colors.border,
+                        backgroundColor: companionIntentEnabled ? colors.surface2 : pressed || hovered ? colors.surface2 : "transparent",
+                      },
+                    ]}
+                  >
+                    <Icon name="Sparkles" size={13} color={companionIntentEnabled ? colors.accent : colors.foregroundMuted} />
+                    {!layout.compact ? (
+                      <Text style={{ fontSize: ui(11), color: companionIntentEnabled ? colors.foreground : colors.foregroundMuted, fontWeight: "500" }}>
+                        {t("companion.intentDistillPill")}
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                ) : null}
               </View>
               <View style={{ flexShrink: 0, flexDirection: "row", alignItems: "center", gap: 4 }}>
                 {agentId ? (

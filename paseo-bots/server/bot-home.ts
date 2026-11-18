@@ -1,7 +1,44 @@
-import { lstatSync, renameSync, symlinkSync } from "node:fs";
+import { existsSync, lstatSync, renameSync, symlinkSync } from "node:fs";
 import { lstat, mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { expandPortablePath, type PortablePathEnv } from "../shared/chat";
+
+/**
+ * Resolves the checkout root of this multiagent-orchestration repository across macOS/Linux/Windows.
+ * Honors PASEO_WORKSPACE_ROOT when set; otherwise locates the parent repo of paseo-bots.
+ */
+export function resolveRepoRootPath(): string {
+  const envOverride = process.env.PASEO_WORKSPACE_ROOT?.trim();
+  if (envOverride) return resolve(envOverride);
+
+  const candidates = [
+    resolve(__dirname, "../.."),
+    resolve(__dirname, "../../.."),
+    resolve(process.cwd(), ".."),
+    resolve(process.cwd()),
+  ];
+  for (const candidate of candidates) {
+    if (
+      existsSync(join(candidate, "paseo-bots")) &&
+      existsSync(join(candidate, "paseo-bots-plugin-settings"))
+    ) {
+      return candidate;
+    }
+  }
+  return resolve(__dirname, "../..");
+}
+
+export function portablePathEnv(): { repoRootPath: string; userHomePath: string } {
+  return {
+    repoRootPath: resolveRepoRootPath(),
+    userHomePath: homedir(),
+  };
+}
+
+export function expandServerPath(rawPath: string | null | undefined): string | null {
+  return expandPortablePath(rawPath, portablePathEnv());
+}
 
 // The plugin SDK has no data-directory API; other plugins use
 // `$PASEO_HOME/plugin-data/<plugin-id>`, so this follows that convention.
@@ -164,6 +201,10 @@ export interface ManagedHomePaths {
   sessionBoardPath: string;
   /** Directory under sessionBoardPath/runs for <agentId>.prompt.md and <agentId>.mcp.json. */
   runsPath: string;
+  /** Host-native repository root for `${REPO_ROOT}` expansion. */
+  repoRootPath?: string | null;
+  /** Host-native user home directory for `~` expansion. */
+  userHomePath?: string | null;
 }
 
 export function teamAgentSeatPath(groupId: string, botId: string, groupName?: string): string {
@@ -239,5 +280,6 @@ export async function ensureManagedSessionHome(input: {
     teamRootPath,
     sessionBoardPath,
     runsPath,
+    ...portablePathEnv(),
   };
 }

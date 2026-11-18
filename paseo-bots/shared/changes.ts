@@ -440,7 +440,12 @@ function withAgent(bot: Bot, fields: BotFieldValues, context: ApplyContext): Bot
 
 function validateAbsolutePath(raw: string, label: string): string {
   const folder = raw.trim();
-  if (!folder || (!folder.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(folder))) {
+  const isPortable =
+    /^\$\{(?:REPO_ROOT|PASEO_WORKSPACE_ROOT)\}(?:[\\/].*)?$/.test(folder) ||
+    folder === "~" ||
+    folder.startsWith("~/") ||
+    folder.startsWith("~\\");
+  if (!folder || (!isPortable && !folder.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(folder))) {
     throw new Error(`${label} needs an absolute path.`);
   }
   return folder;

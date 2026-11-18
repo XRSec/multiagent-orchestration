@@ -1,8 +1,8 @@
 ---
 doc_id: PASEO-BOTS-SHARD-01-CONFIG-STORAGE
 status: CURRENT
-version: 1.0.0
-last_verified: 2026-11-18
+version: 1.1.0
+last_verified: 2026-11-19
 language: en-US
 ---
 
@@ -25,8 +25,8 @@ $PASEO_HOME/
     │   └── skills/<skillId>/SKILL.md    (Shared skill library gated by reviewedSha)
     ├── shared/                          <-> <repoRoot>/paseo-bots-plugin-data/shared
     │   ├── assets/icons/                (Shared SVG/PNG brand icons & portrait assets)
-    │   ├── Bots/<botId>/                (Personal DM seat & MEMORY.md; memory/log/ gitignored)
-    │   └── Teams/<sanitizedTeam>/       (Team seats, shared MEMORY.md & session blackboards)
+    │   ├── Bots/<botId>/                (Personal DM seat & MEMORY.md; memory/log/ & sessions/ gitignored)
+    │   └── Teams/<sanitizedTeam>/       (Team shared MEMORY.md; agents/ & sessions/ gitignored)
     ├── tasks/<safeId>.json              (Host-only TaskRecord files; non-versioned runtime state)
     ├── task-cards/<cardId>.json         (Outbox queue for pending timeline projections)
     └── leases/<sha256>.lock             (Cross-process O_EXCL lock files)

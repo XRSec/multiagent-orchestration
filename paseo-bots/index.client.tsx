@@ -14,7 +14,10 @@ import { INTERACTION_CARD, InteractionIdSchema, InteractionSchema, interactionId
 import { HandoffCard } from "./client/chat/stream/HandoffCard";
 import { TaskCardView } from "./client/chat/stream/TaskCard";
 import { ProtocolCard } from "./client/chat/stream/ProtocolCard";
+import { CompanionIntentBadge } from "./client/chat/stream/CompanionIntentBadge";
 import { Markdown } from "./client/Markdown";
+import { nativeTokens } from "./client/native";
+import { parseCompanionIntentEnvelope } from "./shared/companion-intent";
 import {
   segmentProtocolBlocks,
   transformAssistantProtocolCards,
@@ -285,6 +288,67 @@ export default function contribute(client: PluginClientContext) {
           });
         }}
       />
+    ),
+  });
+  client.addTimelineTransformer({
+    id: "companion-intent-user",
+    query: { itemType: "user_message" },
+    transform({ item }) {
+      if (typeof item.text !== "string") return undefined;
+      const companion = parseCompanionIntentEnvelope(item.text);
+      if (!companion) return undefined;
+      return {
+        items: [
+          {
+            type: "plugin",
+            kind: "companion-intent-bubble",
+            version: 1,
+            data: {
+              rawUserText: companion.rawUserText,
+              turnIndex: companion.turnIndex,
+              distilledIntent: companion.distilledIntent,
+              compiledPrompt: companion.compiledPrompt,
+            },
+          },
+        ],
+      };
+    },
+  });
+  client.addTimelineRenderer({
+    kind: "companion-intent-bubble",
+    version: 1,
+    schema: z.object({
+      rawUserText: z.string(),
+      turnIndex: z.number(),
+      distilledIntent: z.string(),
+      compiledPrompt: z.string(),
+    }),
+    Component: ({ item, theme }) => (
+      <View
+        style={{
+          backgroundColor: nativeTokens(theme.colors).surface3,
+          borderRadius: 16,
+          borderTopRightRadius: 2,
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          maxWidth: "85%",
+          alignSelf: "flex-end",
+          gap: 8,
+          marginVertical: 4,
+        }}
+      >
+        <Text
+          selectable
+          style={{
+            color: theme.colors.foreground,
+            fontSize: 13,
+            lineHeight: 18,
+          }}
+        >
+          {item.data.rawUserText}
+        </Text>
+        <CompanionIntentBadge colors={theme.colors} companion={item.data} />
+      </View>
     ),
   });
   client.addTimelineTransformer({

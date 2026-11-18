@@ -1,8 +1,8 @@
 ---
 doc_id: PASEO-BOTS-SHARD-02-SEAT-BLACKBOARD-PROMPTS
 status: CURRENT
-version: 1.0.0
-last_verified: 2026-11-18
+version: 1.1.0
+last_verified: 2026-11-19
 language: en-US
 ---
 
@@ -51,7 +51,7 @@ $PASEO_HOME/plugin-data/paseo-bots/shared/
 | `runsPath` | `<sessionBoardPath>/runs` | `<sessionBoardPath>/runs` | `<sessionBoardPath>/runs` |
 
 ### External Repository Attachment (`targetProjectDirs`)
-- **Deduplicated Resolution**: `resolveBotPlacement` (`paseo-bots/shared/chat.ts`) collects `[group.cwd, ...group.mounts, ...bot.mounts]` when a team is active (or `[bot.cwd, ...bot.mounts]` in DM) into `placement.targetProjectDirs`, leaving `placement.path = home.path`.
+- **Deduplicated Resolution**: `resolveBotPlacement` (`paseo-bots/shared/chat.ts`) collects `[group.cwd, ...group.mounts, ...bot.mounts]` when a team is active (or `[bot.cwd, ...bot.mounts]` in DM), expands portable prefixes (`${REPO_ROOT}`, `${PASEO_WORKSPACE_ROOT}`, `~`) via `expandPortablePath` against `home.repoRootPath` (`resolveRepoRootPath` in `paseo-bots/server/bot-home.ts`) and `home.userHomePath`, and writes deduplicated host-native paths into `placement.targetProjectDirs` while leaving `placement.path = home.path`.
 - **Pure Mount Plumbing**: `startChat` (`paseo-bots/server/chats.ts`) and `buildAgentConfig` (`paseo-bots/shared/bot.ts`) pass `targetProjectDirs` via `additionalDirectories` (Claude/Codex) and `_meta.antigravity.workspaceRoots` (`agy` / `agy-acp`). Agents edit source code and run git/tests directly inside `targetProjectDirs` while CWD-relative scratch writes land harmlessly in the Managed Seat.
 
 ## 2. Session Blackboard & `TEAM_SESSION_LABEL` Correlation

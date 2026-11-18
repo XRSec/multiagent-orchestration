@@ -26,7 +26,7 @@ import {
   type WorkflowRunState,
   type WorkflowStageDefinition,
 } from "../shared/workflows";
-import { directSessionBoardPath, teamSessionBoardPath } from "./bot-home";
+import { directSessionBoardPath, expandServerPath, teamSessionBoardPath } from "./bot-home";
 import { startChat } from "./chats";
 import type { BotsHost } from "./host";
 import { MEMORY_CURATION_LABEL } from "./memory-curator";
@@ -494,7 +494,7 @@ async function defaultStageDispatcher(
     }
     let promptWithSnapshot = ctx.prompt;
     if (ctx.stageState.retries > 0 || ctx.reuseChatId) {
-      const workspaceDir = ctx.group?.cwd ?? ctx.bot?.cwd ?? process.cwd();
+      const workspaceDir = expandServerPath(ctx.group?.cwd ?? ctx.bot?.cwd) ?? process.cwd();
       const snapshot = await captureWorkspaceSnapshot(workspaceDir).catch(() => null);
       promptWithSnapshot = injectWorkspaceSnapshotToPrompt(ctx.prompt, snapshot);
     }

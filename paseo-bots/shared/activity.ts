@@ -33,7 +33,7 @@ export function toolLabel(name: string): string {
   return mcp ? `${mcp[1]}/${mcp[2]}` : name;
 }
 
-interface TimelineItemLike {
+export interface TimelineItemLike {
   type: string;
   text?: unknown;
   name?: unknown;
@@ -60,6 +60,32 @@ export function lastUserText(items: readonly TimelineItemLike[]): string {
     if (items[i]!.type === "user_message") return String(items[i]!.text ?? "");
   }
   return "";
+}
+
+const INLINE_THINKING_RE = /<thinking>[\s\S]*?<\/thinking>/gi;
+
+/**
+ * Extracts the visible assistant prose body from the latest turn.
+ * Takes only `item.type === "assistant_message"` items (strictly excluding tool_call,
+ * tool_result, reasoning, thinking, plugin), strips any inline <thinking> blocks,
+ * and joins non-empty prose chunks with `\n\n`.
+ */
+export function turnVisibleAssistantBody(items: readonly TimelineItemLike[]): string {
+  let start = items.length;
+  while (start > 0 && items[start - 1]!.type !== "user_message") start--;
+  const turn = items.slice(start);
+
+  const chunks: string[] = [];
+  for (const item of turn) {
+    if (item.type !== "assistant_message") continue;
+    const raw = typeof item.text === "string" ? item.text : String(item.text ?? "");
+    const stripped = raw.replace(INLINE_THINKING_RE, "").trim();
+    if (stripped) {
+      chunks.push(stripped);
+    }
+  }
+
+  return chunks.join("\n\n");
 }
 
 const MEMORY_SIGNAL_RE = /(?:记住|别再|不要再|记到\s*memory\s*[:：]|我希望(?:以后|每次|你)?|\bremember\b|\bi\s+prefer\b|\balways\b|\bnever\b|\bdon't\b|\bsave\s+in\s+memory\s*:)/i;

@@ -78,6 +78,43 @@ export interface BotPlacement {
   targetProjectDirs?: string[];
 }
 
+export interface PortablePathEnv {
+  repoRootPath?: string | null;
+  userHomePath?: string | null;
+}
+
+/**
+ * Expands cross-platform portable path prefixes (`${REPO_ROOT}`, `${PASEO_WORKSPACE_ROOT}`, `~`)
+ * into host-native absolute paths while leaving standard POSIX/Windows paths untouched.
+ */
+export function expandPortablePath(
+  rawPath: string | null | undefined,
+  env?: PortablePathEnv,
+): string | null {
+  if (typeof rawPath !== "string") return null;
+  const trimmed = rawPath.trim();
+  if (!trimmed) return null;
+
+  const joinBase = (base: string, rest: string): string => {
+    const cleanBase = base.replace(/[\\/]+$/, "");
+    if (!rest) return cleanBase;
+    const sep = cleanBase.includes("\\") && !cleanBase.includes("/") ? "\\" : "/";
+    const normalizedRest = rest.replace(/^[\\/]+/, "").replace(/[\\/]+/g, sep);
+    return normalizedRest ? `${cleanBase}${sep}${normalizedRest}` : cleanBase;
+  };
+
+  const repoMatch = /^\$\{(?:REPO_ROOT|PASEO_WORKSPACE_ROOT)\}(?:([\\/].*))?$/.exec(trimmed);
+  if (repoMatch) {
+    return env?.repoRootPath ? joinBase(env.repoRootPath, repoMatch[1] ?? "") : trimmed;
+  }
+
+  if (trimmed === "~" || trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
+    return env?.userHomePath ? joinBase(env.userHomePath, trimmed.slice(1)) : trimmed;
+  }
+
+  return trimmed;
+}
+
 /** Resolves session placement: managed-seat placement plus explicit targetProjectDirs. */
 export function resolveBotPlacement(
   bot: Pick<Bot, "cwd"> & Partial<Pick<Bot, "mounts">>,
@@ -88,6 +125,8 @@ export function resolveBotPlacement(
     botHomePath?: string;
     teamRootPath?: string | null;
     sessionBoardPath?: string;
+    repoRootPath?: string | null;
+    userHomePath?: string | null;
   },
 ): BotPlacement & { targetProjectDirs: string[] } {
   const rawDirs: (string | null | undefined)[] = group
@@ -97,12 +136,10 @@ export function resolveBotPlacement(
   const seen = new Set<string>();
   const targetProjectDirs: string[] = [];
   for (const dir of rawDirs) {
-    if (typeof dir === "string") {
-      const trimmed = dir.trim();
-      if (trimmed.length > 0 && !seen.has(trimmed)) {
-        seen.add(trimmed);
-        targetProjectDirs.push(trimmed);
-      }
+    const expanded = expandPortablePath(dir, home);
+    if (expanded && !seen.has(expanded)) {
+      seen.add(expanded);
+      targetProjectDirs.push(expanded);
     }
   }
 

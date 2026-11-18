@@ -259,7 +259,7 @@ describe("workflows schema & DAG validation", () => {
     };
     const group = raw.values?.groups?.find((g) => g.id === "team-mwgv59i8dfdv");
     expect(group).toBeDefined();
-    expect(group?.cwd).toBe("/Users/xr/IDEA.localized/multiagent-orchestration");
+    expect(group?.cwd).toBe("${REPO_ROOT}");
     expect(Array.isArray(group?.workflows)).toBe(true);
 
     const moadmin = raw.values?.bots?.find((b) => b.id === "bot-moadmin");

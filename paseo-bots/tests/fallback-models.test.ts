@@ -5,7 +5,10 @@
  * Prerequisites: Vitest test environment with paseo-bots dependencies.
  */
 
-import { describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BotDefaultsSchema,
   BotSchema,
@@ -331,6 +334,23 @@ describe("Runtime Fallback Logic", () => {
   });
 
   describe("values.defaults.model and values.defaults.modeId Inheritance", () => {
+    let tempHome: string | null = null;
+    const previousPaseoHome = process.env.PASEO_HOME;
+
+    beforeEach(async () => {
+      tempHome = await mkdtemp(join(tmpdir(), "paseo-fallback-models-"));
+      process.env.PASEO_HOME = tempHome;
+    });
+
+    afterEach(async () => {
+      if (previousPaseoHome === undefined) delete process.env.PASEO_HOME;
+      else process.env.PASEO_HOME = previousPaseoHome;
+      if (tempHome) {
+        await rm(tempHome, { recursive: true, force: true });
+        tempHome = null;
+      }
+    });
+
     it("startBotChat checks defaults.model before falling back to resolveDefaultModel", async () => {
       const bot = makeBot({
         id: "bot-default-test",

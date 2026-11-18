@@ -89,6 +89,7 @@ describe("Bot Souls Storage and Decoupling", () => {
 
   it("writes, reads, and deletes souls in custom test directory", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "paseo-souls-test-"));
+    const previousPaseoHome = process.env.PASEO_HOME;
     try {
       const botId = "bot-custom-agent";
       const instructionText = "# Custom Agent\n\nExecute autonomous release cycles.";
@@ -119,6 +120,8 @@ describe("Bot Souls Storage and Decoupling", () => {
 
   it("loads soul from souls/<bot-id>.md in systemPrompt even when bot.soul is empty", async () => {
     const tempDir = await mkdtemp(join(tmpdir(), "paseo-prompt-souls-"));
+    const previousPaseoHome = process.env.PASEO_HOME;
+    process.env.PASEO_HOME = tempDir;
     try {
       const bot = sampleBot({ id: "bot-prompt-tester", soul: "" });
       const promptInstructions = "## Rules\n\nAlways enforce zero TTY blocking.";
@@ -139,6 +142,8 @@ describe("Bot Souls Storage and Decoupling", () => {
       expect(standingSection).toBeDefined();
       expect(standingSection?.text).toContain("Always enforce zero TTY blocking.");
     } finally {
+      if (previousPaseoHome === undefined) delete process.env.PASEO_HOME;
+      else process.env.PASEO_HOME = previousPaseoHome;
       await rm(tempDir, { recursive: true, force: true });
     }
   });

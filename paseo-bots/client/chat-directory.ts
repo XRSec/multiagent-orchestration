@@ -1,4 +1,5 @@
 import { BOT_LABEL } from "../shared/bot";
+import { SHADOW_SESSION_LABEL } from "../shared/companion-intent";
 import type { PaseoAgent, PaseoApi } from "./paseo";
 
 /** Read every page: the host's default list window is not a bot's entire chat history. */
@@ -22,5 +23,7 @@ export async function listBotChats(api: PaseoApi, botId: string, signal?: AbortS
     if (result.pageInfo?.hasMore && (!cursor || cursors.has(cursor))) throw new Error("Paseo could not load the next page of chats. Retry the chat list.");
     if (cursor) cursors.add(cursor);
   } while (cursor);
-  return [...agents.values()].filter((agent) => !agent.archivedAt).sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
+  return [...agents.values()]
+    .filter((agent) => !agent.archivedAt && agent.labels?.[SHADOW_SESSION_LABEL] !== "true")
+    .sort((a, b) => (Date.parse(b.updatedAt) || 0) - (Date.parse(a.updatedAt) || 0));
 }

@@ -10,6 +10,7 @@ import {
 } from "./analytics";
 import { ProposalSchema, ProposalSkillSchema } from "./proposals";
 import { TaskCardSchema } from "./task-card";
+import { ShadowSessionRecordSchema } from "./companion-intent";
 
 const BotId = z.string().regex(/^[a-z0-9-]+$/);
 const GroupId = z.string().regex(/^[a-zA-Z0-9_-]+$/);
@@ -24,7 +25,12 @@ const SkillName = z.string().max(128).regex(/^[A-Za-z0-9._-]+$/).refine((id) => 
 export const ensureBotHomeRpc = defineRpc({
   name: "bots.ensure-home",
   input: z.object({ botId: BotId, groupId: GroupId.optional(), groupName: z.string().min(1).max(120).optional() }),
-  output: z.object({ root: z.string(), path: z.string() }),
+  output: z.object({
+    root: z.string(),
+    path: z.string(),
+    repoRootPath: z.string().optional(),
+    userHomePath: z.string().optional(),
+  }),
 });
 
 /** Sent by the app on start so the daemon side can run routines. */
@@ -517,4 +523,34 @@ export const workflowResumeRpc = defineRpc({
   name: "bots.workflows.resume",
   input: z.object({ taskId: z.string().min(1) }),
   output: z.object({ ok: z.boolean(), card: TaskCardSchema.optional(), error: z.string().optional() }),
+});
+
+// ---------------------------------------------------------------- companion session
+
+export const companionCompileRpc = defineRpc({
+  name: "bots.companion.compile",
+  input: z.object({
+    mainAgentId: z.string().min(1),
+    botId: z.string().min(1),
+    groupId: z.string().nullable().optional(),
+    rawText: z.string(),
+  }),
+  output: z.object({
+    outgoingText: z.string(),
+    bypassed: z.boolean(),
+    turnIndex: z.number().optional(),
+    distilledIntent: z.string().optional(),
+    compiledPrompt: z.string().optional(),
+    fallbackReason: z.string().optional(),
+  }),
+});
+
+export const companionLedgerReadRpc = defineRpc({
+  name: "bots.companion.ledger.read",
+  input: z.object({
+    mainAgentId: z.string().min(1),
+  }),
+  output: z.object({
+    ledger: ShadowSessionRecordSchema.nullable(),
+  }),
 });

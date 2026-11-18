@@ -12,3 +12,6 @@ build/
 .DS_Store
 *.log
 paseo-bots-plugin-data/shared/Bots/*/memory/log/
+paseo-bots-plugin-data/shared/Bots/*/sessions/
+paseo-bots-plugin-data/shared/Teams/*/sessions/
+paseo-bots-plugin-data/shared/Teams/*/agents/

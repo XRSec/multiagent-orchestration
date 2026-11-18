@@ -1456,4 +1456,14 @@ export const en = {
     resumeSuccess: "Workflow resumed.",
     resumeFailed: "Failed to resume workflow.",
   },
+  companion: {
+    intentDistillPill: "✨ Intent Distill",
+    distillingStatus: "Distilling intent…",
+    distilledRequirement: "Distilled Requirement",
+    compiledPrompt: "Compiled Prompt",
+    distilledIntentLabel: "✨ Distilled Intent",
+    turnLabel: "Turn",
+    expandTooltip: "Expand distillation details",
+    collapseTooltip: "Collapse distillation details",
+  },
 } as const;

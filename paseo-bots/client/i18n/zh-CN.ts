@@ -1462,4 +1462,14 @@ export const zhCN: DeepStringRecord<typeof en> = {
     resumeSuccess: "工作流已恢复执行。",
     resumeFailed: "恢复工作流失败。",
   },
+  companion: {
+    intentDistillPill: "✨ 意图精简",
+    distillingStatus: "正在提炼需求…",
+    distilledRequirement: "精简需求",
+    compiledPrompt: "执行提示词",
+    distilledIntentLabel: "✨ 已提炼需求",
+    turnLabel: "轮次",
+    expandTooltip: "展开提炼详情",
+    collapseTooltip: "收起提炼详情",
+  },
 } as const;

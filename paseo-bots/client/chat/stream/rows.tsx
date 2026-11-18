@@ -25,8 +25,10 @@ import { HandoffCard } from "./HandoffCard";
 import { ProtocolCard } from "./ProtocolCard";
 import { TaskCardView } from "./TaskCard";
 import { isBriefDispatchMessage, segmentProtocolBlocks, type ProtocolSegment } from "../../../shared/protocol-cards";
+import { parseCompanionIntentEnvelope } from "../../../shared/companion-intent";
 import { extractToolSources } from "../../../shared/tool-results";
 import { SourceCards } from "./SourceCards";
+import { CompanionIntentBadge } from "./CompanionIntentBadge";
 import { CopyButton, ExpandableBadge, isWeb, MessageAction, SpeakButton, Spinner } from "./ui";
 
 type Colors = PluginTheme["colors"];
@@ -172,7 +174,7 @@ const UserMessage = memo(function UserMessage({ colors, compact, text, cardReply
   const images = attachments.filter((attachment): attachment is ImageAttachment => attachment.kind === "image");
   const files = attachments.filter((attachment) => attachment.kind !== "image");
   const showTrailing = compact || !isWeb || hovered;
-  const getText = useCallback(() => text, [text]);
+  const getText = useCallback(() => (parseCompanionIntentEnvelope(text)?.rawUserText ?? text), [text]);
   return (
     <View style={{ flexDirection: "row", justifyContent: "flex-end", ...(isWeb ? ({ userSelect: "text" } as object) : {}) }}>
       {/* On web a Pressable tracks hover for the timestamp row; phones always show it. */}
@@ -207,6 +209,17 @@ const UserMessage = memo(function UserMessage({ colors, compact, text, cardReply
           {hasText ? (
             (() => {
               const displayText = cardReply && !showOriginal ? cardReply : text;
+              const companion = parseCompanionIntentEnvelope(displayText);
+              if (companion) {
+                return (
+                  <View style={{ gap: 6 }}>
+                    <Text selectable style={{ color: colors.foreground, fontSize: content(), lineHeight: contentLine(), ...(isWeb ? ({ overflowWrap: "anywhere" } as object) : {}) }}>
+                      {companion.rawUserText}
+                    </Text>
+                    <CompanionIntentBadge colors={colors} companion={companion} />
+                  </View>
+                );
+              }
               const segments = segmentProtocolBlocks(displayText);
               const isDispatch = isBriefDispatchMessage(displayText, segments);
               if (!isDispatch) {

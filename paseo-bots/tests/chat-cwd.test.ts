@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ensureBotHome } from "../server/bot-home";
 import { EMPTY_LIBRARY, primaryGroupForBot, type BotGroup } from "../shared/bot";
-import { startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
+import { expandPortablePath, resolveBotPlacement, startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
 import { makeBot } from "./helpers";
 
 describe("startBotChat placement cwd", () => {
@@ -350,5 +350,46 @@ describe("ensureBotHome", () => {
     const fallbackHome = await ensureBotHome({ botId: "bot-solo" });
     expect(fallbackHome.root).toBe(join(tempHome, "plugin-data", "paseo-bots", "shared", "Bots"));
     expect(fallbackHome.path).toBe(join(tempHome, "plugin-data", "paseo-bots", "shared", "Bots", "bot-solo"));
+  });
+
+  it("expands portable ${REPO_ROOT} and ~ paths across macOS and Windows in resolveBotPlacement", () => {
+    expect(
+      expandPortablePath("${REPO_ROOT}", {
+        repoRootPath: "D:\\work\\multiagent-orchestration",
+        userHomePath: "C:\\Users\\partner",
+      }),
+    ).toBe("D:\\work\\multiagent-orchestration");
+
+    expect(
+      expandPortablePath("${REPO_ROOT}/paseo-bots", {
+        repoRootPath: "D:\\work\\multiagent-orchestration",
+        userHomePath: "C:\\Users\\partner",
+      }),
+    ).toBe("D:\\work\\multiagent-orchestration\\paseo-bots");
+
+    expect(
+      expandPortablePath("~/projects/demo", {
+        repoRootPath: "/Users/me/repo",
+        userHomePath: "C:\\Users\\partner",
+      }),
+    ).toBe("C:\\Users\\partner\\projects\\demo");
+
+    const bot = makeBot({ id: "bot-mocode", cwd: null, mounts: ["~/shared-notes"] });
+    const group: Pick<BotGroup, "id" | "name" | "cwd" | "mounts"> = {
+      id: "team-1",
+      name: "multiagent-orchestration",
+      cwd: "${REPO_ROOT}",
+      mounts: [],
+    };
+    const placement = resolveBotPlacement(bot, group, {
+      path: "/managed/seat",
+      root: "/managed/root",
+      repoRootPath: "/Users/partner/code/multiagent-orchestration",
+      userHomePath: "/Users/partner",
+    });
+    expect(placement.targetProjectDirs).toEqual([
+      "/Users/partner/code/multiagent-orchestration",
+      "/Users/partner/shared-notes",
+    ]);
   });
 });

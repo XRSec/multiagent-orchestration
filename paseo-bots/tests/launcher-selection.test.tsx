@@ -97,6 +97,7 @@ vi.mock("../shared/rpc", () => ({
   ensureBotHomeRpc: "ensureBotHomeRpc",
   mountRpc: "mountRpc",
   systemPromptRpc: "systemPromptRpc",
+  companionCompileRpc: "companionCompileRpc",
 }));
 vi.mock("../shared/uuid", () => ({ newUuid: () => "uuid-1" }));
 vi.mock("../client/launcher/AttachmentThumbStrip", () => ({ AttachmentThumbStrip: "AttachmentThumbStrip" }));

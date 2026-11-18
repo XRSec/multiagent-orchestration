@@ -25,14 +25,18 @@ import { makeBot } from "./helpers";
 import type { WorkflowDefinition } from "../shared/workflows";
 
 const tempDirs: string[] = [];
+const previousPaseoHome = process.env.PASEO_HOME;
 
 async function makeTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), prefix));
   tempDirs.push(dir);
+  process.env.PASEO_HOME = dir;
   return dir;
 }
 
 afterEach(async () => {
+  if (previousPaseoHome === undefined) delete process.env.PASEO_HOME;
+  else process.env.PASEO_HOME = previousPaseoHome;
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 

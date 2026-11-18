@@ -29,7 +29,7 @@ import { resolveSessionRole, teamsOf, teamsPrompt, type SessionRoleKind } from "
 import type { WorkflowDefinition } from "../shared/workflows";
 import { syncBotToAgyAgent } from "./agy-agents";
 import { syncBotToClaudeAgent, writeSessionRunArtifacts } from "./claude-agents";
-import { botDataPath } from "./bot-home";
+import { botDataPath, expandServerPath } from "./bot-home";
 import { linkBotSkills, skillSha, syncSeatSkills } from "./library";
 import { injectedMemory, MAIN_MEMORY, memoryFolder, recentLogEntries } from "./memory";
 import { readBotSoul } from "./souls";
@@ -163,12 +163,16 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
   }
 
   const team = startGroups.length && start.team ? teamsPrompt(startGroups, bot, start.team.bots, start.team.globalWorkflows, resolvedRole, teamMemory) : null;
-  const effectiveMounts = activeGroup ? activeGroup.mounts : bot.mounts;
-  const effectiveCwd = activeGroup?.cwd ?? bot.cwd;
+  const rawMounts = activeGroup ? activeGroup.mounts : bot.mounts;
+  const effectiveMounts = (rawMounts ?? []).map((m) => expandServerPath(m) ?? m);
+  const rawCwd = activeGroup?.cwd ?? bot.cwd;
+  const effectiveCwd = expandServerPath(rawCwd);
 
   let targetProjects = start.targetProjects;
   if (!targetProjects && start.targetProjectDirs && start.targetProjectDirs.length > 0) {
-    targetProjects = await loadTargetProjectRules(start.targetProjectDirs);
+    targetProjects = await loadTargetProjectRules(
+      start.targetProjectDirs.map((d) => expandServerPath(d) ?? d),
+    );
   }
 
   // Connected apps go through this host's relay, so bots on other hosts can't reach them.

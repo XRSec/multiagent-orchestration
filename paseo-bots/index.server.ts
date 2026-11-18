@@ -1,10 +1,11 @@
 import type { PluginHandlerContext, PluginServerContext } from "@getpaseo/plugin/server";
-import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData } from "./server/bot-home";
+import { ensureBotHome, ensureBotsHome, migrateRenamedPluginData, portablePathEnv } from "./server/bot-home";
 import { turnEnded, turnStarted } from "./server/activity";
 import { CommandAllowlist } from "./server/commands";
 import { MemoryJournal } from "./server/journal";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
 import { MemoryCurator } from "./server/memory-curator";
+import { CompanionSessionManager } from "./server/companion-session";
 import { systemPrompt } from "./server/prompt";
 import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
@@ -47,6 +48,8 @@ import {
   commandAllowRpc,
   commandListRpc,
   commandRemoveRpc,
+  companionCompileRpc,
+  companionLedgerReadRpc,
   ensureBotHomeRpc,
   exportBotRpc,
   exportTeamRpc,
@@ -113,12 +116,14 @@ export default function contribute(server: PluginServerContext) {
     .catch((error: unknown) => console.error("paseo-bots: couldn't prepare the Bots folder", error));
   const settings = server.registerSettings(botSettings);
   const host = new BotsHost(settings);
+  const companionManager = new CompanionSessionManager(host);
   let reconciledOnAttach = false;
   const detachOrphanReconcile = host.onAttach(() => {
     if (reconciledOnAttach) return;
     reconciledOnAttach = true;
     void reconcileOrphanWorkflows({ host, staleAfterMs: 0, republish: true } as any)
       .then(() => archiveSettledWorkflowStageChats(host))
+      .then(() => host.paseo ? companionManager.sweepOrphanShadowSessions(host.paseo) : undefined)
       .catch((error: unknown) =>
         console.error("paseo-bots: couldn't reconcile orphan workflows or archive settled chats on attach", error),
       );
@@ -206,9 +211,9 @@ export default function contribute(server: PluginServerContext) {
     attach(context);
     return { scheduler: scheduler.running };
   });
-  server.handle(ensureBotHomeRpc, (input, context) => {
+  server.handle(ensureBotHomeRpc, async (input, context) => {
     attach(context);
-    return ensureBotHome(input);
+    return { ...(await ensureBotHome(input)), ...portablePathEnv() };
   });
   server.handle(systemPromptRpc, async (input, context) => systemPrompt(input, await library(), context.paseo, await host.values()));
   server.handle(memoryListRpc, ({ botId }) => listMemory(botId));
@@ -366,6 +371,13 @@ export default function contribute(server: PluginServerContext) {
     const res = await resumeWorkflow({ host, relay, taskId });
     return { ok: res.ok, ...(res.card ? { card: res.card } : {}), ...(res.error ? { error: res.error } : {}) };
   });
+  server.handle(companionCompileRpc, async (input, context) => {
+    host.attach(context.paseo);
+    return companionManager.compileUserTurn(input);
+  });
+  server.handle(companionLedgerReadRpc, async ({ mainAgentId }) => {
+    return { ledger: await companionManager.readLedger(mainAgentId) };
+  });
   server.addHook("agent.turn.before", async (event, context) => {
     host.attach(context.paseo);
     await turnStarted(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
@@ -384,7 +396,11 @@ export default function contribute(server: PluginServerContext) {
   });
   server.addHook("agent.turn.after", async (event, context) => {
     host.attach(context.paseo);
-    await turnEnded(host, journal, scheduler, event, curator).catch((error: unknown) => console.error("paseo-bots: couldn't record a turn", error));
+    await turnEnded(host, journal, scheduler, event, curator, companionManager).catch((error: unknown) => console.error("paseo-bots: couldn't record a turn", error));
+  });
+  server.addHook("agent.archive.after", async ({ agent }, context) => {
+    host.attach(context.paseo);
+    await companionManager.archiveForMainAgent(agent.id).catch((error: unknown) => console.error("paseo-bots: couldn't archive companion session", error));
   });
 
   return async () => {

@@ -51,7 +51,9 @@ import {
   type ComposerAttachment,
 } from "../../shared/attachments";
 import { resolveBotPlacement, startBotChat, type BotPlacement } from "../../shared/chat";
-import { ensureBotHomeRpc, mountRpc, systemPromptRpc } from "../../shared/rpc";
+import { ensureBotHomeRpc, mountRpc, systemPromptRpc, companionCompileRpc } from "../../shared/rpc";
+import { shouldBypassCompanionIntent } from "../../shared/companion-intent";
+import { useCompanionIntentEnabled } from "../ui-state";
 import { newUuid } from "../../shared/uuid";
 import { AttachmentThumbStrip } from "./AttachmentThumbStrip";
 import { launcherStyles as styles } from "./BotLauncherStyles";
@@ -330,6 +332,9 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
   const ensureHome = useRpc(ensureBotHomeRpc);
   const compose = useRpc(systemPromptRpc);
   const mountServers = useRpc(mountRpc);
+  const compileCompanion = useRpc(companionCompileRpc);
+  const [companionIntentEnabled, setCompanionIntentEnabled] = useCompanionIntentEnabled();
+  const [submittingStatus, setSubmittingStatus] = useState<string | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [compactSheetOpen, setCompactSheetOpen] = useState(false);
   const [engineChoice, setEngineChoice] = useState<EngineChoice>("default");
@@ -549,6 +554,27 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
         );
       }
 
+      const agentId = newUuid();
+
+      if (host.isLocal && companionIntentEnabled && !selectedWorkflowId && !shouldBypassCompanionIntent(effectivePrompt)) {
+        setSubmittingStatus(t("companion.distillingStatus"));
+        try {
+          const compiled = await compileCompanion({
+            mainAgentId: agentId,
+            botId: activeBot.id,
+            groupId: group?.id ?? null,
+            rawText: effectivePrompt,
+          });
+          if (compiled?.outgoingText && !compiled.bypassed) {
+            effectivePrompt = compiled.outgoingText;
+          }
+        } catch {
+          // fail-open
+        } finally {
+          setSubmittingStatus(null);
+        }
+      }
+
       const effectiveBot = {
         ...activeBot,
         provider: selectedProvider || activeBot.provider,
@@ -563,7 +589,6 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
         message: effectivePrompt,
       });
 
-      const agentId = newUuid();
       const plugin = host.isLocal ? await mountServers({ botId: activeBot.id, agentId }) : {};
 
       const { images, attachments: wireAttachments } = toWire(attachments);
@@ -601,6 +626,7 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);
       setIsSubmitting(false);
+      setSubmittingStatus(null);
       toast.error(msg);
     }
   }, [
@@ -812,6 +838,37 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
                     </Pressable>
                   );
                 })}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("companion.intentDistillPill")}
+              accessibilityState={{ selected: companionIntentEnabled && !selectedWorkflowId }}
+              onPress={() => setCompanionIntentEnabled(!companionIntentEnabled)}
+              disabled={!!selectedWorkflowId}
+              style={[
+                styles.pillItem,
+                {
+                  borderColor: companionIntentEnabled && !selectedWorkflowId ? colors.accent : colors.border,
+                  backgroundColor: companionIntentEnabled && !selectedWorkflowId ? colors.surface2 : colors.surface1,
+                  opacity: selectedWorkflowId ? 0.4 : 1,
+                },
+                Platform.OS === "web" ? ({ touchAction: "pan-x" } as any) : null,
+              ]}
+            >
+              <Icon
+                name="Sparkles"
+                size={14}
+                color={companionIntentEnabled && !selectedWorkflowId ? colors.accent : colors.foregroundMuted}
+              />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.pillText,
+                  { color: companionIntentEnabled && !selectedWorkflowId ? colors.foreground : colors.foregroundMuted },
+                ]}
+              >
+                {t("companion.intentDistillPill")}
+              </Text>
+            </Pressable>
           </ScrollablePills>
         </View>
 
@@ -1078,6 +1135,12 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
             </View>
 
             <View style={styles.toolbarRight}>
+              {submittingStatus ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginRight: 8 }}>
+                  <ActivityIndicator size="small" color={colors.accent} />
+                  <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>{submittingStatus}</Text>
+                </View>
+              ) : null}
               {Platform.OS === "web" ? (
                 <Pressable
                   accessibilityRole="button"

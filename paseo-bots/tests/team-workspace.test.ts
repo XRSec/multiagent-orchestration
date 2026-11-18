@@ -157,7 +157,12 @@ describe("Team-scoped workspace (cwd & mounts)", () => {
     const mainTeam = parsed.groups?.find((g) => g.id === "team-mwgv59i8dfdv");
     expect(mainTeam).toBeDefined();
     const expectedRoot = resolve(__dirname, "../..");
-    expect(mainTeam?.cwd === null || mainTeam?.cwd === expectedRoot || mainTeam?.cwd === ".").toBe(true);
+    expect(
+      mainTeam?.cwd === null ||
+        mainTeam?.cwd === expectedRoot ||
+        mainTeam?.cwd === "." ||
+        mainTeam?.cwd === "${REPO_ROOT}",
+    ).toBe(true);
     expect(mainTeam?.mounts).toEqual([]);
     for (const other of (parsed.groups ?? []).filter((g) => g.id !== "team-mwgv59i8dfdv")) {
       expect(other.cwd).toBeNull();

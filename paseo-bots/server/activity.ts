@@ -1,6 +1,7 @@
 import type { PluginHookEvents } from "@getpaseo/plugin/server";
-import { hasMemorySignal, lastTurn, lastUserText, logLine } from "../shared/activity";
+import { hasMemorySignal, lastTurn, lastUserText, logLine, turnVisibleAssistantBody } from "../shared/activity";
 import { SESSION_ROLE_LABEL } from "../shared/chat";
+import { parseCompanionIntentEnvelope, SHADOW_SESSION_LABEL } from "../shared/companion-intent";
 import { ASKED_BY_LABEL } from "../shared/handoff";
 import { isBriefDispatchMessage } from "../shared/protocol-cards";
 import type { BotsHost } from "./host";
@@ -9,6 +10,7 @@ import { appendDailyLog } from "./memory";
 import { MEMORY_CURATION_LABEL, type MemoryCurator } from "./memory-curator";
 import type { RoutineScheduler } from "./scheduler";
 import { WORKFLOW_STAGE_LABEL, WORKFLOW_TASK_LABEL } from "./workflow-runner";
+import type { CompanionSessionManager } from "./companion-session";
 
 // What happens around each turn of a bot's chat: the journal notes memory
 // changes, and the daily log gets a line saying what the bot did.
@@ -27,9 +29,14 @@ export async function turnEnded(
   scheduler: Pick<RoutineScheduler, "finished">,
   { agent, outcome, turnId, timeline }: { agent: Pick<PluginHookEvents["agent.turn.after"]["agent"], "id" | "title"> & { workspaceId?: string | null; parentAgentId?: string | null; provider?: string; cwd?: string }; outcome: PluginHookEvents["agent.turn.after"]["outcome"]; turnId?: string | null; timeline?: unknown },
   curator?: Pick<MemoryCurator, "isCurationAgent" | "curateTurnFallback">,
+  companionManager?: Pick<CompanionSessionManager, "distillTurnReply">,
 ): Promise<void> {
   const chat = await host.chatOf(agent.id);
   if (!chat) return;
+
+  // Guard 1: Companion shadow sessions are completely invisible to logs, curation, and recursion
+  if (chat.labels?.[SHADOW_SESSION_LABEL] === "true") return;
+
   const { botId } = chat;
   const title = chat.title?.trim() || agent.title?.trim() || "Untitled chat";
   const memoryChanged = await journal.end(botId, { id: agent.id, title });
@@ -54,10 +61,25 @@ export async function turnEnded(
     chat.labels[SESSION_ROLE_LABEL] !== "dispatched-worker" &&
     !isBriefDispatchMessage(userText);
 
-  if (outcome.kind === "completed" && curator && isHumanTurn && !memoryChanged && hasMemorySignal(userText)) {
-    void curator.curateTurnFallback({ botId, agentId: agent.id, chatTitle: title, userText, reply }).catch((error: unknown) => {
+  // Guard 2: MemoryCurator input hygiene - extract rawUserText so COMPILED_PROMPT never triggers curation
+  const rawUser = parseCompanionIntentEnvelope(userText)?.rawUserText ?? userText;
+
+  if (outcome.kind === "completed" && curator && isHumanTurn && !memoryChanged && hasMemorySignal(rawUser)) {
+    void curator.curateTurnFallback({ botId, agentId: agent.id, chatTitle: title, userText: rawUser, reply }).catch((error: unknown) => {
       console.error("paseo-bots: memory fallback curation failed", error);
     });
+  }
+
+  // Post-turn visible prose distillation for companion session ledger
+  if (outcome.kind === "completed" && isHumanTurn && companionManager) {
+    const visibleBody = turnVisibleAssistantBody(items);
+    if (visibleBody.trim()) {
+      void companionManager
+        .distillTurnReply({ mainAgentId: agent.id, botId, assistantBody: visibleBody })
+        .catch((error: unknown) => {
+          console.error("paseo-bots: reply distillation failed", error);
+        });
+    }
   }
 
   const line = logLine({ at: new Date(), chat: title, reply, tools, failure: outcome.kind === "failed" ? outcome.error.message : null });
