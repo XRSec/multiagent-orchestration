@@ -9,6 +9,7 @@ import {
   AnalyticsSessionListOutputSchema,
 } from "./analytics";
 import { ProposalSchema, ProposalSkillSchema } from "./proposals";
+import { TaskCardSchema } from "./task-card";
 
 const BotId = z.string().regex(/^[a-z0-9-]+$/);
 const GroupId = z.string().regex(/^[a-zA-Z0-9_-]+$/);
@@ -502,4 +503,12 @@ export const skillMetadataReadRpc = defineRpc({
   name: "bots.skill.metadata.read",
   input: z.object({ id: SkillName }),
   output: z.object({ skill: LibrarySkillSchema.nullable() }),
+});
+
+// ---------------------------------------------------------------- workflow runs
+
+export const workflowRunsRpc = defineRpc({
+  name: "bots.workflows.runs",
+  input: z.object({ limit: z.number().int().min(1).max(100).optional() }),
+  output: z.object({ runs: z.array(TaskCardSchema) }),
 });

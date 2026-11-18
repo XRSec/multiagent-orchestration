@@ -197,6 +197,14 @@ export async function updateTaskWorkflow(taskId: string, updater: (workflow: Wor
   });
 }
 
+/** Updates the recorded chatId for a specific workflow stage immediately. */
+export async function updateTaskStageChatId(taskId: string, stageId: string, chatId: string): Promise<TaskRecord> {
+  return updateTaskWorkflow(taskId, (wf) => ({
+    ...wf,
+    stages: wf.stages.map((s) => (s.id === stageId ? { ...s, chatId } : s)),
+  }));
+}
+
 /** One member per handle, so a resumed follow-up refreshes its member instead of adding one. */
 function mergeMember(existing: TaskRecord, member: TaskMemberInput, now: string): TaskMember[] {
   const key = memberKey(member);

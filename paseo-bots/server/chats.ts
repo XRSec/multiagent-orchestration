@@ -160,8 +160,21 @@ export async function startChat(
     ...(input.stageSeatKey ? { stageSeatKey: input.stageSeatKey } : {}),
   });
 
+  const defaults = values?.defaults;
+  const defaultsModel = (!defaults?.provider || defaults.provider === bot.provider)
+    ? defaults?.model?.trim() || null
+    : null;
+  const defaultsModeId = (!defaults?.provider || defaults.provider === bot.provider)
+    ? defaults?.modeId?.trim() || null
+    : null;
+
+  const inheritedModel = (!bot.model || !bot.model.trim()) ? defaultsModel : bot.model;
+  const inheritedModeId = (!bot.modeId || !bot.modeId.trim()) ? defaultsModeId : bot.modeId;
+
   const effectiveBot: Bot = {
     ...bot,
+    ...(inheritedModel ? { model: inheritedModel } : {}),
+    ...(inheritedModeId ? { modeId: inheritedModeId } : {}),
     ...(input.thinkingOptionId !== undefined ? { thinkingOptionId: input.thinkingOptionId } : {}),
     ...(input.skillIds !== undefined ? { skillIds: input.skillIds } : {}),
     ...(input.mcpServerIds !== undefined ? { mcpServerIds: input.mcpServerIds } : {}),
@@ -218,6 +231,7 @@ export async function startChat(
       systemPrompt: promptResult.systemPrompt,
       title: input.title,
       labels: chatLabels(labels, engine),
+      defaults: values?.defaults,
       ...(engine ? { engine } : {}),
       ...(resolvedMcpConfigPath ? { mcpConfigPath: resolvedMcpConfigPath } : {}),
       ...(promptResult.promptFilePath ? { promptFilePath: promptResult.promptFilePath } : {}),

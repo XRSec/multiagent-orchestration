@@ -292,12 +292,14 @@ export interface StageBriefInput {
   workflowName: string;
   stage: WorkflowStageDefinition;
   userInput?: string;
+  role?: string;
   upstreamOutputs?: Array<{
     stageId: string;
     stageName: string;
     output: string;
     handoffFilePath?: string | null;
   }>;
+  sessionBoardPath?: string;
   attempt: number;
   previousError?: string | null;
 }
@@ -324,32 +326,68 @@ export function buildStageBriefPrompt(input: StageBriefInput): string {
   const upstreamBlock = input.upstreamOutputs && input.upstreamOutputs.length > 0
     ? input.upstreamOutputs
         .map((up) => {
-          let text = up.output.trim();
-          const handoffMatch = /<worker_handoff>([\s\S]*?)<\/worker_handoff>/i.exec(text);
-          if (handoffMatch) {
-            text = handoffMatch[0].trim();
+          const raw = up.output.trim();
+          let text = raw;
+          const handoffMatch = extractWorkerHandoffBlock(raw);
+
+          if (raw.length > MAX_INLINE_UPSTREAM_CHARS) {
+            if (handoffMatch) {
+              const handoffBlock = handoffMatch.fullMatch.trim();
+              if (handoffBlock.length > MAX_INLINE_UPSTREAM_CHARS) {
+                // If handoff block alone exceeds MAX_INLINE_UPSTREAM_CHARS, preserve head
+                // and tail (which contains VERIFICATION_PROOF and OPEN_ISSUES) so proofs are never truncated away.
+                const tailBudget = Math.floor(MAX_INLINE_UPSTREAM_CHARS * 0.7);
+                const headBudget = MAX_INLINE_UPSTREAM_CHARS - tailBudget - 20;
+                text = `${handoffBlock.slice(0, headBudget)}\n...[truncated]...\n${handoffBlock.slice(-tailBudget)}`;
+              } else {
+                // Preserve handoff block first, then fill remaining budget with prose/summary
+                const remainingBudget = MAX_INLINE_UPSTREAM_CHARS - handoffBlock.length;
+                const prose = raw.replace(handoffMatch.fullMatch, "").trim();
+                if (prose.length > 0 && remainingBudget > 30) {
+                  const truncatedProse = prose.length > remainingBudget
+                    ? prose.slice(0, remainingBudget - 16).trim() + "\n...[truncated]"
+                    : prose;
+                  text = `${truncatedProse}\n\n${handoffBlock}`;
+                } else {
+                  text = handoffBlock;
+                }
+              }
+            } else {
+              text = raw.slice(0, MAX_INLINE_UPSTREAM_CHARS) + "\n...[truncated]";
+            }
+          } else if (handoffMatch) {
+            text = handoffMatch.fullMatch.trim();
           }
-          if (text.length > MAX_INLINE_UPSTREAM_CHARS) {
-            text = text.slice(0, MAX_INLINE_UPSTREAM_CHARS) + "\n...[truncated]";
-          }
+
           const citation = up.handoffFilePath ? `\nFull upstream output saved at: ${up.handoffFilePath}` : "";
           return `### From "${up.stageName}" (${up.stageId}):\n${text}${citation}`;
         })
         .join("\n\n")
     : "";
 
+  const boardPath = input.sessionBoardPath?.trim();
   sections.push([
     "<task_brief>",
     `- WORKFLOW: ${input.workflowName}`,
     `- STAGE_ID: ${input.stage.id}`,
     `- STAGE_NAME: ${input.stage.name}`,
+    boardPath ? `- SESSION_BOARD: ${boardPath}` : "",
+    boardPath ? `- TASK_MANIFEST: ${boardPath}/TASK_MANIFEST.md` : "",
     input.userInput?.trim() ? `- WORKFLOW_INPUT:\n${input.userInput.trim()}` : "",
     upstreamBlock ? `- UPSTREAM_CONTEXT:\n${upstreamBlock}` : "",
     `- SPECIFICATION:\n${input.stage.prompt.trim() || `Complete stage "${input.stage.name}".`}`,
     "</task_brief>",
   ].filter(Boolean).join("\n"));
 
-  sections.push(WORKER_PROTOCOL_SUFFIX);
+  const promptSources = [
+    input.stage.prompt,
+    input.role,
+  ].filter(Boolean).join("\n");
+
+  const alreadyHasProtocol = /<worker_handoff>|worker_protocol/i.test(promptSources);
+  if (!alreadyHasProtocol) {
+    sections.push(WORKER_PROTOCOL_SUFFIX);
+  }
   return sections.join("\n\n");
 }
 
@@ -357,7 +395,100 @@ export interface ParsedWorkerHandoff {
   hasBlock: boolean;
   status: "PASS" | "PARTIAL" | "BLOCKED" | "FAILED" | "UNKNOWN";
   summary: string;
+  touchedFiles: string;
+  verificationProof: string;
+  dodChecklist: string;
   openIssues: string;
+}
+
+const HANDOFF_FIELDS = "STATUS|SUMMARY|TOUCHED_FILES|VERIFICATION_PROOF|DOD_CHECKLIST|OPEN_ISSUES";
+
+function extractHandoffField(body: string, field: string): string {
+  const re = new RegExp(
+    `^[ \\t]*(?:[-*]\\s*)?(?:\\*\\*)?${field}(?:\\*\\*)?\\s*:\\s*(?:\\*\\*)?\\s*([\\s\\S]*?)(?=^[ \\t]*(?:[-*]\\s*)?(?:\\*\\*)?(?:${HANDOFF_FIELDS})(?:\\*\\*)?\\s*:|$)`,
+    "im",
+  );
+  const m = re.exec(body);
+  return m?.[1]?.replace(/\*\*$/, "").trim() ?? "";
+}
+
+export interface ExtractedWorkerHandoffBlock {
+  fullMatch: string;
+  body: string;
+  startIndex: number;
+  endIndex: number;
+}
+
+/**
+ * Extracts the LAST valid closed <worker_handoff>...</worker_handoff> block outside inline backticks.
+ * Prevents prose mentions like `<worker_handoff>` from tricking a left-greedy regex into swallowing
+ * all intervening prose up to the actual closing tag.
+ */
+export function extractWorkerHandoffBlock(text: string): ExtractedWorkerHandoffBlock | null {
+  if (!text) return null;
+
+  const closeRe = /<\/worker_handoff\s*>/gi;
+  const openRe = /<worker_handoff\b[^>]*>/gi;
+
+  const closes: { index: number; length: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = closeRe.exec(text)) !== null) {
+    closes.push({ index: m.index, length: m[0].length });
+  }
+  if (closes.length === 0) return null;
+
+  const opens: { index: number; length: number; tag: string }[] = [];
+  while ((m = openRe.exec(text)) !== null) {
+    const idx = m.index;
+    const len = m[0].length;
+
+    // Check if opening tag is preceded by 1 or 2 backticks (inline code, not 3+ code fence)
+    let backticksBefore = 0;
+    let p = idx - 1;
+    while (p >= 0 && text[p] === "`") {
+      backticksBefore++;
+      p--;
+    }
+    const isDirectlyWrappedInInlineBackticks =
+      (backticksBefore === 1 || backticksBefore === 2) ||
+      (text[idx - 1] === "`" && text[idx + len] === "`");
+
+    // Also check if inside an inline backtick span on this line
+    const lineStart = text.lastIndexOf("\n", idx) + 1;
+    const beforeOnLine = text.slice(lineStart, idx);
+    const nonFenceBackticks = (beforeOnLine.replace(/`{3,}/g, "").match(/`/g) || []).length;
+    const insideInlineBackticks = isDirectlyWrappedInInlineBackticks || (nonFenceBackticks % 2 === 1);
+
+    if (!insideInlineBackticks) {
+      opens.push({ index: idx, length: len, tag: m[0] });
+    }
+  }
+  if (opens.length === 0) return null;
+
+  // Search from last closing tag backwards to get the last valid closed block
+  for (let c = closes.length - 1; c >= 0; c--) {
+    const close = closes[c]!;
+    let bestOpen: { index: number; length: number; tag: string } | null = null;
+    for (const open of opens) {
+      if (open.index < close.index) {
+        if (!bestOpen || open.index > bestOpen.index) {
+          bestOpen = open;
+        }
+      }
+    }
+    if (bestOpen) {
+      const fullMatch = text.slice(bestOpen.index, close.index + close.length);
+      const body = text.slice(bestOpen.index + bestOpen.length, close.index);
+      return {
+        fullMatch,
+        body,
+        startIndex: bestOpen.index,
+        endIndex: close.index + close.length,
+      };
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -366,20 +497,31 @@ export interface ParsedWorkerHandoff {
  * replies without a <worker_handoff> block remain backward-compatible.
  */
 export function parseWorkerHandoff(reply: string): ParsedWorkerHandoff {
-  const match = /<worker_handoff>([\s\S]*?)<\/worker_handoff>/i.exec(reply);
+  const match = extractWorkerHandoffBlock(reply);
   if (!match) {
-    return { hasBlock: false, status: "UNKNOWN", summary: reply.trim(), openIssues: "" };
+    return {
+      hasBlock: false,
+      status: "UNKNOWN",
+      summary: reply.trim(),
+      touchedFiles: "",
+      verificationProof: "",
+      dodChecklist: "",
+      openIssues: "",
+    };
   }
-  const body = match[1] ?? "";
-  const statusMatch = /^\s*STATUS:\s*(PASS|PARTIAL|BLOCKED|FAILED)\b/im.exec(body);
-  const status = (statusMatch?.[1]?.toUpperCase() as ParsedWorkerHandoff["status"]) ?? "UNKNOWN";
-  const summaryMatch = /^\s*SUMMARY:\s*([\s\S]*?)(?=^\s*(?:TOUCHED_FILES|VERIFICATION_PROOF|DOD_CHECKLIST|OPEN_ISSUES):|$)/im.exec(body);
-  const issuesMatch = /^\s*OPEN_ISSUES:\s*([\s\S]*?)$/im.exec(body);
+  const body = match.body;
+  const statusRaw = extractHandoffField(body, "STATUS").toUpperCase();
+  const statusMatch = /^(PASS|PARTIAL|BLOCKED|FAILED)\b/.exec(statusRaw);
+  const status = (statusMatch?.[1] as ParsedWorkerHandoff["status"]) ?? "UNKNOWN";
+  const summary = extractHandoffField(body, "SUMMARY");
   return {
     hasBlock: true,
     status,
-    summary: summaryMatch?.[1]?.trim() ?? body.trim(),
-    openIssues: issuesMatch?.[1]?.trim() ?? "",
+    summary: summary || body.trim(),
+    touchedFiles: extractHandoffField(body, "TOUCHED_FILES"),
+    verificationProof: extractHandoffField(body, "VERIFICATION_PROOF"),
+    dodChecklist: extractHandoffField(body, "DOD_CHECKLIST"),
+    openIssues: extractHandoffField(body, "OPEN_ISSUES"),
   };
 }
 

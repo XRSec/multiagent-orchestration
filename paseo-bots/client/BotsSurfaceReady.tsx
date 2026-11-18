@@ -8,7 +8,8 @@
 
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoAgent } from "./paseo";
-import type { PluginSurfaceProps } from "@getpaseo/plugin/client";
+import type { PluginOpenScreenInput, PluginScreenProps, PluginSurfaceProps } from "@getpaseo/plugin/client";
+import type { BotScreen } from "./screen-navigation";
 import { useRpc } from "@getpaseo/plugin/client";
 import { copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQueryClient } from "@tanstack/react-query";
@@ -77,13 +78,15 @@ type Colors = PluginTheme["colors"];
 const SETUP_PROMPT = "Let's set you up. Interview me one short question at a time about what I want from you, how I like to work, and what you should never do. Then propose standing instructions for yourself and a starting MEMORY.md. Write the memory file once I confirm, and give me the instructions to paste into your Soul settings.";
 const SAVE_DELAY_MS = 600;
 
-export interface BotsSurfaceReadyProps extends PluginSurfaceProps {
+export interface BotsSurfaceReadyProps extends PluginSurfaceProps, Partial<Pick<PluginScreenProps, "params">> {
+  screen?: BotScreen;
+  openScreen?(input: PluginOpenScreenInput): void;
   settings: Extract<BotSettingsState, { status: "ready" }>;
   latest: MutableRefObject<BotSettingsState>;
   commit: (mutate: (values: BotSettingsValues) => BotSettingsValues) => Promise<boolean>;
 }
 
-export function BotsSurfaceReady({ theme, layout, host, navigation, settings, latest, commit }: BotsSurfaceReadyProps) {
+export function BotsSurfaceReady({ theme, layout, host, navigation, screen, params, settings, latest, commit }: BotsSurfaceReadyProps) {
   const { colors } = theme;
   const { t } = useT();
   const toast = useToast();
@@ -383,6 +386,18 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, settings, la
       updateUi((current) => ({ ...current, tab: tab ?? current.tab, collapsed: current.collapsed.filter((id) => id !== next.botId) }));
     }
   };
+
+  const handledRouteRef = useRef<string | null>(null);
+  const routeKey = screen === "bot-chat" && params?.botId
+    ? `${screen}:${params.botId}:${params.chatId ?? ""}:${params.draftId ?? ""}`
+    : null;
+  useEffect(() => {
+    if (!routeKey || handledRouteRef.current === routeKey) return;
+    handledRouteRef.current = routeKey;
+    if (params?.botId) {
+      select({ botId: params.botId, chatId: params.chatId ?? null });
+    }
+  }, [routeKey, params?.botId, params?.chatId]);
 
   const openPanel = (bot: Bot, section: SectionId | null) => {
     select({ botId: bot.id, chatId: null });

@@ -329,4 +329,135 @@ describe("Runtime Fallback Logic", () => {
     expect(attemptedConfigs[0].provider).toBe("anthropic/claude-3-7-sonnet");
     expect(attemptedConfigs[1].provider).toBe("anthropic/claude-3-5-sonnet");
   });
+
+  describe("values.defaults.model and values.defaults.modeId Inheritance", () => {
+    it("startBotChat checks defaults.model before falling back to resolveDefaultModel", async () => {
+      const bot = makeBot({
+        id: "bot-default-test",
+        name: "DefaultBot",
+        provider: "anthropic",
+        model: null,
+        modeId: null,
+      });
+
+      let snapshotCalled = false;
+      let createdConfig: any = null;
+
+      const mockApi: any = {
+        workspaces: {
+          list: vi.fn().mockResolvedValue({ entries: [] }),
+          create: vi.fn().mockResolvedValue({ id: "ws-1" }),
+        },
+        agents: {
+          create: vi.fn().mockImplementation(async ({ config }) => {
+            createdConfig = config;
+            return { id: "agent-default-model-ok" };
+          }),
+        },
+        providers: {
+          snapshot: vi.fn().mockImplementation(async () => {
+            snapshotCalled = true;
+            return {
+              entries: [{ provider: "anthropic", models: [{ id: "claude-fallback-from-snapshot", isDefault: true }] }],
+            };
+          }),
+        },
+      };
+
+      const agentId = await startBotChat(mockApi, {
+        bot,
+        library: EMPTY_LIBRARY,
+        placement: { path: "/workspace", projectRoot: null },
+        prompt: "Hello",
+        systemPrompt: "You are a bot.",
+        defaults: {
+          model: "claude-inherited-default-model",
+          modeId: "plan",
+        },
+      });
+
+      expect(agentId).toBe("agent-default-model-ok");
+      // Since defaults.model was provided, resolveDefaultModel (providers.snapshot) should NOT have been called!
+      expect(snapshotCalled).toBe(false);
+      expect(createdConfig.provider).toBe("anthropic/claude-inherited-default-model");
+      expect(createdConfig.modeId).toBe("plan");
+    });
+
+    it("startChat checks values.defaults.model and inherits values.defaults.modeId cleanly", async () => {
+      const { startChat } = await import("../server/chats");
+
+      const bot = makeBot({
+        id: "bot-chat-defaults",
+        name: "ChatDefaultBot",
+        provider: "anthropic",
+        model: null,
+        modeId: null,
+      });
+
+      let capturedConfig: any = null;
+      let snapshotCalled = false;
+
+      const mockPaseo: any = {
+        projects: {
+          list: vi.fn().mockResolvedValue({ projects: [] }),
+        },
+        workspaces: {
+          list: vi.fn().mockResolvedValue({ entries: [] }),
+          open: vi.fn().mockResolvedValue({
+            current: () => ({ projectId: "p-1" }),
+            refresh: vi.fn().mockResolvedValue({ projectId: "p-1" }),
+            archive: vi.fn().mockResolvedValue(undefined),
+          }),
+          create: vi.fn().mockResolvedValue({ id: "ws-chat" }),
+          ref: () => ({
+            setTitle: vi.fn().mockResolvedValue(undefined),
+          }),
+        },
+        agents: {
+          create: vi.fn().mockImplementation(async ({ config }) => {
+            capturedConfig = config;
+            return { id: "agent-startchat-ok" };
+          }),
+        },
+        providers: {
+          snapshot: vi.fn().mockImplementation(async () => {
+            snapshotCalled = true;
+            return {
+              entries: [{ provider: "anthropic", models: [{ id: "from-snapshot", isDefault: true }] }],
+            };
+          }),
+        },
+      };
+
+      const mockHost: any = {
+        requirePaseo: () => mockPaseo,
+        chatOf: async () => null,
+        values: async () => ({
+          defaults: {
+            provider: "anthropic",
+            model: "claude-from-values-defaults",
+            modeId: "architect",
+          },
+          groups: [],
+        }),
+        library: async () => EMPTY_LIBRARY,
+      };
+
+      const mockRelay: any = {
+        mountTools: async () => [],
+        mountApps: async () => null,
+      };
+
+      const agentId = await startChat(mockHost, mockRelay, bot, {
+        prompt: "Run startChat test",
+        title: "Test Chat",
+        labels: {},
+      });
+
+      expect(agentId).toBe("agent-startchat-ok");
+      expect(snapshotCalled).toBe(false);
+      expect(capturedConfig.provider).toBe("anthropic/claude-from-values-defaults");
+      expect(capturedConfig.modeId).toBe("architect");
+    });
+  });
 });

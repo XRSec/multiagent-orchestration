@@ -79,10 +79,27 @@ describe("subagent engine", () => {
 
   it("drops invoke_subagent from the agent config of a paseo-bot chat and keeps both sets without an engine", () => {
     const agyBot = makeBot({ id: "bot-a", provider: "agy" });
-    const paseoConfig = buildAgentConfig(agyBot, EMPTY_LIBRARY, "m", "sys", {}, null, undefined, "paseo-bot");
+    const paseoConfig = buildAgentConfig(
+      agyBot,
+      EMPTY_LIBRARY,
+      "m",
+      "sys",
+      {},
+      null,
+      undefined,
+      "paseo-bot",
+      undefined,
+      null,
+      "append",
+      { useStaticAgyAgent: true },
+    );
     const paseoTools = (paseoConfig.providerOptions as { tools?: string[] }).tools ?? [];
     expect(paseoTools).not.toContain(INVOKE_SUBAGENT_TOOL);
     expect(paseoTools).toEqual(AGY_BASE_TOOLS.filter((tool) => tool !== INVOKE_SUBAGENT_TOOL));
+
+    // Dynamic prompt mode (!includeAgyAgent) omits providerOptions.tools
+    const dynamicPaseoConfig = buildAgentConfig(agyBot, EMPTY_LIBRARY, "m", "sys", {}, null, undefined, "paseo-bot");
+    expect(dynamicPaseoConfig.providerOptions).toBeUndefined();
 
     const nativeConfig = buildAgentConfig(agyBot, EMPTY_LIBRARY, "m", "sys", {}, null, undefined, "native");
     expect(nativeConfig.providerOptions).toBeUndefined();

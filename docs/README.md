@@ -59,7 +59,7 @@ Status values are defined in [standards/documentation-standards.md](standards/do
 | [paseo/paseo-bots-configuration-and-storage.md](paseo/paseo-bots-configuration-and-storage.md) | Paseo Bots Plugin Configuration, Envelope & Storage Topology Specification | en | 187 | CURRENT |
 | [paseo/paseo-bots-partner-settings-ui.md](paseo/paseo-bots-partner-settings-ui.md) | Paseo Bots Partner Settings & TeamMap UI Specification | en | 46 | CURRENT |
 | [paseo/paseo-bots-teamwork-workspace-and-session-architecture.md](paseo/paseo-bots-teamwork-workspace-and-session-architecture.md) | Paseo Bots Teamwork Seat Topology, Session Blackboard & Unified Prompt Assembly Specification | en | 352 | CURRENT |
-| [paseo/paseo-bots-workflow-engine-and-routing.md](paseo/paseo-bots-workflow-engine-and-routing.md) | Paseo Bots Workflow Engine, Subagent Routing & Session Injection Specification | en | 211 | CURRENT |
+| [paseo/paseo-bots-workflow-engine-and-routing.md](paseo/paseo-bots-workflow-engine-and-routing.md) | Paseo Bots Workflow Engine, Subagent Routing & Session Injection Specification | en | 216 | CURRENT |
 | [paseo/same-provider-fallback-models.md](paseo/same-provider-fallback-models.md) | Same-Provider Fallback Models Architecture & Runtime Execution Specification | en | 215 | CURRENT |
 | [protocols/agent-definition-specification.md](protocols/agent-definition-specification.md) | Claude Code Native Sub-Agent Specification | en | 404 | CURRENT |
 | [protocols/dispatch-protocol.md](protocols/dispatch-protocol.md) | Concurrency Dispatch Protocol (Fan-Out & Fan-In) | en | 31 | UNAUDITED |

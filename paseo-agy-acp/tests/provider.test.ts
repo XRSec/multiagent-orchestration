@@ -2103,7 +2103,11 @@ test('effectiveLaunch omits --agent when agent is absent and appends --agent whe
   assert.equal(skipLaunch.args.includes('--agent'), false)
 
   // When agent is provided, --agent is added
-  const withAgentLaunch = effectiveLaunch(defaultLaunch, false, 'bot-specialist')
+  const withAgentLaunch = effectiveLaunch(
+    defaultLaunch,
+    false,
+    'bot-specialist',
+  )
   assert.ok(withAgentLaunch)
   assert.deepEqual(withAgentLaunch.args, ['acp', '--agent', 'bot-specialist'])
 })
@@ -2179,6 +2183,23 @@ test('sessionParams forwards systemPrompt and workspaceRoots under _meta.antigra
     workspaceRoots: ['/repo/docs'],
   })
 
+  // Fallback to settings when providerOptions is omitted or does not supply values
+  const settingsFallbackConfig = {
+    ...baseConfig,
+    systemPrompt: 'Settings fallback prompt.',
+    settings: {
+      systemPromptMode: 'replace',
+      additionalDirectories: ['/repo/settings-dir'],
+    },
+  }
+  const settingsFallbackParams = sessionParams(cwd, settingsFallbackConfig)
+  assert.deepEqual(settingsFallbackParams._meta?.antigravity, {
+    systemPrompt: {
+      replace: 'Settings fallback prompt.',
+    },
+    workspaceRoots: ['/repo/settings-dir'],
+  })
+
   // Neither provided: _meta omitted
   const bareConfig = { ...baseConfig }
   const bareParams = sessionParams(cwd, bareConfig)
@@ -2194,7 +2215,10 @@ test('AGY main session open carries systemPrompt + workspaceRoots and omits --ag
       ...h.config,
       systemPrompt: 'Main session dynamic orchestrator persona.',
       providerOptions: {
-        additionalDirectories: ['/workspace/target-repo-1', '/workspace/target-repo-2'],
+        additionalDirectories: [
+          '/workspace/target-repo-1',
+          '/workspace/target-repo-2',
+        ],
       },
     }
 
@@ -2232,6 +2256,95 @@ test('AGY main session open carries systemPrompt + workspaceRoots and omits --ag
       await readFile(log, 'utf8'),
       'new:Main session dynamic orchestrator persona.\n',
     )
+  } finally {
+    await h.provider.close()
+    await removeDir(home)
+  }
+})
+
+test('open() and configureSession() accept known settings keys (tools, additionalDirectories, systemPromptMode, promptFilePath) and reject unknown settings keys', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agy-known-settings-'))
+  const h = await harness({ HOME: home })
+  try {
+    // 1. open() succeeds with all known settings keys mirrored into config.settings
+    const openWithKnownSettings = {
+      ...h.config,
+      systemPrompt: 'Session with known settings.',
+      settings: {
+        agent: 'bot-moadmin',
+        tools: ['invoke_subagent', 'send_message'],
+        systemPromptMode: 'append',
+        promptMode: 'custom',
+        additionalDirectories: ['/repo/workspace-a'],
+        promptFilePath: '/tmp/prompt.md',
+        allowedTools: ['read_file', 'write_file'],
+      },
+    }
+
+    await h.provider.send({
+      type: 'session.open',
+      requestId: 'open-known',
+      sessionId: 'sess-known',
+      config: openWithKnownSettings,
+      history: 'skip',
+    })
+    await h.wait(
+      (e) => e.type === 'session.ready' && e.sessionId === 'sess-known',
+    )
+
+    // 2. configureSession succeeds with known settings
+    await h.provider.send({
+      type: 'session.configure',
+      requestId: 'cfg-known',
+      sessionId: 'sess-known',
+      changes: {
+        settings: {
+          tools: ['ask_question'],
+          additionalDirectories: ['/repo/workspace-b'],
+          systemPromptMode: 'replace',
+          promptFilePath: '/tmp/prompt-v2.md',
+        },
+      },
+    })
+    await h.wait(
+      (e) => e.type === 'request.completed' && e.requestId === 'cfg-known',
+    )
+
+    // 3. configureSession rejects genuinely unknown settings keys
+    await h.provider.send({
+      type: 'session.configure',
+      requestId: 'cfg-unknown',
+      sessionId: 'sess-known',
+      changes: {
+        settings: {
+          unsupportedKey: true,
+        },
+      },
+    })
+    const cfgFailed = await h.wait(
+      (e) => e.type === 'request.failed' && e.requestId === 'cfg-unknown',
+    )
+    assert.ok(cfgFailed.type === 'request.failed')
+    assert.match(cfgFailed.error.message, /Custom settings are not supported/)
+
+    // 4. open() rejects genuinely unknown settings keys
+    await h.provider.send({
+      type: 'session.open',
+      requestId: 'open-unknown',
+      sessionId: 'sess-unknown',
+      config: {
+        ...h.config,
+        settings: {
+          completelyBogusSetting: 123,
+        },
+      },
+      history: 'skip',
+    })
+    const openFailed = await h.wait(
+      (e) => e.type === 'request.failed' && e.requestId === 'open-unknown',
+    )
+    assert.ok(openFailed.type === 'request.failed')
+    assert.match(openFailed.error.message, /Custom settings are not supported/)
   } finally {
     await h.provider.close()
     await removeDir(home)

@@ -15,8 +15,8 @@
         },
         "hostId": null,
         "provider": "agy",
-        "model": null,
-        "modeId": "default",
+        "model": "gemini-4-hydrogen",
+        "modeId": "full-access",
         "thinkingOptionId": null,
         "fallbackModels": [
           {
@@ -27,8 +27,8 @@
         "providerConfigs": [
           {
             "provider": "agy",
-            "model": null,
-            "modeId": "default",
+            "model": "gemini-4-hydrogen",
+            "modeId": "full-access",
             "thinkingOptionId": null,
             "fallbackModels": [
               {
@@ -91,7 +91,7 @@
         "pinned": false,
         "archived": false,
         "createdAt": "2026-11-14T21:23:55.730Z",
-        "updatedAt": "2026-11-18T05:04:28.178Z"
+        "updatedAt": "2026-11-18T09:37:38.687Z"
       },
       {
         "id": "bot-mocode",
@@ -2014,7 +2014,7 @@
       "chatOrder": {},
       "chatSort": "activity",
       "showArchived": false,
-      "tab": "other",
+      "tab": "team-mwgv59i8dfdv",
       "listWidth": 200,
       "panelWidth": 446,
       "language": "auto"
@@ -2049,11 +2049,100 @@
           "bot-rea"
         ],
         "instructions": "Mo-Bots multi-agent orchestration team operating inside . (multiagent-orchestration). Follow AGENTS.md invariants: zero rm/rm -rf (use universal safe delete), machine-first documentation, and single-speaker incremental signal protocol. Worker Execution Contract: when dispatched a <task_brief> or <repair_brief>, stay strictly within authorized file scope, run the exact verification command with zero fake passes or silent TODO stubs, and return a <worker_handoff> block (STATUS, SUMMARY, TOUCHED_FILES, VERIFICATION_PROOF, DOD_CHECKLIST, OPEN_ISSUES).",
-        "cwd": null,
+        "cwd": "/Users/xr/IDEA.localized/multiagent-orchestration",
         "mounts": [],
-        "workflows": [],
+        "workflows": [
+          {
+            "id": "wf-moadmin-closed-loop",
+            "name": "moAdmin 全流程闭环编排",
+            "description": "由 moAdmin 统领的多智能体端到端全流程闭环工作流：需求解析与任务规划 -> 架构侦察 -> 代码实现 -> QA测试验证 -> 质量仲裁与对齐纠偏 -> 文档沉淀 -> 记忆更新与交付总结。",
+            "stages": [
+              {
+                "id": "moadmin-plan",
+                "name": "moAdmin 意图解析与任务拆解",
+                "botId": "bot-moadmin",
+                "prompt": "Role: moAdmin (Chief of Staff & Orchestrator).\nObjective: Parse user request into explicit constraints, acceptance criteria (DoD), and an atomic execution DAG.\nInstructions:\n1. Analyze user input, identifying intent, architectural constraints, target file boundaries, and acceptance criteria.\n2. Initialize or update the injected `TASK_MANIFEST` blackboard file (and repo `.t3/TASK_MANIFEST.md` when operating on a repository) with: task objective, DoD checklist, specialist assignments, and risk watchpoints.\n3. Define clear execution boundaries for downstream bots (`bot-modeep` recon, `bot-mocode` implementation, `bot-moci` QA verification).\n4. Enforce AGENTS.md prime invariants: zero direct execution, universal safe delete, strict call budgets, and schema-first probes.\nOutput: Conclude with `<worker_handoff>` containing STATUS: PASS, SUMMARY of DoD & execution plan, TOUCHED_FILES, VERIFICATION_PROOF, DOD_CHECKLIST, and OPEN_ISSUES.",
+                "engine": "paseo-bot",
+                "dependsOn": [],
+                "maxRetries": 2
+              },
+              {
+                "id": "modeep-recon",
+                "name": "MoDeep 架构侦察与依赖分析",
+                "botId": "bot-modeep",
+                "prompt": "Role: MoDeep (Research Scout & Reconnaissance).\nObjective: Perform read-only codebase and dependency reconnaissance based on moAdmin task plan.\nInstructions:\n1. Inspect relevant files, type schemas, and interfaces referenced in UPSTREAM_CONTEXT (from moadmin-plan) and the injected `TASK_MANIFEST`.\n2. Identify code conventions, existing patterns, edge cases, breaking risks, and exact files to modify.\n3. Sample 1 record or probe schemas before authoring/recommending changes to avoid thrashing.\n4. DO NOT modify any code files.\nOutput: Conclude with `<worker_handoff>` containing STATUS: PASS, SUMMARY of codebase findings & recommended implementation strategy, TOUCHED_FILES: None, VERIFICATION_PROOF (file inspection commands or schema check notes), and OPEN_ISSUES.",
+                "engine": "auto",
+                "dependsOn": [
+                  "moadmin-plan"
+                ],
+                "maxRetries": 2
+              },
+              {
+                "id": "mocode-impl",
+                "name": "moCode 方案实现与代码构建",
+                "botId": "bot-mocode",
+                "prompt": "Role: moCode (Fullstack Developer & Code Architect).\nObjective: Implement code changes fulfilling acceptance criteria defined by moAdmin and scoped by MoDeep.\nInstructions:\n1. Review UPSTREAM_CONTEXT from moadmin-plan (DoD, bounds) and modeep-recon (code patterns, schemas).\n2. Apply minimal, surgical code edits strictly within authorized scope.\n3. Invariant: NEVER use rm or rm -rf; use universal safe delete or Node fs.rmSync.\n4. Adhere to script standards (<= 500 lines, complexity <= 10, zero TTY blocking) and no fake stubs/TODOs.\n5. Run local compilation/build/syntax checks to ensure clean execution.\nOutput: Conclude with `<worker_handoff>` containing STATUS: PASS, SUMMARY of changes made, TOUCHED_FILES (exact paths), VERIFICATION_PROOF (build/run command, exit code, and 3-10 line excerpt), DOD_CHECKLIST, and OPEN_ISSUES.",
+                "engine": "auto",
+                "dependsOn": [
+                  "moadmin-plan",
+                  "modeep-recon"
+                ],
+                "maxRetries": 2
+              },
+              {
+                "id": "moci-verify",
+                "name": "MoCI 质量审计与回归验证",
+                "botId": "bot-moci",
+                "prompt": "Role: MoCI (CI & QA Gatekeeper).\nObjective: Independently verify implementation quality, test coverage, and regression safety with zero trust.\nInstructions:\n1. Inspect git status / modified files from UPSTREAM_CONTEXT (mocode-impl) and DoD criteria from moadmin-plan.\n2. Execute automated test suites, typechecks, linters, or reproduction scripts relevant to the changed scope.\n3. Verify every DoD criterion from moadmin-plan with objective proof (exit code 0, test count).\n4. Audit for anti-patterns: no bypassed tests, no fake mocks, no out-of-scope mutations.\n5. Issue an explicit 3-tier verdict: PASS, WARN, or FAIL. Use STATUS: FAILED if any required check fails.\nOutput: Conclude with `<worker_handoff>` containing STATUS: PASS | FAILED, SUMMARY of QA verdict, TOUCHED_FILES: None, VERIFICATION_PROOF (test command, exit code 0, and 3-10 line test output excerpt), DOD_CHECKLIST, and OPEN_ISSUES.",
+                "engine": "auto",
+                "dependsOn": [
+                  "moadmin-plan",
+                  "mocode-impl"
+                ],
+                "maxRetries": 2
+              },
+              {
+                "id": "moadmin-review",
+                "name": "moAdmin 质量仲裁与对齐纠偏",
+                "botId": "bot-moadmin",
+                "prompt": "Role: moAdmin (Quality Arbiter & State-Machine Controller).\nObjective: Audit specialist outputs and QA proof against DoD, steering repairs if needed or approving progression.\nInstructions:\n1. Evaluate `<worker_handoff>` from moci-verify and mocode-impl against initial DoD checklist and the injected `TASK_MANIFEST` (plus repo `.t3/TASK_MANIFEST.md` if present).\n2. Check three gates: (1) Scope Diff Check (no out-of-scope edits), (2) DoD Proof Check (Exit_Code: 0, tests passing), (3) Integrity Check (no TODO stubs or mocks).\n3. If defects or test failures are reported, set STATUS: FAILED with surgical repair instructions.\n4. If verification passes, mark stage DoD items as satisfied in `TASK_MANIFEST` and approve documentation write-back.\nOutput: Conclude with `<worker_handoff>` containing STATUS: PASS | FAILED, SUMMARY of audit verdict and manifest status, TOUCHED_FILES, VERIFICATION_PROOF, DOD_CHECKLIST, and OPEN_ISSUES.",
+                "engine": "paseo-bot",
+                "dependsOn": [
+                  "moci-verify"
+                ],
+                "maxRetries": 2
+              },
+              {
+                "id": "modoc-writeback",
+                "name": "moDoc 架构文档与标准沉淀",
+                "botId": "bot-modoc",
+                "prompt": "Role: moDoc (Architecture Scribe & Documentation Steward).\nObjective: Update specs, READMEs, and technical documentation reflecting verified code changes.\nInstructions:\n1. Review verified changes from mocode-impl and approval from moadmin-review in UPSTREAM_CONTEXT.\n2. Update relevant markdown documentation in `docs/` or project root `*.md` with architectural facts and usage updates.\n3. Follow documentation standards: dense technical en-US for internal specs, rule-first density, zero demo code, no machine-specific absolute paths (D7).\nOutput: Conclude with `<worker_handoff>` containing STATUS: PASS, SUMMARY of documentation updates, TOUCHED_FILES (doc paths), VERIFICATION_PROOF (diff check or lint status), and OPEN_ISSUES.",
+                "engine": "auto",
+                "dependsOn": [
+                  "mocode-impl",
+                  "moadmin-review"
+                ],
+                "maxRetries": 2
+              },
+              {
+                "id": "moadmin-finalize",
+                "name": "moAdmin 记忆沉淀与交付总结",
+                "botId": "bot-moadmin",
+                "prompt": "Role: moAdmin (Taskforce Director & Knowledge Scribe).\nObjective: Finalize team memory, close task manifest, and synthesize executive delivery.\nInstructions:\n1. Update team and personal `MEMORY.md` with key architectural decisions, resolved friction points, and lessons learned.\n2. Mark the injected `TASK_MANIFEST` (and repo `.t3/TASK_MANIFEST.md` if present) status as settled/completed.\n3. Synthesize the overall delivery into a crisp `zh-CN` executive report covering: 交付结果 (What changed), 验证凭据 (Key verification proof & test status), and 残余风险/后续建议 (if any).\nOutput: Conclude with `<worker_handoff>` containing STATUS: PASS, SUMMARY of executive delivery and memory updates, TOUCHED_FILES, VERIFICATION_PROOF (manifest settled state), and OPEN_ISSUES: None.",
+                "engine": "paseo-bot",
+                "dependsOn": [
+                  "moadmin-review",
+                  "modoc-writeback"
+                ],
+                "maxRetries": 2
+              }
+            ],
+            "createdAt": "2026-11-18T15:00:00.000Z",
+            "updatedAt": "2026-11-18T15:00:00.000Z"
+          }
+        ],
         "createdAt": "2026-11-14T21:23:55.730Z",
-        "updatedAt": "2026-11-17T16:05:38.366Z"
+        "updatedAt": "2026-11-18T07:19:10.890Z"
       },
       {
         "id": "team-mwgwx6jp60rn",

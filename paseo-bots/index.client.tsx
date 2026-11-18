@@ -1,6 +1,6 @@
 import type { PluginButtonRegistration, PluginClientContext, PluginScreenProps } from "@getpaseo/plugin/client";
 import { useEffect, type ReactNode } from "react";
-import { View } from "react-native";
+import { Text, View } from "react-native";
 import { z } from "zod";
 import { BotsSurface } from "./client/BotsSurface";
 import { BotLauncherPopover } from "./client/launcher/BotLauncherPopover";
@@ -13,6 +13,9 @@ import { InteractionRecovery } from "./client/chat/stream/InteractionRecovery";
 import { INTERACTION_CARD, InteractionIdSchema, InteractionSchema, interactionIdOf } from "./shared/interaction";
 import { HandoffCard } from "./client/chat/stream/HandoffCard";
 import { TaskCardView } from "./client/chat/stream/TaskCard";
+import { ProtocolCard } from "./client/chat/stream/ProtocolCard";
+import { Markdown } from "./client/Markdown";
+import { segmentProtocolBlocks } from "./shared/protocol-cards";
 import { HANDOFF_CARD, HandoffCardSchema } from "./shared/handoff";
 import { TASK_CARD, TaskCardSchema } from "./shared/task-card";
 import { requestIntent } from "./client/intent";
@@ -28,6 +31,7 @@ import { BOT_LABEL } from "./shared/bot";
 import { proposalIdOf } from "./shared/proposals";
 import { APP_SIGN_IN_CARD, AppSignInSchema, helloRpc, ROUTINE_RUN_CARD, RoutineRunCardSchema } from "./shared/rpc";
 import { LEARN_COMMAND, learnPrompt, REMEMBER_COMMAND, rememberPrompt } from "./shared/skills";
+import { navigateToAgentChat, setGlobalNavigation } from "./client/navigation";
 
 function registerLauncherButtons(client: PluginClientContext): () => void {
   const registeredPills = new Map<string, PluginButtonRegistration>();
@@ -125,6 +129,9 @@ function registerBotScreen(client: PluginClientContext, definition: typeof BOT_S
 }
 
 export default function contribute(client: PluginClientContext) {
+  if ((client as any).navigation) {
+    setGlobalNavigation((client as any).navigation);
+  }
   // Hands the daemon side its Paseo API so bot routines can run.
   void client.rpc(helloRpc, {}).catch(() => {});
   const stopI18n = initPluginI18n(client);
@@ -244,18 +251,98 @@ export default function contribute(client: PluginClientContext) {
   client.addTimelineRenderer({
     ...HANDOFF_CARD,
     schema: HandoffCardSchema,
-    Component: ({ item, theme, layout }) => <HandoffCard colors={theme.colors} compact={layout.compact} card={item.data} onOpenChat={(botId, chatId) => client.openScreen({ screenId: "bot-chat", params: { botId, chatId } })} />,
+    Component: ({ item, theme, layout, ...rest }) => (
+      <HandoffCard
+        colors={theme.colors}
+        compact={layout.compact}
+        card={item.data}
+        onOpenChat={(botId, chatId) => {
+          navigateToAgentChat(chatId, {
+            botId,
+            client,
+            navigation: (rest as any).navigation,
+          });
+        }}
+      />
+    ),
   });
   client.addTimelineRenderer({
     ...TASK_CARD,
     schema: TaskCardSchema,
-    Component: ({ item, theme }) => (
+    Component: ({ item, theme, ...rest }) => (
       <TaskCardView
         colors={theme.colors}
         card={item.data}
-        onOpenChat={(botId, chatId) => client.openScreen({ screenId: "bot-chat", params: { botId, chatId } })}
+        onOpenChat={(chatId, botId) => {
+          navigateToAgentChat(chatId, {
+            botId,
+            client,
+            navigation: (rest as any).navigation,
+          });
+        }}
       />
     ),
+  });
+  client.addTimelineTransformer({
+    id: "protocol-cards-assistant",
+    query: { itemType: "assistant_message" },
+    transform({ item }) {
+      if (!item.text) return undefined;
+      const segments = segmentProtocolBlocks(item.text);
+      if (!segments.some((s) => s.kind === "protocol")) return undefined;
+      return {
+        items: [
+          {
+            type: "plugin",
+            kind: "protocol-card",
+            version: 1,
+            data: { text: item.text, role: "assistant" },
+          },
+        ],
+      };
+    },
+  });
+  client.addTimelineTransformer({
+    id: "protocol-cards-user",
+    query: { itemType: "user_message" },
+    transform({ item }) {
+      if (!item.text) return undefined;
+      const segments = segmentProtocolBlocks(item.text);
+      if (!segments.some((s) => s.kind === "protocol")) return undefined;
+      return {
+        items: [
+          {
+            type: "plugin",
+            kind: "protocol-card",
+            version: 1,
+            data: { text: item.text, role: "user" },
+          },
+        ],
+      };
+    },
+  });
+  client.addTimelineRenderer({
+    kind: "protocol-card",
+    version: 1,
+    schema: z.object({ text: z.string(), role: z.enum(["user", "assistant"]).optional() }),
+    Component: ({ item, theme }) => {
+      const segments = segmentProtocolBlocks(item.data.text);
+      return (
+        <View style={{ gap: 6, marginVertical: 4 }}>
+          {segments.map((seg, idx) =>
+            seg.kind === "protocol" ? (
+              <ProtocolCard key={`proto-${idx}`} colors={theme.colors} segment={seg} />
+            ) : item.data.role === "user" ? (
+              <Text key={`txt-${idx}`} selectable style={{ color: theme.colors.foreground, fontSize: 13, lineHeight: 18 }}>
+                {seg.text}
+              </Text>
+            ) : (
+              <Markdown key={`md-${idx}`} colors={theme.colors} text={seg.text} />
+            ),
+          )}
+        </View>
+      );
+    },
   });
   return () => {
     removeLauncherButtons();

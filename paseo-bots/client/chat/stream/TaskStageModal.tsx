@@ -7,7 +7,7 @@
 
 import type { PluginTheme } from "@getpaseo/plugin";
 import { copyText, Modal, useToast } from "@getpaseo/plugin/client/react-native";
-import { Icon } from "@getpaseo/plugin/client/ui";
+import * as UI from "@getpaseo/plugin/client/ui";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import type { BotAvatar } from "../../../shared/bot";
@@ -20,6 +20,27 @@ import { ui } from "../../typography";
 
 type Colors = PluginTheme["colors"];
 
+const Icon = UI.Icon;
+let PaseoMarkdown: any = null;
+try {
+  PaseoMarkdown = (UI as any).Markdown;
+} catch {
+  PaseoMarkdown = null;
+}
+
+/** Markdown renderer that falls back to text if PaseoMarkdown is unmounted/mocked. */
+export function MarkdownText({ colors, text }: { colors: Colors; text: string }) {
+  if (typeof PaseoMarkdown === "function" || (typeof PaseoMarkdown === "object" && PaseoMarkdown !== null)) {
+    const Comp = PaseoMarkdown;
+    return <Comp>{text}</Comp>;
+  }
+  return (
+    <Text selectable style={{ fontSize: ui(12), color: colors.foreground, lineHeight: 18 }}>
+      {text}
+    </Text>
+  );
+}
+
 export interface TaskStageModalProps {
   open: boolean;
   onClose(): void;
@@ -29,7 +50,7 @@ export interface TaskStageModalProps {
   botAvatar?: (Pick<BotAvatar, "seed"> & Partial<BotAvatar>) | null;
   colors: Colors;
   allStages?: readonly TaskCardWorkflowStage[];
-  onOpenChat?(botId: string, chatId: string): void;
+  onOpenChat?(chatId: string, botId?: string): void;
 }
 
 const STAGE_STATUS_VARIANT: Record<TaskCardWorkflowStage["status"], BadgeVariant> = {
@@ -164,7 +185,7 @@ export function TaskStageModal({
             icon="MessageSquare"
             label={t("workflows.openAgentChat")}
             onPress={() => {
-              onOpenChat(stage.botId, stage.chatId!);
+              onOpenChat(stage.chatId!, stage.botId);
               onClose();
             }}
           />
@@ -197,9 +218,7 @@ export function TaskStageModal({
                 backgroundColor: colors.surface0,
               }}
             >
-              <Text style={{ fontSize: ui(12), color: colors.foreground, lineHeight: 18 }}>
-                {stage.prompt}
-              </Text>
+              <MarkdownText colors={colors} text={stage.prompt} />
             </View>
           </View>
         ) : null}
@@ -309,9 +328,7 @@ export function TaskStageModal({
                 backgroundColor: colors.surface0,
               }}
             >
-              <Text style={{ fontSize: ui(11), color: colors.foreground, fontFamily: "monospace", lineHeight: 16 }}>
-                {stage.output}
-              </Text>
+              <MarkdownText colors={colors} text={stage.output} />
             </ScrollView>
           </View>
         ) : null}

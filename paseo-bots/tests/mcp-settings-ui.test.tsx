@@ -9,7 +9,7 @@ vi.mock("@getpaseo/plugin/client", () => ({ useRpc: () => probe }));
 vi.mock("@getpaseo/plugin/client/ui", () => ({
   SettingsAction: "SettingsAction", SettingsCard: "SettingsCard", SettingsInput: "SettingsInput", SettingsRow: "SettingsRow", SettingsSection: "SettingsSection", SettingsSwitch: "SettingsSwitch", SettingsSelect: "SettingsSelect", Modal: Object.assign(({ children }: { children: import("react").ReactNode }) => children, { Content: "ModalContent" }),
 }));
-vi.mock("react-native", () => ({ Text: "Text", View: "View" }));
+vi.mock("react-native", () => ({ Platform: { OS: "web" }, Text: "Text", View: "View" }));
 vi.mock("../client/library/McpOAuth", () => ({ McpOAuth: "McpOAuth" }));
 vi.mock("../client/library/parts", () => ({ BotsCard: "BotsCard", DangerZone: "DangerZone", PageTitle: "PageTitle" }));
 vi.mock("../client/panel/controls", () => ({ Alert: "Alert", Button: "Button", CardNote: "CardNote", SectionLink: "SectionLink", SectionMeta: "SectionMeta", FormTextArea: "FormTextArea", InputField: "InputField", SheetFooter: "SheetFooter", TextAreaField: "TextAreaField" }));

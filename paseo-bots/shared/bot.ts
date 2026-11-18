@@ -846,6 +846,7 @@ export interface BuildAgentConfigOptions {
   useStaticAgyAgent?: boolean;
   additionalDirectories?: string[];
   promptFilePath?: string;
+  defaults?: { model?: string | null; modeId?: string | null; provider?: string | null } | null;
 }
 
 /** Resolves the Antigravity agent name for a bot, returning `bot.id` on agy providers. */
@@ -965,7 +966,11 @@ export function buildAgentConfig(
   const includeAgyAgent = Boolean(agyAgent && useStaticAgyAgent);
   const thinking = thinkingOptionId !== undefined ? thinkingOptionId : bot.thinkingOptionId;
   const effectiveBaseTools = engineBaseTools(bot, engine);
-  const resolvedModeId = resolveModeIdForProvider(bot.modeId, bot.provider);
+  const defaultsModeId = (!options?.defaults?.provider || options.defaults.provider === bot.provider)
+    ? options?.defaults?.modeId?.trim() || null
+    : null;
+  const effectiveModeId = bot.modeId?.trim() || defaultsModeId;
+  const resolvedModeId = resolveModeIdForProvider(effectiveModeId, bot.provider);
   const effectiveFallbacks = fallbackModels !== undefined ? fallbackModels : (bot.fallbackModels ?? []);
   const resolvedSkills = skills !== undefined ? [...skills] : botSkills(bot, library).map((skill) => skill.id);
   const effectiveSystemPromptMode = systemPromptMode ?? bot.systemPromptMode ?? "append";
@@ -980,7 +985,7 @@ export function buildAgentConfig(
       providerOptions = { allowedTools: effectiveBaseTools };
     } else if (isCodexProvider(bot.provider)) {
       providerOptions = { tools: effectiveBaseTools };
-    } else {
+    } else if (!isAgyProvider(bot.provider)) {
       providerOptions = { tools: effectiveBaseTools };
     }
   }

@@ -31,9 +31,12 @@ import { runAnalytics } from "./server/analytics/runner";
 import { listAnalyticsSessions } from "./server/analytics/sessions";
 import { deleteAnalyticsRecord, listAnalyticsHistory, saveAnalyticsRecord } from "./server/analytics/history";
 import { BOT_TOOLS } from "./server/tools";
+import { listTasks } from "./server/tasks";
+import { reconcileOrphanWorkflows } from "./server/workflow-runner";
 import { saveUpload } from "./server/uploads";
 import { botMcpServers, botSettings, botSkills, EMPTY_LIBRARY, mcpServersRecord, type BotSettingsValues } from "./shared/bot";
 import { shellCommand } from "./shared/commands";
+import { taskCardOf } from "./shared/task-card";
 import {
   agyOrphanResolveRpc,
   agyOrphansListRpc,
@@ -93,6 +96,7 @@ import {
   soulWriteRpc,
   systemPromptRpc,
   uploadRpc,
+  workflowRunsRpc,
 } from "./shared/rpc";
 
 export default function contribute(server: PluginServerContext) {
@@ -104,9 +108,18 @@ export default function contribute(server: PluginServerContext) {
   // Moves the old folder if needed and writes the Bots project icon.
   void ensureBotsHome()
     .then(migrateBotSkills)
+    .then(() => reconcileOrphanWorkflows({ host, staleAfterMs: 0 }))
     .catch((error: unknown) => console.error("paseo-bots: couldn't prepare the Bots folder", error));
   const settings = server.registerSettings(botSettings);
   const host = new BotsHost(settings);
+  let reconciledOnAttach = false;
+  const detachOrphanReconcile = host.onAttach(() => {
+    if (reconciledOnAttach) return;
+    reconciledOnAttach = true;
+    void reconcileOrphanWorkflows({ host, staleAfterMs: 0, republish: true } as any).catch((error: unknown) =>
+      console.error("paseo-bots: couldn't reconcile orphan workflows on attach", error),
+    );
+  });
   const library = async () => {
     return host.library();
   };
@@ -330,6 +343,11 @@ export default function contribute(server: PluginServerContext) {
   });
   server.handle(analyticsHistoryListRpc, () => ({ records: listAnalyticsHistory() }));
   server.handle(analyticsHistoryDeleteRpc, ({ id }) => ({ ok: deleteAnalyticsRecord(id) }));
+  server.handle(workflowRunsRpc, async ({ limit }) => {
+    const tasks = await listTasks();
+    const runs = tasks.filter((t) => !!t.workflow).slice(0, limit ?? 25).map((t) => taskCardOf(t));
+    return { runs };
+  });
   server.addHook("agent.turn.before", async (event, context) => {
     host.attach(context.paseo);
     await turnStarted(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
@@ -352,6 +370,7 @@ export default function contribute(server: PluginServerContext) {
   });
 
   return async () => {
+    detachOrphanReconcile();
     unsubscribeAgentSync();
     curator.stop();
     oauthProxy.stop();

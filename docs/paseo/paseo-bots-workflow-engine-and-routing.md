@@ -1,7 +1,7 @@
 ---
 doc_id: PASEO-BOTS-WORKFLOW-ROUTING
 status: CURRENT
-version: 1.0.0
+version: 1.2.0
 last_verified: 2026-11-18
 language: en-US
 ---
@@ -14,12 +14,15 @@ This specification defines the three-tier execution hierarchy, declarative Stage
 
 Primary codebase coordinates:
 - Workflow definitions & DAG algorithms: `<projectRoot>/paseo-bots/shared/workflows.ts`, symbols `validateWorkflowDAG`, `resolveStepEngine`, `readyStages`, `initWorkflowRunState`, `buildStageBriefPrompt`, `parseWorkerHandoff`
-- Workflow execution runner: `<projectRoot>/paseo-bots/server/workflow-runner.ts`, symbol `runWorkflowDag`
+- Workflow execution runner: `<projectRoot>/paseo-bots/server/workflow-runner.ts`, symbols `runWorkflowDag`, `reconcileOrphanWorkflows`, `isWorkflowTaskActive`
 - Workflow MCP tool: `<projectRoot>/paseo-bots/server/tools/workflows.ts`, symbols `runWorkflowTool`, `startWorkflowExecution`, `resolveWorkflowForCaller`
 - Workflow settings & schemas: `<projectRoot>/paseo-bots/shared/bot.ts`, symbols `WorkflowDefinitionSchema`, `botSettings` (`values.workflows`, `groups[].workflows`)
 - Task timeline cards: `<projectRoot>/paseo-bots/shared/task-card.ts`, symbol `TaskCardWorkflowSchema`; `<projectRoot>/paseo-bots/server/task-cards.ts`, symbol `publishWorkflowCard`
+- Structured protocol cards & chat stream rendering: `<projectRoot>/paseo-bots/shared/protocol-cards.ts`, symbols `segmentProtocolBlocks`, `parseBriefFields`; `<projectRoot>/paseo-bots/client/chat/stream/ProtocolCard.tsx`, symbol `ProtocolCard`; `<projectRoot>/paseo-bots/client/chat/stream/rows.tsx`
 - Per-session MCP & skill injection: `<projectRoot>/paseo-bots/server/claude-agents.ts`, symbols `assertNotGlobalUserConfig`, `syncClaudeMcpConfig`, `syncClaudeSkills`, `renderClaudeAgentFile`, `syncBotToClaudeAgent`
-- Visual DAG management UI: `<projectRoot>/paseo-bots/client/settings/WorkflowEditor.tsx`; timeline card UI: `<projectRoot>/paseo-bots/client/chat/stream/TaskCard.tsx`
+- Visual DAG management & live runs UI: `<projectRoot>/paseo-bots/client/WorkflowsScreen.tsx` (`Active & Recent Runs` via `TaskCardView`), `<projectRoot>/paseo-bots/client/settings/WorkflowEditor.tsx`; timeline card UI: `<projectRoot>/paseo-bots/client/chat/stream/TaskCard.tsx`, `<projectRoot>/paseo-bots/client/chat/stream/TaskStageModal.tsx`
+- Partner chat navigation: `<projectRoot>/paseo-bots/client/navigation.ts` (`navigateToAgentChat`), `<projectRoot>/paseo-bots/client/BotsSurfaceReady.tsx`, `<projectRoot>/paseo-bots/index.client.tsx`
+- Workflow runs RPC: `<projectRoot>/paseo-bots/shared/rpc.ts` (`workflowRunsRpc`, `"bots.workflows.runs"`), handled in `<projectRoot>/paseo-bots/index.server.ts`
 
 ---
 
@@ -77,15 +80,16 @@ Workflows are modeled as declarative DAGs persisted globally in `values.workflow
 
 `runWorkflowDag` (`server/workflow-runner.ts`) orchestrates stage execution:
 
-1. **Validation & Initialization**: Validates the DAG and initializes `WorkflowRunState` with `initWorkflowRunState`.
+1. **Validation & Initialization**: Validates the DAG, registers `taskId` in `activeWorkflowTaskIds` for the duration of `runWorkflowDag`, and initializes `WorkflowRunState` with `initWorkflowRunState`. Resolves `teamSessionId` from `options.teamSessionId`, `initialTask.workflow.teamSessionId`, caller `TEAM_SESSION_LABEL`, or fallback `taskId.startsWith("wf-") ? taskId : "wf-" + taskId` (preventing duplicate `wf-wf-` prefixes).
 2. **Topological Readiness (`readyStages`)**: Filters stages where `status === "pending"` and all dependencies in `dependsOn` have `status === "done"`.
 3. **Parallel Wave Dispatch**: All ready stages in the current wave are marked `"running"` and executed concurrently (subject to optional `task.budget.fanout` limits).
-4. **Context Propagation**: Upstream outputs are collected and injected into each stage's prompt via `buildStageBriefPrompt`.
-5. **Failure & Cascading Skip**: If any stage fails after exhausting its `maxRetries`:
+4. **Context Propagation & Timeout Enforcement**: Upstream outputs and `sessionBoardPath` are injected into each stage's prompt via `buildStageBriefPrompt`. In `defaultStageDispatcher`, `waitForFinish(stageTimeoutMs)` timeouts or post-wait `agent.status` values of `"running"` / `"initializing"` return `{ ok: false, error }` rather than silently succeeding.
+5. **Failure & Cascading Skip**: If any stage fails (including `<worker_handoff>` `STATUS: FAILED | BLOCKED | PARTIAL`) after exhausting its `maxRetries`:
    - The workflow status transitions to `"failed"`.
    - Remaining unexecuted stages with `status === "pending"` transition to `"skipped"`.
    - Active stages complete or abort, and the final state is settled.
-6. **Task Card Synchronization**: Throughout execution, `publishWorkflowCard` pushes live progress cards (`TaskCardWorkflowSchema`) to the chat timeline, and `settleAndPublish` emits the terminal card state upon completion.
+6. **Task Card Synchronization & Partner Chat Navigation**: Throughout execution, `publishWorkflowCard` pushes live progress cards (`TaskCardWorkflowSchema`) to the chat timeline, and `settleAndPublish` emits the terminal card state upon completion. `WorkflowsScreen` (`bots.workflows.runs` RPC) polls active runs every 4s and renders live stage DAG cards via `TaskCardView`. Opening a stage's partner chat from `TaskCard` / `TaskStageModal` dispatches through `navigateToAgentChat(chatId, ...)` (`index.client.tsx`, `client/navigation.ts`); `BotsSurfaceReady` tracks `bot-chat` route params via `handledRouteRef` and invokes `openAgent` once so navigation lands on the existing `stage.chatId` rather than creating a blank session.
+7. **Orphan Workflow State Reconciliation (`reconcileOrphanWorkflows`)**: To prevent residual `status: "running"` tasks from hanging permanently in UI cards after a process restart or interrupted runner loop, `reconcileOrphanWorkflows` runs on server startup (`index.server.ts`, `staleAfterMs: 0`) and on `bots.workflows.runs` RPC reads (default `DEFAULT_ORPHAN_STALE_MS = 10 * 60 * 1000`). Any unsettled `workflow.status === "running"` task absent from `activeWorkflowTaskIds` and older than `staleAfterMs` transitions to `workflow.status = "failed"`, marks `"running"` stages `"failed"` and `"pending"` stages `"skipped"`, and emits terminal card state via `settleAndPublish` (or `settleTask` when no host is provided).
 
 ---
 
@@ -111,6 +115,8 @@ The orchestrator adheres to four operational invariants:
   - WORKFLOW: <workflowName>
   - STAGE_ID: <stage.id>
   - STAGE_NAME: <stage.name>
+  - SESSION_BOARD: <sessionBoardPath>
+  - TASK_MANIFEST: <sessionBoardPath>/TASK_MANIFEST.md
   - WORKFLOW_INPUT: <userInput>
   - UPSTREAM_CONTEXT:
   ### From "<upstreamName>" (<upstreamId>):
@@ -119,6 +125,7 @@ The orchestrator adheres to four operational invariants:
   <stagePrompt>
   </task_brief>
   ```
+  `SESSION_BOARD` and `TASK_MANIFEST` are injected whenever `sessionBoardPath` is non-empty, anchoring stage workers regardless of per-bot `cwd`.
 - **Retry Attempt (`attempt > 1`)**: Prepends a targeted `<repair_brief>` diagnosing the failure:
   ```text
   <repair_brief>
@@ -130,6 +137,7 @@ The orchestrator adheres to four operational invariants:
   </repair_brief>
   ```
 - Both initial and retry prompts append the mandatory `WORKER_PROTOCOL_SUFFIX`.
+- **Retry Session Reuse (`sendBotMessage`)**: When a stage retries with an existing `stage.chatId` (`ctx.reuseChatId`), `defaultStageDispatcher` inspects `paseo.agents.ref(ctx.reuseChatId).refresh()`. If the session exists, is not archived (`!archivedAt`), and is idle (`status !== "running" && status !== "initializing"`), the `<repair_brief>` prompt is sent to the original session via `sendBotMessage` to preserve conversation history and KV cache; otherwise, `startChat` allocates a fresh session (`newUuid()`).
 
 ### 4.3 Worker Protocol & Structured Handoff (`WORKER_PROTOCOL_SUFFIX`, `parseWorkerHandoff`)
 
@@ -153,9 +161,17 @@ OPEN_ISSUES: <None | exact blocker>
 </worker_protocol>
 ```
 
-`parseWorkerHandoff` parses the output:
-- If `<worker_handoff>` reports `STATUS: FAILED` or `STATUS: BLOCKED`, the stage is treated as failed, triggering bounded retry or pipeline abort.
+`parseWorkerHandoff` parses the output using a markdown-tolerant extractor (supporting optional `**bold**` and `-`/`*` list prefixes) across all 6 canonical fields (`status`, `summary`, `touchedFiles`, `verificationProof`, `dodChecklist`, `openIssues` from `STATUS|SUMMARY|TOUCHED_FILES|VERIFICATION_PROOF|DOD_CHECKLIST|OPEN_ISSUES`):
+- If `<worker_handoff>` reports `STATUS: FAILED`, `STATUS: BLOCKED`, or `STATUS: PARTIAL`, `defaultStageDispatcher` treats the stage as failed, triggering bounded retry or pipeline abort.
 - If the block is omitted (backward compatibility for unconstrained models), `status` defaults to `"UNKNOWN"` and the reply text is preserved without failing the stage automatically.
+
+### 4.4 Structured Protocol Card Rendering (`segmentProtocolBlocks`, `ProtocolCard`)
+
+In the chat stream (`client/chat/stream/rows.tsx`), `segmentProtocolBlocks` (`shared/protocol-cards.ts`) performs fenced-code-safe extraction of `<task_brief>`, `<repair_brief>`, and `<worker_handoff>` XML blocks while leaving blocks inside Markdown code fences untouched:
+
+- `<task_brief>` / `<repair_brief>` bodies are parsed via `parseBriefFields` into key-value sections (`WORKFLOW`, `STAGE_ID`, `STAGE_NAME`, `ATTEMPT`, `PREVIOUS_FAILURE`, `INSTRUCTION`, etc.).
+- `<worker_handoff>` blocks are parsed via `parseWorkerHandoff` and mapped to semantic `PluginTheme["colors"]` tones: `PASS` (`statusSuccess`), `PARTIAL` (`statusWarning`), `BLOCKED` (`#F97316`), `FAILED` (`statusDanger`), and `UNKNOWN` (`foregroundMuted`).
+- `ProtocolCard` (`client/chat/stream/ProtocolCard.tsx`) renders each block as a collapsible status card with localized (`en` / `zh-CN`) headers and expandable `VERIFICATION_PROOF`, `DOD_CHECKLIST`, and `TOUCHED_FILES` sections.
 
 ---
 
@@ -202,7 +218,10 @@ Skills enabled for a bot are projected into `<projectRoot>/.claude/skills/`:
 | Step Engine Resolution | `paseo-bots/shared/workflows.ts`, `resolveStepEngine` | CURRENT | `npm --prefix paseo-bots test tests/workflows.test.ts` |
 | Ready Stages Resolution | `paseo-bots/shared/workflows.ts`, `readyStages` | CURRENT | `npm --prefix paseo-bots test tests/workflows.test.ts` |
 | Brief & Handoff Protocols | `paseo-bots/shared/workflows.ts`, `buildStageBriefPrompt`, `parseWorkerHandoff` | CURRENT | `npm --prefix paseo-bots test tests/workflows.test.ts` |
-| Workflow Runner | `paseo-bots/server/workflow-runner.ts`, `runWorkflowDag` | CURRENT | `npm --prefix paseo-bots test tests/workflow-runner.test.ts` |
+| Workflow Runner | `paseo-bots/server/workflow-runner.ts`, `runWorkflowDag`, `reconcileOrphanWorkflows` | CURRENT | `npm --prefix paseo-bots test tests/workflow-runner.test.ts` |
+| Workflow Runs RPC & Live UI | `paseo-bots/shared/rpc.ts` (`workflowRunsRpc`), `paseo-bots/client/WorkflowsScreen.tsx` | CURRENT | `npm --prefix paseo-bots test tests/workflow-ui.test.ts` |
+| Protocol Block Parser & Cards | `paseo-bots/shared/protocol-cards.ts`, `paseo-bots/client/chat/stream/ProtocolCard.tsx` | CURRENT | `npm --prefix paseo-bots test tests/protocol-cards.test.tsx` |
+| Partner Chat Navigation | `paseo-bots/client/navigation.ts`, `paseo-bots/client/BotsSurfaceReady.tsx` | CURRENT | `npm --prefix paseo-bots test tests/partner-chat-navigation.test.tsx` |
 | Workflow Tool | `paseo-bots/server/tools/workflows.ts`, `runWorkflowTool` | CURRENT | `npm --prefix paseo-bots test tests/workflow-tool.test.ts` |
 | Zero Global Pollution Guard | `paseo-bots/server/claude-agents.ts`, `assertNotGlobalUserConfig` | CURRENT | `npm --prefix paseo-bots test tests/claude-agents.test.ts` |
 | Claude MCP Sync | `paseo-bots/server/claude-agents.ts`, `syncClaudeMcpConfig` | CURRENT | `npm --prefix paseo-bots test tests/claude-agents.test.ts` |

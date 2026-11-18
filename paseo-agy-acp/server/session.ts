@@ -247,18 +247,22 @@ export function effectiveLaunch(
 }
 
 export function sessionParams(cwd: string, config?: ProviderSessionConfig) {
+  const providerOptions = config?.providerOptions as
+    Record<string, unknown> | undefined
+  const settings = config?.settings as Record<string, unknown> | undefined
+
   const mode =
     (config as { systemPromptMode?: string })?.systemPromptMode ??
-    (config?.providerOptions as { systemPromptMode?: string } | undefined)
-      ?.systemPromptMode
+    (providerOptions?.systemPromptMode as string | undefined) ??
+    (settings?.systemPromptMode as string | undefined)
   const isReplace = mode === 'replace'
 
-  const rawDirs = (
-    config?.providerOptions as { additionalDirectories?: unknown } | undefined
-  )?.additionalDirectories
+  const rawDirs =
+    providerOptions?.additionalDirectories ?? settings?.additionalDirectories
   const additionalDirectories = Array.isArray(rawDirs)
     ? rawDirs.filter(
-        (dir): dir is string => typeof dir === 'string' && dir.trim().length > 0,
+        (dir): dir is string =>
+          typeof dir === 'string' && dir.trim().length > 0,
       )
     : []
 
@@ -2456,6 +2460,16 @@ async function applyStoredConfigOption(
   }
 }
 
+export const KNOWN_SETTINGS = new Set([
+  'agent',
+  'tools',
+  'systemPromptMode',
+  'promptMode',
+  'additionalDirectories',
+  'promptFilePath',
+  'allowedTools',
+])
+
 async function configureSession(
   session: Session,
   changes: ProviderConfigChanges,
@@ -2468,7 +2482,7 @@ async function configureSession(
   if (session.state.turn)
     throw new Error('Wait for the current turn before changing configuration')
   const unknownSettings = changes.settings
-    ? Object.keys(changes.settings).filter((key) => key !== 'agent')
+    ? Object.keys(changes.settings).filter((key) => !KNOWN_SETTINGS.has(key))
     : []
   if (unknownSettings.length)
     throw new Error('Custom settings are not supported')

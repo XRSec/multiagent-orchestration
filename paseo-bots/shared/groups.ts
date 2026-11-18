@@ -51,9 +51,11 @@ export function resolveSessionRole(input: {
   askedByBotId?: string | null;
   isWorkflowStage?: boolean;
 }): SessionRoleKind {
+  const isLead = (input.group && input.group.leadId === input.botId) || input.botId === "bot-moadmin";
+  if (isLead && (input.group || input.isWorkflowStage)) return "team-lead";
   if (input.isWorkflowStage || input.askedByBotId) return "dispatched-worker";
   if (!input.group) return "dm";
-  if (input.group.leadId === input.botId) return "team-lead";
+  if (isLead) return "team-lead";
   return "team-direct-specialist";
 }
 
@@ -86,6 +88,7 @@ export function sessionRolePrompt(
         "- Delegate implementation, research, and verification to specialist teammates via ask_bot or run_workflow.",
         "- Audit <worker_handoff> proof blocks rather than accepting bare claims.",
         "- Limit repair rounds to a maximum of 3 before escalating blockers to the user.",
+        "- In workflow stages (planning, review, finalize): own task decomposition and acceptance criteria (DoD), arbitrate verification proofs, maintain manifest state, and synthesize executive delivery.",
         "",
         ORCHESTRATOR_WORKFLOW_PROTOCOL,
       ].join("\n");
@@ -145,7 +148,7 @@ export function teamPrompt(
   const isLead = effectiveRole !== undefined ? effectiveRole === "team-lead" : lead?.id === bot.id;
   const canSeeWorkflows = effectiveRole !== undefined ? effectiveRole === "team-lead" : isLead;
 
-  const others = [...(lead && !isLead ? [lead] : []), ...members.filter((member) => member.id !== bot.id)].slice(0, ROSTER_MAX);
+  const others = [...(lead && !isLead && lead.id !== bot.id ? [lead] : []), ...members.filter((member) => member.id !== bot.id)].slice(0, ROSTER_MAX);
   const name = group.name.trim() || "Untitled";
   const teamWorkflows = group.workflows ?? [];
   const teamWorkflowIds = new Set(teamWorkflows.map((w) => w.id));

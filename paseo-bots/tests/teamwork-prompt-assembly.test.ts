@@ -40,10 +40,16 @@ describe("WP-4: Six-Block Role-Aware Prompt Assembler & Target AGENTS.md Loader"
   describe("SessionRoleKind Classification (resolveSessionRole)", () => {
     const group: Pick<BotGroup, "id" | "leadId"> = { id: "team-core", leadId: "bot-lead" };
 
-    it("classifies as dispatched-worker when isWorkflowStage is true or askedByBotId is provided", () => {
-      expect(resolveSessionRole({ botId: "bot-lead", group, isWorkflowStage: true })).toBe("dispatched-worker");
-      expect(resolveSessionRole({ botId: "bot-lead", group, askedByBotId: "bot-caller" })).toBe("dispatched-worker");
-      expect(resolveSessionRole({ botId: "bot-worker", isWorkflowStage: true })).toBe("dispatched-worker");
+    it("classifies workers as dispatched-worker when isWorkflowStage is true or askedByBotId is provided", () => {
+      expect(resolveSessionRole({ botId: "bot-worker", group, isWorkflowStage: true })).toBe("dispatched-worker");
+      expect(resolveSessionRole({ botId: "bot-worker", group, askedByBotId: "bot-caller" })).toBe("dispatched-worker");
+    });
+
+    it("preserves team-lead role for lead bot and bot-moadmin in workflow stages or when asked by another bot (no role downgrade)", () => {
+      expect(resolveSessionRole({ botId: "bot-lead", group, isWorkflowStage: true })).toBe("team-lead");
+      expect(resolveSessionRole({ botId: "bot-lead", group, askedByBotId: "bot-caller" })).toBe("team-lead");
+      expect(resolveSessionRole({ botId: "bot-moadmin", group, isWorkflowStage: true })).toBe("team-lead");
+      expect(resolveSessionRole({ botId: "bot-moadmin", isWorkflowStage: true })).toBe("team-lead");
     });
 
     it("classifies as dm when group is missing or null", () => {
@@ -95,6 +101,7 @@ describe("WP-4: Six-Block Role-Aware Prompt Assembler & Target AGENTS.md Loader"
       expect(text).toContain("ZERO DIRECT EXECUTION");
       expect(text).toContain("<worker_handoff>");
       expect(text).toContain("max 3");
+      expect(text).toContain("workflow stages (planning, review, finalize)");
     });
 
     it("renders domain-bounded specialist contract for team-direct-specialist", () => {
@@ -150,6 +157,12 @@ describe("WP-4: Six-Block Role-Aware Prompt Assembler & Target AGENTS.md Loader"
       const text = teamPrompt(group, lead, [lead, member], workflows, "team-direct-specialist");
       expect(text).not.toContain('Available workflows for "Gate Team"');
       expect(text).not.toContain("Continuous Integration");
+    });
+
+    it("never inserts lead bot into its own Teammates list even when role is not team-lead", () => {
+      const text = teamPrompt(group, lead, [lead, member], workflows, "team-direct-specialist");
+      expect(text).not.toContain("- Lead (Chief of Staff)");
+      expect(text).toContain("Teammates:\n- Member");
     });
 
     it("omits workflows catalog when role is dispatched-worker", () => {

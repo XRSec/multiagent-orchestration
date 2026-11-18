@@ -172,7 +172,46 @@ describe("Base Tools Catalog and Permissions", () => {
 
     const backToAgy = applyProviderConfig(toClaude, configs[0]!);
     const agyAgentConfig = buildAgentConfig(backToAgy, EMPTY_LIBRARY, "gemini-4-hydrogen", "sys");
-    expect(agyAgentConfig.providerOptions).toEqual({ tools: agyTools });
+    // AGY in dynamic prompt mode (!includeAgyAgent) does not emit providerOptions.tools
+    expect(agyAgentConfig.providerOptions).toBeUndefined();
+
+    // When static AGY agent mode is explicitly enabled, it carries providerOptions.agent (and tools if engine === "paseo-bot")
+    const staticAgyConfig = buildAgentConfig(
+      backToAgy,
+      EMPTY_LIBRARY,
+      "gemini-4-hydrogen",
+      "sys",
+      {},
+      null,
+      undefined,
+      "paseo-bot",
+      undefined,
+      null,
+      "append",
+      { useStaticAgyAgent: true },
+    );
+    expect(staticAgyConfig.providerOptions).toEqual({
+      agent: "bot-test",
+      tools: ["send_message"],
+    });
+
+    const staticNativeConfig = buildAgentConfig(
+      backToAgy,
+      EMPTY_LIBRARY,
+      "gemini-4-hydrogen",
+      "sys",
+      {},
+      null,
+      undefined,
+      null,
+      undefined,
+      null,
+      "append",
+      { useStaticAgyAgent: true },
+    );
+    expect(staticNativeConfig.providerOptions).toEqual({
+      agent: "bot-test",
+    });
   });
 
   it("enforces baseTools in buildAgentConfig for claude and codex", () => {

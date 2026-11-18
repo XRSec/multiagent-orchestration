@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BotSchema, EMPTY_LIBRARY, type Bot, type BotGroup } from "../shared/bot";
 import { applyChanges } from "../shared/changes";
@@ -12,6 +14,7 @@ import {
   readyStages,
   resolveStepEngine,
   validateWorkflowDAG,
+  MAX_INLINE_UPSTREAM_CHARS,
   type WorkflowDefinition,
   type WorkflowStageDefinition,
 } from "../shared/workflows";
@@ -243,5 +246,257 @@ describe("workflows schema & DAG validation", () => {
     });
     expect(wf.stages[0]?.skillIds).toEqual(["skill-a", "skill-b"]);
     expect(wf.stages[0]?.mcpServerIds).toEqual(["mcp-server-1"]);
+  });
+
+  it("validates production multiagent-orchestration group workflow in bots.json", () => {
+    const botsJsonPath = resolve(__dirname, "../../paseo-bots-plugin-settings/bots.json");
+    const raw = JSON.parse(readFileSync(botsJsonPath, "utf8")) as {
+      version: number;
+      values: {
+        bots?: Array<{ id: string; model: string | null; modeId: string }>;
+        groups: Array<BotGroup & { workflows?: WorkflowDefinition[] }>;
+      };
+    };
+    const group = raw.values?.groups?.find((g) => g.id === "team-mwgv59i8dfdv");
+    expect(group).toBeDefined();
+    expect(group?.cwd).toBe("/Users/xr/IDEA.localized/multiagent-orchestration");
+    expect(Array.isArray(group?.workflows)).toBe(true);
+
+    const moadmin = raw.values?.bots?.find((b) => b.id === "bot-moadmin");
+    expect(moadmin).toBeDefined();
+    expect(moadmin?.model).toBe("gemini-4-hydrogen");
+    expect(moadmin?.modeId).toBe("full-access");
+
+    const wf = group?.workflows?.find((w) => w.id === "wf-moadmin-closed-loop");
+    expect(wf).toBeDefined();
+
+    const parsed = WorkflowDefinitionSchema.parse(wf);
+    expect(parsed.id).toBe("wf-moadmin-closed-loop");
+    expect(parsed.stages.length).toBe(7);
+
+    const dag = validateWorkflowDAG(parsed.stages);
+    expect(dag.valid).toBe(true);
+    expect(dag.layers).toEqual([
+      ["moadmin-plan"],
+      ["modeep-recon"],
+      ["mocode-impl"],
+      ["moci-verify"],
+      ["moadmin-review"],
+      ["modoc-writeback"],
+      ["moadmin-finalize"],
+    ]);
+
+    // Verify all stage botIds belong to the team
+    for (const stage of parsed.stages) {
+      expect(group?.memberIds).toContain(stage.botId);
+      expect(stage.maxRetries).toBe(2);
+    }
+
+    // Verify moAdmin stages use paseo-bot engine
+    expect(parsed.stages.find((s) => s.id === "moadmin-plan")?.engine).toBe("paseo-bot");
+    expect(parsed.stages.find((s) => s.id === "moadmin-review")?.engine).toBe("paseo-bot");
+    expect(parsed.stages.find((s) => s.id === "moadmin-finalize")?.engine).toBe("paseo-bot");
+  });
+
+  it("parses 6-field <worker_handoff> blocks including markdown bold headers", async () => {
+    const { parseWorkerHandoff, buildStageBriefPrompt } = await import("../shared/workflows");
+    const reply = [
+      "All done.",
+      "<worker_handoff>",
+      "**STATUS:** PARTIAL",
+      "**SUMMARY:**",
+      "- Updated workflow runner",
+      "- TOUCHED_FILES: server/workflow-runner.ts",
+      "**VERIFICATION_PROOF:** vitest exit 0",
+      "**DOD_CHECKLIST:**",
+      "- [x] DoD-1 -> verified",
+      "**OPEN_ISSUES:** Pending UI test",
+      "</worker_handoff>",
+    ].join("\n");
+
+    const parsed = parseWorkerHandoff(reply);
+    expect(parsed.hasBlock).toBe(true);
+    expect(parsed.status).toBe("PARTIAL");
+    expect(parsed.summary).toContain("Updated workflow runner");
+    expect(parsed.touchedFiles).toBe("server/workflow-runner.ts");
+    expect(parsed.verificationProof).toBe("vitest exit 0");
+    expect(parsed.dodChecklist).toContain("DoD-1");
+    expect(parsed.openIssues).toBe("Pending UI test");
+
+    const brief = buildStageBriefPrompt({
+      workflowName: "Test WF",
+      stage: { id: "s1", name: "Stage 1", botId: "bot-1", prompt: "Do it", engine: "auto", dependsOn: [], maxRetries: 1 },
+      sessionBoardPath: "/tmp/board/wf-123",
+      attempt: 1,
+    });
+    expect(brief).toContain("- SESSION_BOARD: /tmp/board/wf-123");
+    expect(brief).toContain("- TASK_MANIFEST: /tmp/board/wf-123/TASK_MANIFEST.md");
+  });
+
+  it("deduplicates worker protocol suffix if prompt or role already includes <worker_handoff> / WORKER_PROTOCOL", () => {
+    const stageWithHandoff = makeStage({
+      id: "plan",
+      name: "Plan",
+      prompt: "Execute plan. Output: Conclude with <worker_handoff>\nSTATUS: PASS\nVERIFICATION_PROOF: vitest\n</worker_handoff>",
+    });
+    const prompt1 = buildStageBriefPrompt({
+      workflowName: "WF",
+      stage: stageWithHandoff,
+      attempt: 1,
+    });
+    // Should NOT have appended a second <worker_protocol> block at the end
+    const occurrences = (prompt1.match(/<worker_handoff>/g) || []).length;
+    expect(occurrences).toBe(1);
+    expect(prompt1).not.toContain("<worker_protocol>");
+
+    const stageWithProtocol = makeStage({
+      id: "plan",
+      name: "Plan",
+      prompt: "Execute according to WORKER_PROTOCOL and deliver results.",
+    });
+    const prompt2 = buildStageBriefPrompt({
+      workflowName: "WF",
+      stage: stageWithProtocol,
+      attempt: 1,
+    });
+    expect(prompt2).not.toContain("<worker_protocol>");
+
+    const standardStage = makeStage({
+      id: "impl",
+      name: "Impl",
+      prompt: "Write implementation.",
+    });
+    const prompt3 = buildStageBriefPrompt({
+      workflowName: "WF",
+      stage: standardStage,
+      attempt: 1,
+    });
+    expect(prompt3).toContain("<worker_protocol>");
+  });
+
+  it("truncates upstream output handoff-first to preserve VERIFICATION_PROOF within MAX_INLINE_UPSTREAM_CHARS", () => {
+    const longProse = "Detailed analysis notes: " + "X".repeat(2500) + "\n";
+    const handoffBlock = [
+      "<worker_handoff>",
+      "STATUS: PASS",
+      "SUMMARY: Completed database migration",
+      "TOUCHED_FILES: prisma/schema.prisma",
+      "VERIFICATION_PROOF: pnpm test run (exit code 0, 42 tests passed)",
+      "OPEN_ISSUES: None",
+      "</worker_handoff>",
+    ].join("\n");
+
+    const fullOutput = longProse + handoffBlock;
+    expect(fullOutput.length).toBeGreaterThan(MAX_INLINE_UPSTREAM_CHARS);
+
+    const prompt = buildStageBriefPrompt({
+      workflowName: "Pipeline",
+      stage: makeStage({ id: "verify", name: "Verify" }),
+      upstreamOutputs: [
+        {
+          stageId: "migration",
+          stageName: "Migration",
+          output: fullOutput,
+        },
+      ],
+      attempt: 1,
+    });
+
+    // Verification proof and handoff block must be fully preserved
+    expect(prompt).toContain("<worker_handoff>");
+    expect(prompt).toContain("STATUS: PASS");
+    expect(prompt).toContain("VERIFICATION_PROOF: pnpm test run (exit code 0, 42 tests passed)");
+    expect(prompt).toContain("OPEN_ISSUES: None");
+    expect(prompt).toContain("Detailed analysis notes:");
+    expect(prompt).toContain("...[truncated]");
+
+    // Upstream context for this stage must stay within MAX_INLINE_UPSTREAM_CHARS budget
+    const upstreamContext = prompt.slice(prompt.indexOf("### From \"Migration\""), prompt.indexOf("</task_brief>"));
+    expect(upstreamContext.length).toBeLessThanOrEqual(MAX_INLINE_UPSTREAM_CHARS + 100);
+  });
+
+  describe("Backtick/Prose-Safe <worker_handoff> Extraction", () => {
+    it("does not get tricked by inline backtick `<worker_handoff>` prose mentions", () => {
+      const reply = [
+        "Please note that `<worker_handoff>` format is required by the orchestrator.",
+        "Here are the intermediate notes and logs...",
+        "<worker_handoff>",
+        "STATUS: PASS",
+        "SUMMARY: Real handoff summary.",
+        "TOUCHED_FILES: shared/workflows.ts",
+        "VERIFICATION_PROOF: vitest exit 0",
+        "DOD_CHECKLIST: - [x] All refined",
+        "OPEN_ISSUES: None",
+        "</worker_handoff>",
+      ].join("\n");
+
+      const parsed = parseWorkerHandoff(reply);
+      expect(parsed.hasBlock).toBe(true);
+      expect(parsed.status).toBe("PASS");
+      expect(parsed.summary).toBe("Real handoff summary.");
+      expect(parsed.touchedFiles).toBe("shared/workflows.ts");
+      expect(parsed.verificationProof).toBe("vitest exit 0");
+      expect(parsed.openIssues).toBe("None");
+    });
+
+    it("returns hasBlock: false when `<worker_handoff>` appears solely in inline backtick prose", () => {
+      const reply = "I was instructed to output `<worker_handoff>` with STATUS: PASS, but I had an error.";
+      const parsed = parseWorkerHandoff(reply);
+      expect(parsed.hasBlock).toBe(false);
+      expect(parsed.status).toBe("UNKNOWN");
+      expect(parsed.summary).toBe(reply);
+    });
+
+    it("extracts the LAST valid closed <worker_handoff> block when multiple blocks exist", () => {
+      const reply = [
+        "First draft:",
+        "<worker_handoff>",
+        "STATUS: PARTIAL",
+        "SUMMARY: Draft work.",
+        "</worker_handoff>",
+        "Final verified output:",
+        "<worker_handoff>",
+        "STATUS: PASS",
+        "SUMMARY: Completed verified work.",
+        "VERIFICATION_PROOF: all tests pass",
+        "</worker_handoff>",
+      ].join("\n");
+
+      const parsed = parseWorkerHandoff(reply);
+      expect(parsed.hasBlock).toBe(true);
+      expect(parsed.status).toBe("PASS");
+      expect(parsed.summary).toBe("Completed verified work.");
+      expect(parsed.verificationProof).toBe("all tests pass");
+    });
+
+    it("buildStageBriefPrompt preserves upstream prose without swallowing it into a backtick match", () => {
+      const upstream = [
+        "I formatted this according to `<worker_handoff>` schema.",
+        "Important upstream discovery: API port changed to 8080.",
+        "<worker_handoff>",
+        "STATUS: PASS",
+        "SUMMARY: Config updated.",
+        "TOUCHED_FILES: config.json",
+        "VERIFICATION_PROOF: check ok",
+        "</worker_handoff>",
+      ].join("\n");
+
+      const prompt = buildStageBriefPrompt({
+        workflowName: "Pipeline",
+        stage: makeStage({ id: "stage-2", name: "Consumer" }),
+        upstreamOutputs: [
+          {
+            stageId: "stage-1",
+            stageName: "Producer",
+            output: upstream,
+          },
+        ],
+        attempt: 1,
+      });
+
+      expect(prompt).toContain("<worker_handoff>");
+      expect(prompt).toContain("STATUS: PASS");
+      expect(prompt).toContain("Config updated.");
+    });
   });
 });

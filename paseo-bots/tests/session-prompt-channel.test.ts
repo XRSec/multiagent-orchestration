@@ -207,4 +207,56 @@ describe("session prompt channel & workspace roots in buildAgentConfig", () => {
     expect(config.systemPromptMode).toBe("replace");
     expect(config.providerOptions?.agent).toBeUndefined();
   });
+
+  it("does not emit stray providerOptions.tools for agy when baseTools is present and useStaticAgyAgent is false", () => {
+    for (const provider of ["agy", "agy-acp"] as const) {
+      const bot = makeBot({
+        provider,
+        baseTools: ["invoke_subagent", "send_message"],
+      });
+
+      const config = buildAgentConfig(
+        bot,
+        EMPTY_LIBRARY,
+        "gemini-4-hydrogen",
+        "Dynamic prompt with base tools",
+      );
+
+      expect(config.systemPrompt).toBe("Dynamic prompt with base tools");
+      expect(config.providerOptions?.tools).toBeUndefined();
+      expect(config.providerOptions).toBeUndefined();
+    }
+  });
+
+  it("does not include tools in providerOptions when additionalDirectories or promptFilePath are set for agy with baseTools", () => {
+    const bot = makeBot({
+      provider: "agy",
+      baseTools: ["invoke_subagent", "send_message"],
+    });
+
+    const config = buildAgentConfig(
+      bot,
+      EMPTY_LIBRARY,
+      "gemini-4-hydrogen",
+      "Dynamic prompt",
+      {},
+      null,
+      undefined,
+      null,
+      undefined,
+      null,
+      "append",
+      {
+        additionalDirectories: ["/workspace/target-repo"],
+        promptFilePath: "/runs/run-1.prompt.md",
+      },
+    );
+
+    expect(config.providerOptions?.tools).toBeUndefined();
+    expect(config.providerOptions?.agent).toBeUndefined();
+    expect(config.providerOptions?.additionalDirectories).toEqual([
+      "/workspace/target-repo",
+    ]);
+    expect(config.providerOptions?.promptFilePath).toBe("/runs/run-1.prompt.md");
+  });
 });

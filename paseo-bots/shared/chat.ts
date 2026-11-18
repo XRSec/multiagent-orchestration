@@ -286,6 +286,7 @@ export interface StartChatInput {
   clientMessageId?: string;
   skills?: string[];
   mcpConfigPath?: string;
+  defaults?: { model?: string | null; modeId?: string | null; provider?: string | null } | null;
 }
 
 /**
@@ -470,12 +471,32 @@ export async function startBotChat(
   onFallback?: (fromModel: string, toModel: string, error: unknown) => void,
 ): Promise<string> {
   const { bot } = input;
-  const isEligible = isTeamBotEligibleForFallback(bot);
-  const defaultModel = !isEligible && bot.model ? bot.model : await resolveDefaultModel(api, bot.provider);
+  const defaultsModel = (!input.defaults?.provider || input.defaults.provider === bot.provider)
+    ? input.defaults?.model?.trim() || null
+    : null;
+  const defaultsModeId = (!input.defaults?.provider || input.defaults.provider === bot.provider)
+    ? input.defaults?.modeId?.trim() || null
+    : null;
+
+  const inheritedModel = (!bot.model || !bot.model.trim()) ? defaultsModel : bot.model;
+  const inheritedModeId = (!bot.modeId || !bot.modeId.trim()) ? defaultsModeId : bot.modeId;
+
+  const effectiveBot: Bot = (inheritedModel !== bot.model || inheritedModeId !== bot.modeId)
+    ? {
+        ...bot,
+        ...(inheritedModel ? { model: inheritedModel } : {}),
+        ...(inheritedModeId ? { modeId: inheritedModeId } : {}),
+      }
+    : bot;
+
+  const isEligible = isTeamBotEligibleForFallback(effectiveBot);
+  const defaultModel = !isEligible && effectiveBot.model
+    ? effectiveBot.model
+    : (defaultsModel || (await resolveDefaultModel(api, effectiveBot.provider)));
   const candidates = isEligible
-    ? resolveCandidateModels(bot, defaultModel)
-    : [{ model: bot.model ?? defaultModel, thinkingOptionId: bot.thinkingOptionId ?? null }];
-  const workspace = await ensureBotWorkspace(api, bot, input.placement);
+    ? resolveCandidateModels(effectiveBot, defaultModel)
+    : [{ model: effectiveBot.model ?? defaultModel, thinkingOptionId: effectiveBot.thinkingOptionId ?? null }];
+  const workspace = await ensureBotWorkspace(api, effectiveBot, input.placement);
   const wsSnapshot = workspace.current?.() ?? (await workspace.refresh?.().catch(() => null));
   const workspaceId = workspace.id ?? (wsSnapshot as { id?: string } | null)?.id;
 
@@ -489,20 +510,22 @@ export async function startBotChat(
       const createInput = {
         ...(input.agentId ? { agentId: input.agentId } : {}),
         config: buildAgentConfig(
-          bot,
+          effectiveBot,
           input.library,
           candidate.model,
           input.systemPrompt,
           input.plugin,
           candidate.thinkingOptionId,
-          isEligible ? bot.fallbackModels : undefined,
+          isEligible ? effectiveBot.fallbackModels : undefined,
           input.engine ?? null,
           input.skills,
           input.mcpConfigPath,
+          undefined,
+          { defaults: input.defaults },
         ),
         cwd: input.placement.path,
         ...(workspaceId ? { workspaceId } : {}),
-        labels: { [BOT_LABEL]: bot.id, ...input.labels },
+        labels: { [BOT_LABEL]: effectiveBot.id, ...input.labels },
         prompt: input.prompt,
         ...(input.title ? { title: input.title.slice(0, MAX_TITLE_CHARS) } : {}),
         ...(input.images?.length ? { images: input.images } : {}),
@@ -517,15 +540,15 @@ export async function startBotChat(
       const nextCandidate = candidates[i + 1];
       if (isEligible && isFallbackEligibleError(error) && nextCandidate) {
         console.warn(
-          `[paseo-bots] Model "${candidate.model}" failed (${error instanceof Error ? error.message : String(error)}). Falling back to "${nextCandidate.model}" for bot "${bot.name}" (${bot.id}).`,
+          `[paseo-bots] Model "${candidate.model}" failed (${error instanceof Error ? error.message : String(error)}). Falling back to "${nextCandidate.model}" for bot "${effectiveBot.name}" (${effectiveBot.id}).`,
         );
         onFallback?.(candidate.model, nextCandidate.model, error);
         continue;
       }
       if (isEligible && candidates.length > 1 && i === candidates.length - 1 && isFallbackEligibleError(error)) {
         throw new ModelFallbackExhaustedError({
-          botId: bot.id,
-          provider: bot.provider,
+          botId: effectiveBot.id,
+          provider: effectiveBot.provider,
           attemptedModels,
           lastError: error,
         });
@@ -536,8 +559,8 @@ export async function startBotChat(
 
   if (isEligible && candidates.length > 1) {
     throw new ModelFallbackExhaustedError({
-      botId: bot.id,
-      provider: bot.provider,
+      botId: effectiveBot.id,
+      provider: effectiveBot.provider,
       attemptedModels,
       lastError,
     });

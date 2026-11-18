@@ -22,6 +22,8 @@ import { ProposalCard } from "./ProposalCard";
 import { RoutineRunCard } from "./RoutineRunCard";
 import { InteractionCard } from "./InteractionCard";
 import { HandoffCard } from "./HandoffCard";
+import { ProtocolCard } from "./ProtocolCard";
+import { segmentProtocolBlocks } from "../../../shared/protocol-cards";
 import { extractToolSources } from "../../../shared/tool-results";
 import { SourceCards } from "./SourceCards";
 import { CopyButton, ExpandableBadge, isWeb, MessageAction, SpeakButton, Spinner } from "./ui";
@@ -155,9 +157,33 @@ const UserMessage = memo(function UserMessage({ colors, compact, text, cardReply
             </View>
           ) : null}
           {hasText ? (
-            <Text selectable style={{ color: colors.foreground, fontSize: content(), lineHeight: contentLine(), ...(isWeb ? ({ overflowWrap: "anywhere" } as object) : {}) }}>
-              {cardReply && !showOriginal ? cardReply : text}
-            </Text>
+            (() => {
+              const displayText = cardReply && !showOriginal ? cardReply : text;
+              const segments = segmentProtocolBlocks(displayText);
+              const hasProtocol = segments.some((s) => s.kind === "protocol");
+              if (!hasProtocol) {
+                return (
+                  <Text selectable style={{ color: colors.foreground, fontSize: content(), lineHeight: contentLine(), ...(isWeb ? ({ overflowWrap: "anywhere" } as object) : {}) }}>
+                    {displayText}
+                  </Text>
+                );
+              }
+              return (
+                <View style={{ gap: 6 }}>
+                  {segments.map((seg, idx) => {
+                    if (seg.kind === "protocol") {
+                      return <ProtocolCard key={`proto-${idx}`} colors={colors} segment={seg} />;
+                    }
+                    if (!seg.text.trim()) return null;
+                    return (
+                      <Text key={`txt-${idx}`} selectable style={{ color: colors.foreground, fontSize: content(), lineHeight: contentLine(), ...(isWeb ? ({ overflowWrap: "anywhere" } as object) : {}) }}>
+                        {seg.text}
+                      </Text>
+                    );
+                  })}
+                </View>
+              );
+            })()
           ) : null}
           {cardReply ? <Pressable accessibilityRole="button" accessibilityLabel={showOriginal ? "Show readable answer" : "Show original response"} accessibilityState={{ expanded: showOriginal }} aria-expanded={showOriginal} onPress={() => setShowOriginal((value) => !value)} style={{ alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 5, paddingTop: 12, minHeight: 36 }}><Icon name={showOriginal ? "ChevronUp" : "Code"} size={13} color={colors.foregroundMuted} /><Text style={{ color: colors.foregroundMuted, fontSize: ui(12) }}>{showOriginal ? "Show readable answer" : "Show original response"}</Text></Pressable> : null}
         </View>
@@ -211,9 +237,23 @@ const AssistantMessage = memo(function AssistantMessage({ colors, text, phase, c
   const capped = useMemo(() => capMessageForRender(text), [text]);
   const revealed = useRevealedText(capped.text, phase);
   const bytes = useMemo(() => (capped.capped && phase === "complete" ? utf8ByteLength(text) : null), [capped.capped, phase, text]);
+  const segments = useMemo(() => segmentProtocolBlocks(revealed), [revealed]);
+  const hasProtocol = segments.some((s) => s.kind === "protocol");
   return (
     <View style={{ paddingTop: 12, paddingBottom: compactBottom ? 0 : 12, ...(isWeb ? ({ userSelect: "text" } as object) : {}) }}>
-      <Markdown colors={colors} text={revealed} streaming={phase === "streaming"} />
+      {hasProtocol ? (
+        <View style={{ gap: 6 }}>
+          {segments.map((seg, idx) => {
+            if (seg.kind === "protocol") {
+              return <ProtocolCard key={`proto-${idx}`} colors={colors} segment={seg} />;
+            }
+            if (!seg.text.trim()) return null;
+            return <Markdown key={`md-${idx}`} colors={colors} text={seg.text} streaming={phase === "streaming"} />;
+          })}
+        </View>
+      ) : (
+        <Markdown colors={colors} text={revealed} streaming={phase === "streaming"} />
+      )}
       {bytes !== null ? <Text style={{ marginTop: 12, fontSize: ui(14), fontStyle: "italic", color: colors.foregroundMuted }}>This message was capped ({bytes} bytes).</Text> : null}
       {actions ? <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>{actions}</View> : null}
     </View>

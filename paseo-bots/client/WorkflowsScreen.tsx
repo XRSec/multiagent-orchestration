@@ -5,16 +5,21 @@
  * Prerequisites: Paseo client runtime, WorkflowListEditor.
  */
 
-import type { PluginOpenScreenInput, PluginScreenProps } from "@getpaseo/plugin/client";
-import { Icon, ScrollView, SettingsCard, SettingsRow, SettingsSection, SettingsSelect } from "@getpaseo/plugin/client/ui";
+import { useRpc, type PluginOpenScreenInput, type PluginScreenProps } from "@getpaseo/plugin/client";
+import { Icon, ScrollView, SettingsCard, SettingsRow, SettingsSection } from "@getpaseo/plugin/client/ui";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
+import { workflowRunsRpc } from "../shared/rpc";
 import type { WorkflowDefinition } from "../shared/workflows";
 import { AvatarTheme } from "./Avatar";
+import { TaskCardView } from "./chat/stream/TaskCard";
 import { useT } from "./i18n";
 import { PAGE_STYLE, PageTitle } from "./library/parts";
 import { nativeTokens } from "./native";
 import { StatusBadge } from "./panel/controls";
+import { chatScreen } from "./screen-navigation";
+import { navigateToAgentChat } from "./navigation";
 import { WorkflowListEditor } from "./settings/WorkflowEditor";
 import { ui } from "./typography";
 import { MenuProvider } from "./ui/Menu";
@@ -30,12 +35,19 @@ export function WorkflowsScreen(props: PluginScreenProps & { openScreen(input: P
   );
 }
 
-function WorkflowsContent({ theme, host, openScreen, params }: PluginScreenProps & { openScreen(input: PluginOpenScreenInput): void }) {
+function WorkflowsContent({ theme, openScreen, navigation }: PluginScreenProps & { openScreen(input: PluginOpenScreenInput): void }) {
   const colors = theme.colors;
   const { t } = useT();
   const { settings, commit } = useBotSettings();
+  const fetchRuns = useRpc(workflowRunsRpc);
 
   const [selectedScope, setSelectedScope] = useState<string>("global");
+
+  const runsQuery = useQuery({
+    queryKey: ["bots", "workflows", "runs"],
+    queryFn: () => fetchRuns({ limit: 10 }),
+    refetchInterval: (query) => (query.state.data?.runs.some((r) => r.workflow?.status === "running") ? 4000 : false),
+  });
 
   if (settings.status !== "ready") {
     return (
@@ -73,10 +85,76 @@ function WorkflowsContent({ theme, host, openScreen, params }: PluginScreenProps
   };
 
   const totalWorkflowCount = globalWorkflows.length + groups.reduce((acc, g) => acc + (g.workflows?.length ?? 0), 0);
+  const botMap = useMemo(() => new Map(liveBots.map((b) => [b.id, b])), [liveBots]);
+  const runs = runsQuery.data?.runs ?? [];
+  const activeRunsCount = runs.filter((r) => r.workflow?.status === "running").length;
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: colors.surface0 }} contentContainerStyle={PAGE_STYLE}>
       <PageTitle colors={colors} title={t("workflows.sidebarTitle")} />
+
+      {/* Active & Recent Workflow Runs */}
+      <SettingsSection
+        title={t("workflows.recentRunsTitle")}
+        info={t("workflows.recentRunsInfo")}
+      >
+        <SettingsCard>
+          <SettingsRow
+            label={t("workflows.recentRunsTitle")}
+            hint={runs.length === 0 ? t("workflows.noRunsYet") : undefined}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              {activeRunsCount > 0 ? (
+                <StatusBadge
+                  colors={colors}
+                  label={t("workflows.activeRunsBadge", { count: activeRunsCount })}
+                  variant="warning"
+                />
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void runsQuery.refetch()}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 6,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                  backgroundColor: colors.surface1,
+                }}
+              >
+                <Icon name="RefreshCw" size={12} color={colors.foregroundMuted} />
+                <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>
+                  {t("workflows.refreshRuns")}
+                </Text>
+              </Pressable>
+            </View>
+          </SettingsRow>
+          {runs.length > 0 ? (
+            <View style={{ paddingHorizontal: 12, paddingBottom: 12 }}>
+              {runs.map((card) => (
+                <TaskCardView
+                  key={card.taskId}
+                  colors={colors}
+                  card={card}
+                  onOpenChat={(chatId, botId) => {
+                    const navigated = navigateToAgentChat(chatId, {
+                      botId,
+                      navigation: navigation as any,
+                    });
+                    if (!navigated && botId) {
+                      openScreen(chatScreen({ botId, chatId }, botMap.get(botId)?.name ?? botId));
+                    }
+                  }}
+                />
+              ))}
+            </View>
+          ) : null}
+        </SettingsCard>
+      </SettingsSection>
 
       {/* Scope Selector Section */}
       <SettingsSection

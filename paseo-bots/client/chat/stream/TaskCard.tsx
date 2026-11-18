@@ -21,6 +21,8 @@ import { formatElapsedDuration, TaskStageModal } from "./TaskStageModal";
 
 type Colors = PluginTheme["colors"];
 
+export const MAX_ACTIVE_DURATION_MS = 30 * 60 * 1000;
+
 const TASK_STATUS_VARIANT: Record<TaskCardData["status"], BadgeVariant> = {
   issued: "muted",
   running: "muted",
@@ -48,7 +50,7 @@ const STAGE_STATUS_ICON: Record<TaskCardWorkflowStage["status"], string> = {
 export interface TaskCardViewProps {
   colors: Colors;
   card: TaskCardData;
-  onOpenChat?(botId: string, chatId: string): void;
+  onOpenChat?(chatId: string, botId?: string): void;
 }
 
 /**
@@ -65,14 +67,24 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
   const [selectedStage, setSelectedStage] = useState<TaskCardWorkflowStage | null>(null);
 
   const wf = card.workflow;
-  const anyRunning = wf?.status === "running" || wf?.stages.some((s) => s.status === "running");
-  const [, setNow] = useState(() => Date.now());
+  const isRunning = card.status === "running" && (wf?.status === "running" || wf?.stages.some((s) => s.status === "running"));
+  const startedMs = wf?.startedAt ? Date.parse(wf.startedAt) : NaN;
+  const [now, setNow] = useState(() => Date.now());
+  const elapsedMs = Number.isFinite(startedMs) ? Math.max(0, now - startedMs) : 0;
+  const isStalled = Boolean(isRunning && !wf?.completedAt && Number.isFinite(startedMs) && elapsedMs >= MAX_ACTIVE_DURATION_MS);
+  const shouldTick = isRunning && !isStalled;
 
   useEffect(() => {
-    if (!anyRunning) return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
+    if (!shouldTick) return;
+    const timer = setInterval(() => {
+      const currentNow = Date.now();
+      if (Number.isFinite(startedMs) && currentNow - startedMs >= MAX_ACTIVE_DURATION_MS) {
+        clearInterval(timer);
+      }
+      setNow(currentNow);
+    }, 1000);
     return () => clearInterval(timer);
-  }, [anyRunning]);
+  }, [shouldTick, startedMs]);
 
   const statusVariant = TASK_STATUS_VARIANT[card.status];
   const taskStatusLabel =
@@ -123,6 +135,15 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
           </View>
         ) : null}
 
+        {isStalled ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, backgroundColor: colors.surface2 }}>
+            <Icon name="AlertTriangle" size={11} color={colors.statusWarning} />
+            <Text style={{ fontSize: ui(11), color: colors.statusWarning, fontWeight: "600" }}>
+              Stalled
+            </Text>
+          </View>
+        ) : null}
+
         <Text style={{ color: colors.foregroundMuted, fontSize: ui(12) }}>
           {t("workflows.stageProgress", { done: doneCount, total: totalStages })}
         </Text>
@@ -145,7 +166,7 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
           const assignedBot = botMap.get(stage.botId);
           const botLabel = assignedBot?.name ?? stage.botId;
           const engineLabel = stage.engine === "native" ? t("workflows.engineNative") : t("workflows.enginePaseoBot");
-          const isRunning = stage.status === "running";
+          const stageRunning = stage.status === "running";
           const isFailed = stage.status === "failed";
           const isDone = stage.status === "done";
           const stageDuration = formatElapsedDuration(stage.startedAt, stage.completedAt);
@@ -155,11 +176,11 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
               ? colors.statusSuccess
               : isFailed
                 ? colors.statusDanger
-                : isRunning
+                : stageRunning
                   ? colors.accent
                   : colors.foregroundMuted;
 
-          const borderColor = isRunning
+          const borderColor = stageRunning
             ? colors.accent
             : isFailed
               ? colors.statusDanger
@@ -184,9 +205,9 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
                   maxWidth: 240,
                   padding: 10,
                   borderRadius: 8,
-                  borderWidth: isRunning || isFailed ? 1.5 : 1,
+                  borderWidth: stageRunning || isFailed ? 1.5 : 1,
                   borderColor,
-                  backgroundColor: isRunning ? colors.surface2 : colors.surface0,
+                  backgroundColor: stageRunning ? colors.surface2 : colors.surface0,
                   gap: 6,
                 }}
               >
@@ -195,7 +216,7 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
                   <Text numberOfLines={1} style={{ flex: 1, color: colors.foreground, fontSize: ui(13), fontWeight: "600" }}>
                     {stage.name}
                   </Text>
-                  {isRunning && !reduceMotion ? (
+                  {stageRunning && !isStalled && !reduceMotion ? (
                     <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent }} />
                   ) : null}
                 </View>
