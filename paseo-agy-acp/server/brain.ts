@@ -1022,6 +1022,11 @@ export type BrainWatchHandle = (() => void) & {
   ready: Promise<void>
   /** Stop reading and await any in-flight pollOnce() to settle before returning. */
   drain: () => Promise<void>
+  runningTools?: () => ReadonlyArray<{
+    id: string
+    name: string
+    startedAt: number
+  }>
 }
 
 /** Tail complete JSONL records; the returned handle stops future emissions or cancels an active child turn. */
@@ -1304,6 +1309,9 @@ export function watchBrain(
         stopped = true
         clearInterval(timer)
         return inflight ? inflight.catch(() => undefined) : Promise.resolve()
+      },
+      runningTools() {
+        return timeline.runningTools()
       },
       cancel() {
         if (stopped) return Promise.resolve()

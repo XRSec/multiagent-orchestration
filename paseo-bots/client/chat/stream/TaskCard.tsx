@@ -6,15 +6,18 @@
  */
 
 import type { PluginTheme } from "@getpaseo/plugin";
-import { useSettings } from "@getpaseo/plugin/client";
+import { useRpc, useSettings } from "@getpaseo/plugin/client";
+import { useToast } from "@getpaseo/plugin/client/react-native";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { botSettings } from "../../../shared/bot";
+import { workflowResumeRpc } from "../../../shared/rpc";
 import type { TaskCard as TaskCardData, TaskCardWorkflowStage } from "../../../shared/task-card";
 import { Avatar } from "../../Avatar";
 import { useT } from "../../i18n";
 import { useReduceMotion } from "../../motion";
+import { nativeTokens } from "../../native";
 import { StatusBadge, type BadgeVariant } from "../../panel/controls";
 import { ui } from "../../typography";
 import { formatElapsedDuration, TaskStageModal } from "./TaskStageModal";
@@ -51,23 +54,52 @@ export interface TaskCardViewProps {
   colors: Colors;
   card: TaskCardData;
   onOpenChat?(chatId: string, botId?: string): void;
+  onResume?(taskId: string): void | Promise<void>;
 }
 
 /**
  * Renders a Task Pyramid group card and, when backed by a Route 3 Workflow DAG,
  * displays real-time stage status, bot assignment, resolved engine badge, dependencies, and retries.
  */
-export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
+export function TaskCardView({ colors, card, onOpenChat, onResume }: TaskCardViewProps) {
   const { t } = useT();
   const settings = useSettings(botSettings);
+  const resumeRpc = useRpc(workflowResumeRpc);
+  const toast = useToast();
   const reduceMotion = useReduceMotion();
   const bots = settings.status === "ready" ? settings.values.bots : [];
   const botMap = useMemo(() => new Map(bots.map((b) => [b.id, b])), [bots]);
 
   const [selectedStage, setSelectedStage] = useState<TaskCardWorkflowStage | null>(null);
+  const [resuming, setResuming] = useState(false);
+  const [resumedCard, setResumedCard] = useState<TaskCardData | null>(null);
 
-  const wf = card.workflow;
-  const isRunning = card.status === "running" && (wf?.status === "running" || wf?.stages.some((s) => s.status === "running"));
+  const activeCard = resumedCard && resumedCard.version > card.version ? resumedCard : card;
+  const wf = activeCard.workflow;
+  const canResume = activeCard.status === "blocked" || wf?.status === "failed";
+
+  const handleResume = async () => {
+    if (resuming) return;
+    setResuming(true);
+    try {
+      if (onResume) {
+        await onResume(activeCard.taskId);
+      } else {
+        const res = await resumeRpc({ taskId: activeCard.taskId });
+        if (res.ok) {
+          if (res.card) setResumedCard(res.card);
+          toast.show(t("workflows.resumeSuccess"), { variant: "success" });
+        } else {
+          toast.error(res.error ?? t("workflows.resumeFailed"));
+        }
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("workflows.resumeFailed"));
+    } finally {
+      setResuming(false);
+    }
+  };
+  const isRunning = activeCard.status === "running" && (wf?.status === "running" || wf?.stages.some((s) => s.status === "running"));
   const startedMs = wf?.startedAt ? Date.parse(wf.startedAt) : NaN;
   const [now, setNow] = useState(() => Date.now());
   const elapsedMs = Number.isFinite(startedMs) ? Math.max(0, now - startedMs) : 0;
@@ -86,15 +118,15 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
     return () => clearInterval(timer);
   }, [shouldTick, startedMs]);
 
-  const statusVariant = TASK_STATUS_VARIANT[card.status];
+  const statusVariant = TASK_STATUS_VARIANT[activeCard.status];
   const taskStatusLabel =
-    card.status === "done"
+    activeCard.status === "done"
       ? t("workflows.statusDone")
-      : card.status === "running"
+      : activeCard.status === "running"
         ? t("workflows.statusRunning")
-        : card.status === "blocked"
+        : activeCard.status === "blocked"
           ? t("workflows.statusFailed")
-          : card.status;
+          : activeCard.status;
 
   if (!wf) {
     return (
@@ -102,12 +134,12 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 24 }}>
           <Icon name="ListChecks" size={16} color={colors.foregroundMuted} />
           <Text numberOfLines={1} style={{ flex: 1, color: colors.foreground, fontSize: ui(14), fontWeight: "600", lineHeight: 22 }}>
-            {card.title}
+            {activeCard.title}
           </Text>
           <StatusBadge colors={colors} label={taskStatusLabel} variant={statusVariant} />
         </View>
         <Text style={{ color: colors.foregroundMuted, fontSize: ui(13), lineHeight: 18 }}>
-          {card.summary}
+          {activeCard.summary}
         </Text>
       </View>
     );
@@ -144,10 +176,35 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
           </View>
         ) : null}
 
-        <Text style={{ color: colors.foregroundMuted, fontSize: ui(12) }}>
+        <Text style={{ color: colors.foregroundMuted, fontSize: ui(12), fontVariant: ["tabular-nums"] }}>
           {t("workflows.stageProgress", { done: doneCount, total: totalStages })}
         </Text>
         <StatusBadge colors={colors} label={taskStatusLabel} variant={statusVariant} />
+        {canResume ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("workflows.resumeWorkflow")}
+            disabled={resuming}
+            onPress={() => void handleResume()}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
+              paddingHorizontal: 8,
+              paddingVertical: 4,
+              borderRadius: 6,
+              borderWidth: 1,
+              borderColor: colors.accent,
+              backgroundColor: colors.surface2,
+              opacity: resuming ? 0.6 : 1,
+            }}
+          >
+            <Icon name="RotateCcw" size={12} color={colors.accent} />
+            <Text style={{ fontSize: ui(11), fontWeight: "600", color: colors.accent }}>
+              {resuming ? t("workflows.resumingWorkflow") : t("workflows.resumeWorkflow")}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       {/* Horizontal Pipeline Stream Flow */}
@@ -171,22 +228,21 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
           const isDone = stage.status === "done";
           const stageDuration = formatElapsedDuration(stage.startedAt, stage.completedAt);
 
+          const tokens = nativeTokens(colors);
           const iconColor =
             isDone
               ? colors.statusSuccess
               : isFailed
                 ? colors.statusDanger
                 : stageRunning
-                  ? colors.accent
+                  ? tokens.brandClay
                   : colors.foregroundMuted;
 
           const borderColor = stageRunning
-            ? colors.accent
+            ? tokens.brandClay
             : isFailed
               ? colors.statusDanger
-              : isDone
-                ? colors.border
-                : colors.border;
+              : colors.border;
 
           return (
             <View key={stage.id} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
@@ -217,7 +273,7 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
                     {stage.name}
                   </Text>
                   {stageRunning && !isStalled && !reduceMotion ? (
-                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.accent }} />
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: tokens.brandClay }} />
                   ) : null}
                 </View>
 
@@ -237,7 +293,7 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
                   {stageDuration ? (
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
                       <Icon name="Clock" size={10} color={colors.foregroundMuted} />
-                      <Text style={{ color: colors.foregroundMuted, fontSize: ui(10) }}>
+                      <Text style={{ color: colors.foregroundMuted, fontSize: ui(10), fontVariant: ["tabular-nums"] }}>
                         {stageDuration}
                       </Text>
                     </View>
@@ -277,6 +333,8 @@ export function TaskCardView({ colors, card, onOpenChat }: TaskCardViewProps) {
           colors={colors}
           allStages={wf.stages}
           onOpenChat={onOpenChat}
+          onResume={canResume ? () => handleResume() : undefined}
+          resuming={resuming}
         />
       ) : null}
     </View>

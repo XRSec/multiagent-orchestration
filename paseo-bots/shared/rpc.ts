@@ -512,3 +512,9 @@ export const workflowRunsRpc = defineRpc({
   input: z.object({ limit: z.number().int().min(1).max(100).optional() }),
   output: z.object({ runs: z.array(TaskCardSchema) }),
 });
+
+export const workflowResumeRpc = defineRpc({
+  name: "bots.workflows.resume",
+  input: z.object({ taskId: z.string().min(1) }),
+  output: z.object({ ok: z.boolean(), card: TaskCardSchema.optional(), error: z.string().optional() }),
+});

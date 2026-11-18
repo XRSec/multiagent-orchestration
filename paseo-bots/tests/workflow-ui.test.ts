@@ -4,11 +4,13 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { formatElapsedDuration } from "../shared/workflows";
 import { taskCardOf, type TaskCardWorkflowStage } from "../shared/task-card";
 import { navigateToAgentChat, setGlobalNavigation } from "../client/navigation";
-import { TaskStageModal } from "../client/chat/stream/TaskStageModal";
+import { TaskStageModal, MarkdownText } from "../client/chat/stream/TaskStageModal";
+import { ProtocolCard } from "../client/chat/stream/ProtocolCard";
 import { TaskCardView, MAX_ACTIVE_DURATION_MS } from "../client/chat/stream/TaskCard";
 
 vi.mock("@getpaseo/plugin/client", () => ({
   useSettings: () => ({ status: "ready", values: { bots: [] } }),
+  useRpc: () => vi.fn(async () => ({ ok: true })),
 }));
 
 vi.mock("../client/motion", () => ({
@@ -201,6 +203,9 @@ describe("TaskStageModal onOpenChat navigation", () => {
     foreground: "#fff",
     foregroundMuted: "#888",
     accent: "#0f0",
+    statusWarning: "#fa0",
+    statusSuccess: "#0f0",
+    statusDanger: "#f00",
   } as any;
 
   it("invokes onOpenChat with stage.chatId and closes modal cleanly when clicking 打开伙伴对话", () => {
@@ -284,6 +289,52 @@ describe("TaskStageModal onOpenChat navigation", () => {
     const buttons = renderer!.root.findAllByProps({ "data-testid": "button" });
     const openChatBtn = buttons.find((b) => b.props["data-label"] === "workflows.openAgentChat");
     expect(openChatBtn).toBeUndefined();
+  });
+
+  it("renders <worker_handoff> via ProtocolCard instead of passing raw XML tags to MarkdownText", () => {
+    const stage: TaskCardWorkflowStage = {
+      id: "stage-handoff",
+      name: "Implementation",
+      botId: "bot-mocode",
+      engine: "native",
+      status: "done",
+      dependsOn: [],
+      retries: 0,
+      maxRetries: 1,
+      output: [
+        "Completed the requested edits.",
+        "",
+        "<worker_handoff>",
+        "STATUS: PASS",
+        "SUMMARY: Fixed raw handoff leak.",
+        "</worker_handoff>",
+      ].join("\n"),
+      chatId: "chat-handoff-1",
+    };
+
+    let renderer: ReactTestRenderer | undefined;
+    act(() => {
+      renderer = create(
+        React.createElement(TaskStageModal, {
+          open: true,
+          onClose: vi.fn(),
+          stage,
+          workflowName: "CI Workflow",
+          colors: dummyColors,
+        }),
+      );
+    });
+
+    const markdownNodes = renderer!.root.findAllByType(MarkdownText);
+    expect(markdownNodes.length).toBeGreaterThan(0);
+    for (const node of markdownNodes) {
+      expect(String(node.props.text)).not.toContain("<worker_handoff>");
+      expect(String(node.props.text)).not.toContain("</worker_handoff>");
+    }
+
+    const protocolCards = renderer!.root.findAllByType(ProtocolCard);
+    expect(protocolCards).toHaveLength(1);
+    expect(protocolCards[0]!.props.segment.tag).toBe("worker_handoff");
   });
 });
 
@@ -424,5 +475,127 @@ describe("workflowRunsRpc single listTasks scan (P2)", () => {
     const res = await workflowRunsHandler({ limit: 5 });
     expect(res.runs).toHaveLength(1);
     expect(listTasksMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("TaskCardView Resume/Retry button", () => {
+  const dummyColors = {
+    surface0: "#000",
+    surface1: "#111",
+    surface2: "#222",
+    border: "#333",
+    foreground: "#fff",
+    foregroundMuted: "#888",
+    accent: "#0f0",
+    statusWarning: "#fa0",
+    statusSuccess: "#0f0",
+    statusDanger: "#f00",
+  } as any;
+
+  it("renders Resume button for failed/blocked workflow and invokes onResume", async () => {
+    const onResume = vi.fn(async () => {});
+    const card = taskCardOf({
+      taskId: "task-failed-resume",
+      title: "Workflow: Failed Pipeline",
+      status: "blocked",
+      version: 2,
+      settledAt: "2026-01-01T00:05:00.000Z",
+      members: [],
+      workflow: {
+        workflowId: "wf-1",
+        workflowName: "Failed Pipeline",
+        status: "failed",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        completedAt: "2026-01-01T00:05:00.000Z",
+        stages: [
+          {
+            id: "s1",
+            name: "Stage 1",
+            botId: "bot-mocode",
+            engine: "native",
+            status: "failed",
+            dependsOn: [],
+            retries: 1,
+            maxRetries: 1,
+            error: "Process exited",
+            output: null,
+            chatId: null,
+            startedAt: "2026-01-01T00:00:00.000Z",
+            completedAt: "2026-01-01T00:05:00.000Z",
+            prompt: null,
+          },
+        ],
+      },
+    });
+
+    let renderer: ReactTestRenderer | undefined;
+    act(() => {
+      renderer = create(
+        React.createElement(TaskCardView, {
+          colors: dummyColors,
+          card,
+          onResume,
+        }),
+      );
+    });
+
+    const pressables = renderer!.root.findAllByType("Pressable" as any);
+    const resumeBtn = pressables.find((p) => p.props.accessibilityLabel === "workflows.resumeWorkflow");
+    expect(resumeBtn).toBeDefined();
+
+    await act(async () => {
+      await resumeBtn!.props.onPress();
+    });
+    expect(onResume).toHaveBeenCalledWith("task-failed-resume");
+  });
+
+  it("does not render Resume button when workflow is done", () => {
+    const card = taskCardOf({
+      taskId: "task-done-no-resume",
+      title: "Workflow: Done Pipeline",
+      status: "done",
+      version: 2,
+      settledAt: "2026-01-01T00:05:00.000Z",
+      members: [],
+      workflow: {
+        workflowId: "wf-1",
+        workflowName: "Done Pipeline",
+        status: "done",
+        startedAt: "2026-01-01T00:00:00.000Z",
+        completedAt: "2026-01-01T00:05:00.000Z",
+        stages: [
+          {
+            id: "s1",
+            name: "Stage 1",
+            botId: "bot-mocode",
+            engine: "native",
+            status: "done",
+            dependsOn: [],
+            retries: 0,
+            maxRetries: 1,
+            error: null,
+            output: "All good",
+            chatId: null,
+            startedAt: "2026-01-01T00:00:00.000Z",
+            completedAt: "2026-01-01T00:05:00.000Z",
+            prompt: null,
+          },
+        ],
+      },
+    });
+
+    let renderer: ReactTestRenderer | undefined;
+    act(() => {
+      renderer = create(
+        React.createElement(TaskCardView, {
+          colors: dummyColors,
+          card,
+        }),
+      );
+    });
+
+    const pressables = renderer!.root.findAllByType("Pressable" as any);
+    const resumeBtn = pressables.find((p) => p.props.accessibilityLabel === "workflows.resumeWorkflow");
+    expect(resumeBtn).toBeUndefined();
   });
 });

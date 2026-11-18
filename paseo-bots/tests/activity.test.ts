@@ -192,8 +192,8 @@ describe("memory journal, daily log and search_chats", () => {
     await turnEnded(host, journal, scheduler, { agent: { ...agent, id: "other-agent" }, turnId: "t2", outcome: { kind: "completed" }, timeline });
     await turnEnded(host, journal, scheduler, { agent, turnId: "t3", outcome: { kind: "canceled", reason: "stopped" }, timeline });
     expect(refetched).toEqual([
-      { id: agent.id, options: { direction: "tail", projection: "projected", limit: 80 } },
-      { id: agent.id, options: { direction: "tail", projection: "projected", limit: 80 } },
+      { id: agent.id, options: { direction: "tail", projection: "projected", limit: 1, wholeTurns: true } },
+      { id: agent.id, options: { direction: "tail", projection: "projected", limit: 1, wholeTurns: true } },
     ]);
     expect((await listLogDays("bot-s")).days).toEqual([{ day: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), lines: 1 }]);
     const [entry] = await recentLogEntries("bot-s", 1);

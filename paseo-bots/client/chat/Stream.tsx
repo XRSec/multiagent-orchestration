@@ -18,6 +18,8 @@ import {
 import type { ComposerAttachment } from "../../shared/attachments";
 import type { BotVoice } from "../../shared/bot";
 import { bookmarkMatchesRow, type MessageBookmark } from "../../shared/bookmarks";
+import { isImeComposing } from "../keyboard";
+import { CDS_EASE_OUT, motionDuration, useReduceMotion } from "../motion";
 import { CONTENT_MAX_WIDTH, nativeTokens } from "../native";
 import { sentAttachments } from "../sent-attachments";
 import { canSpeak, speak, stopSpeaking } from "../speech";
@@ -41,7 +43,12 @@ type Colors = PluginTheme["colors"];
 const WEB_NEAR_BOTTOM = 64;
 const NATIVE_NEAR_BOTTOM = 32;
 const HISTORY_START_THRESHOLD = 96;
+export const SCROLL_PIN_COOLDOWN_MS = 150;
 const EMPTY_ATTACHMENTS: ComposerAttachment[] = [];
+
+export function canPinScrollToEnd(lastUserScrollAt: number, now = Date.now(), cooldownMs = SCROLL_PIN_COOLDOWN_MS): boolean {
+  return lastUserScrollAt === 0 || now - lastUserScrollAt >= cooldownMs;
+}
 
 export interface ChatStreamProps {
   colors: Colors;
@@ -99,6 +106,11 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
   // scrollToEnd can therefore emit a scroll away from the eventual bottom.
   // Keep following those measurements until the reader deliberately scrolls.
   const initialFollow = useRef(!inverted);
+  const lastUserScrollAt = useRef(0);
+  const markUserScroll = () => {
+    initialFollow.current = false;
+    lastUserScrollAt.current = Date.now();
+  };
   const metrics = useRef({ offset: 0, content: 0, viewport: 0 });
   /** Set while an older page loads on web, so content added above doesn't move the reader. */
   const olderAnchor = useRef(false);
@@ -112,6 +124,7 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
   const scrollToBottom = useCallback(
     (animated: boolean) => {
       initialFollow.current = !inverted;
+      lastUserScrollAt.current = 0;
       updateNearBottom(true);
       if (inverted) list.current?.scrollToOffset({ offset: 0, animated });
       else scrollWebListToEnd(list.current, animated);
@@ -153,18 +166,18 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
       }
       return;
     }
-    if (nearBottomRef.current && height !== previous) scrollWebListToEnd(list.current);
+    if (nearBottomRef.current && height !== previous && canPinScrollToEnd(lastUserScrollAt.current)) scrollWebListToEnd(list.current);
   };
 
   const onLayout = (event: LayoutChangeEvent) => {
     metrics.current.viewport = event.nativeEvent.layout.height;
-    if (!inverted && nearBottomRef.current) scrollWebListToEnd(list.current);
+    if (!inverted && nearBottomRef.current && canPinScrollToEnd(lastUserScrollAt.current)) scrollWebListToEnd(list.current);
   };
 
   useEffect(() => {
     if (inverted || chat.loading) return;
     return watchWebListSize(list.current, () => {
-      if (initialFollow.current || nearBottomRef.current) scrollWebListToEnd(list.current);
+      if ((initialFollow.current || nearBottomRef.current) && canPinScrollToEnd(lastUserScrollAt.current)) scrollWebListToEnd(list.current);
     });
   }, [inverted, chat.loading]);
 
@@ -343,11 +356,12 @@ export function ChatStream({ colors, chat, api, agentId, compact, platform, type
     <View
       style={{ flex: 1, backgroundColor: colors.surface0 }}
       {...(platform === "web" ? {
-        onWheel: () => { initialFollow.current = false; },
-        onTouchStart: () => { initialFollow.current = false; },
-        onPointerDown: () => { initialFollow.current = false; },
-        onKeyDown: (event: { key?: string; nativeEvent?: { key?: string } }) => {
-          if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key ?? event.nativeEvent?.key ?? "")) initialFollow.current = false;
+        onWheel: markUserScroll,
+        onTouchStart: markUserScroll,
+        onPointerDown: markUserScroll,
+        onKeyDown: (event: { key?: string; isComposing?: boolean; keyCode?: number; nativeEvent?: { key?: string; isComposing?: boolean; keyCode?: number } }) => {
+          if (isImeComposing(event)) return;
+          if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key ?? event.nativeEvent?.key ?? "")) markUserScroll();
         },
       } : {})}
     >
@@ -427,19 +441,25 @@ const StreamItem = memo(function StreamItem({ item, context, typeVersion }: { it
 
 /** view.tsx scroll-to-bottom: 48 round surface2 button with ChevronDown 24, fading in and out. */
 function ScrollToBottomButton({ colors, visible, onPress }: { colors: Colors; visible: boolean; onPress(): void }) {
+  const reduceMotion = useReduceMotion();
   const opacity = useRef(new Animated.Value(visible ? 1 : 0)).current;
   const [mounted, setMounted] = useState(visible);
   useEffect(() => {
     if (visible) setMounted(true);
-    if (Platform.OS === "android") {
+    if (Platform.OS === "android" || reduceMotion) {
       opacity.setValue(visible ? 1 : 0);
       if (!visible) setMounted(false);
       return;
     }
-    const animation = Animated.timing(opacity, { toValue: visible ? 1 : 0, duration: 200, useNativeDriver: Platform.OS !== "web" });
+    const animation = Animated.timing(opacity, {
+      toValue: visible ? 1 : 0,
+      duration: motionDuration(200, reduceMotion),
+      easing: CDS_EASE_OUT,
+      useNativeDriver: Platform.OS !== "web",
+    });
     animation.start(({ finished }) => finished && !visible && setMounted(false));
     return () => animation.stop();
-  }, [visible, opacity]);
+  }, [visible, opacity, reduceMotion]);
   if (!mounted) return null;
   const tokens = nativeTokens(colors);
   return (

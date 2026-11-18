@@ -26,6 +26,7 @@ import {
 import { Avatar, TeamLogo } from "../Avatar";
 import { useBotHost, useHostWorkspaces } from "../data";
 import { useT } from "../i18n";
+import { isImeComposing } from "../keyboard";
 import { nativeTokens } from "../native";
 import { getGlobalNavigation } from "../navigation";
 import { ui } from "../typography";
@@ -85,10 +86,6 @@ const MAX_INPUT_HEIGHT = 200;
 
 function clampInputHeight(height: number, minHeight = MIN_INPUT_HEIGHT): number {
   return Math.max(minHeight, Math.min(MAX_INPUT_HEIGHT, Math.ceil(height)));
-}
-
-function isImeComposing(event: { isComposing?: boolean; keyCode?: number }): boolean {
-  return Boolean(event.isComposing) || event.keyCode === 229;
 }
 
 export function BotLauncherCore(props: BotLauncherCoreProps) {
@@ -928,7 +925,7 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
                           style={[
                             styles.stageBadgeText,
                             {
-                              color: isSelected ? (colors.accentForeground ?? "#ffffff") : colors.foregroundMuted,
+                              color: isSelected ? (colors.accentForeground ?? tokens.warmPaper) : colors.foregroundMuted,
                             },
                           ]}
                         >
@@ -995,7 +992,7 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
                 <Icon name="Plus" size={16} color={colors.foregroundMuted} />
                 {attachments.length > 0 ? (
                   <View style={[styles.attachBadge, { backgroundColor: colors.accent, position: "absolute", top: -2, right: -4 }]}>
-                    <Text style={[styles.attachBadgeText, { color: colors.accentForeground ?? "#fff" }]}>
+                    <Text style={[styles.attachBadgeText, { color: colors.accentForeground ?? tokens.warmPaper, fontVariant: ["tabular-nums"] }]}>
                       {attachments.length}
                     </Text>
                   </View>
@@ -1103,15 +1100,15 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
                 style={({ pressed }) => [
                   styles.roundSendBtn,
                   {
-                    backgroundColor: canSubmit ? "#15803d" : colors.surface2,
+                    backgroundColor: canSubmit ? tokens.brandClay : colors.surface2,
                     opacity: canSubmit ? (pressed ? 0.85 : 1) : 0.6,
                   },
                 ]}
               >
                 {isSubmitting ? (
-                  <ActivityIndicator size="small" color="#ffffff" />
+                  <ActivityIndicator size="small" color={colors.accentForeground ?? tokens.warmPaper} />
                 ) : (
-                  <Icon name="CornerDownLeft" size={15} color={canSubmit ? "#ffffff" : colors.foregroundMuted} />
+                  <Icon name="CornerDownLeft" size={15} color={canSubmit ? (colors.accentForeground ?? tokens.warmPaper) : colors.foregroundMuted} />
                 )}
               </Pressable>
             </View>

@@ -13,8 +13,8 @@ import { WORKFLOW_STAGE_LABEL, WORKFLOW_TASK_LABEL } from "./workflow-runner";
 // What happens around each turn of a bot's chat: the journal notes memory
 // changes, and the daily log gets a line saying what the bot did.
 
-/** How much of a chat is read back after a turn: enough for a tool-heavy one. */
-const TURN_TAIL = 80;
+/** How many turns to read back after a turn ends (0.16+ wholeTurns API). */
+const TURN_TAIL = 1;
 
 export async function turnStarted(host: BotsHost, journal: MemoryJournal, { agent }: { agent: Pick<PluginHookEvents["agent.turn.before"]["agent"], "id"> }): Promise<void> {
   const botId = await host.botIdOf(agent.id);
@@ -25,7 +25,7 @@ export async function turnEnded(
   host: BotsHost,
   journal: MemoryJournal,
   scheduler: Pick<RoutineScheduler, "finished">,
-  { agent, outcome, timeline }: { agent: Pick<PluginHookEvents["agent.turn.after"]["agent"], "id" | "title"> & { workspaceId?: string | null; parentAgentId?: string | null; provider?: string; cwd?: string }; outcome: PluginHookEvents["agent.turn.after"]["outcome"]; turnId?: string | null; timeline?: unknown },
+  { agent, outcome, turnId, timeline }: { agent: Pick<PluginHookEvents["agent.turn.after"]["agent"], "id" | "title"> & { workspaceId?: string | null; parentAgentId?: string | null; provider?: string; cwd?: string }; outcome: PluginHookEvents["agent.turn.after"]["outcome"]; turnId?: string | null; timeline?: unknown },
   curator?: Pick<MemoryCurator, "isCurationAgent" | "curateTurnFallback">,
 ): Promise<void> {
   const chat = await host.chatOf(agent.id);
@@ -33,7 +33,7 @@ export async function turnEnded(
   const { botId } = chat;
   const title = chat.title?.trim() || agent.title?.trim() || "Untitled chat";
   const memoryChanged = await journal.end(botId, { id: agent.id, title });
-  const items = timeline && Array.isArray(timeline) && timeline.length > 0 ? timeline : await latestItems(host, agent.id);
+  const items = timeline && Array.isArray(timeline) && timeline.length > 0 ? timeline : await latestItems(host, agent.id, turnId);
   const { reply, tools } = lastTurn(items);
   const userText = lastUserText(items);
   if (chat.routineId) await scheduler.finished(chat.routineId, agent.id, outcome, reply);
@@ -65,13 +65,16 @@ export async function turnEnded(
 }
 
 /**
- * The newest items of a chat, read back from Paseo: since Paseo 0.13 the turn-ended hook's
- * own `timeline` is always empty. Empty when the chat can't be read.
+ * The newest turn of a chat, read back from Paseo: since Paseo 0.16 the turn-ended hook
+ * omits `timeline` completely; refetch the tail turn with `wholeTurns: true` and filter by `turnId`.
  */
-async function latestItems(host: BotsHost, agentId: string): Promise<{ type: string; text?: unknown; name?: unknown }[]> {
+async function latestItems(host: BotsHost, agentId: string, turnId?: string | null): Promise<{ type: string; text?: unknown; name?: unknown }[]> {
   const page = await host.paseo?.agents
     .ref(agentId)
-    .timeline.refetch({ direction: "tail", projection: "projected", limit: TURN_TAIL })
+    .timeline.refetch({ direction: "tail", projection: "projected", limit: TURN_TAIL, wholeTurns: true })
     .catch(() => null);
-  return (page?.entries ?? []).map((entry) => entry.item as { type: string; text?: unknown; name?: unknown });
+  const entries = (page?.entries ?? []) as { turnId?: string | null; item: unknown }[];
+  const hasTurnIds = turnId && entries.some((entry) => entry.turnId != null);
+  const filtered = hasTurnIds ? entries.filter((entry) => entry.turnId === turnId) : entries;
+  return filtered.map((entry) => entry.item as { type: string; text?: unknown; name?: unknown });
 }

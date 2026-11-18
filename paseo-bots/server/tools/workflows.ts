@@ -10,7 +10,7 @@ import {
 } from "../../shared/workflows";
 import { openTask, readTask } from "../tasks";
 import { publishWorkflowCard } from "../task-cards";
-import { runWorkflowDag, type StageDispatchContext, type StageDispatchResult } from "../workflow-runner";
+import { resumeWorkflow, runWorkflowDag, type StageDispatchContext, type StageDispatchResult } from "../workflow-runner";
 import { defineTool, type ToolCaller } from "./mcp";
 
 const WORKFLOW_WAIT_MS = 45_000;
@@ -188,6 +188,34 @@ export const runWorkflowTool = defineTool({
     const statusLine = res.settled
       ? `${workflowSummaryText(res.state)} (task ${res.taskId})`
       : `Started ${res.scope} workflow "${res.workflow.name}" (task ${res.taskId}). Live progress card is tracking stages in chat.`;
+    return `${statusLine}\n${stageLines}`;
+  },
+});
+
+export const resumeWorkflowTool = defineTool({
+  name: "resume_workflow",
+  description:
+    "Resume a failed or blocked workflow run from its completed stages. Preserves completed stage outputs and handoffs, resets failed/skipped stages to pending, and re-runs the DAG.",
+  input: z.object({
+    task_id: z.string().trim().min(1).max(200).describe("Task ID of the failed or blocked workflow run to resume."),
+    wait: z.boolean().optional().describe("Wait up to 45s for the resumed workflow to finish (default false)."),
+  }),
+  async run({ task_id, wait = false }, caller) {
+    const res = await resumeWorkflow({
+      host: caller.host,
+      relay: caller.relay,
+      taskId: task_id,
+      wait,
+    });
+    if (!res.ok || !res.state) {
+      throw new Error(res.error ?? `Failed to resume workflow task "${task_id}".`);
+    }
+    const stageLines = res.state.stages
+      .map((s) => `- ${s.name} (${s.id}): bot=${s.botId}, engine=${s.engine}, status=${s.status}`)
+      .join("\n");
+    const statusLine = res.settled
+      ? `${workflowSummaryText(res.state)} (task ${task_id})`
+      : `Resumed workflow "${res.state.workflowName}" (task ${task_id}). Live progress card is tracking stages in chat.`;
     return `${statusLine}\n${stageLines}`;
   },
 });

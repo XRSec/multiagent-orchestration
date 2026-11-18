@@ -11,6 +11,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Animated, Easing, Platform, View } from "react-native";
 import type { ChatBucket } from "../shared/sidebar";
 import { formatBucketLabel, useT } from "./i18n";
+import { useReduceMotion } from "./motion";
 import type { NativeTokens } from "./native";
 
 type Colors = PluginTheme["colors"];
@@ -101,8 +102,9 @@ const ringRotation = ringProgress.interpolate({ inputRange: [0, 1], outputRange:
 let ringUsers = 0;
 let ringLoop: Animated.CompositeAnimation | null = null;
 
-function useRingClock() {
+function useRingClock(reduceMotion: boolean) {
   useEffect(() => {
+    if (reduceMotion) return;
     ringUsers += 1;
     if (!ringLoop) {
       ringProgress.setValue(0);
@@ -118,12 +120,13 @@ function useRingClock() {
         ringLoop = null;
       }
     };
-  }, []);
-  return ringRotation;
+  }, [reduceMotion]);
+  return reduceMotion ? "0deg" : ringRotation;
 }
 
 function StatusRing({ color, backdrop }: { color: string; backdrop?: string }) {
-  const rotate = useRingClock();
+  const reduceMotion = useReduceMotion();
+  const rotate = useRingClock(reduceMotion);
   const circle = { width: 12, height: 12, borderRadius: 6, borderWidth: 1.5 } as const;
   return (
     <View style={{ width: RING_FRAME, height: RING_FRAME, borderRadius: RING_FRAME / 2, alignItems: "center", justifyContent: "center", backgroundColor: backdrop }}>

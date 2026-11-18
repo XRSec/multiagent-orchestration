@@ -74,6 +74,9 @@ export const WorkflowRunStateSchema = z.object({
   teamSessionId: z.string().optional(),
   sessionBoardPath: z.string().optional(),
   chatsArchivedAt: z.string().nullable().optional(),
+  callerAgentId: z.string().optional(),
+  callerBotId: z.string().optional(),
+  userInput: z.string().optional(),
 });
 export type WorkflowRunState = z.infer<typeof WorkflowRunStateSchema>;
 

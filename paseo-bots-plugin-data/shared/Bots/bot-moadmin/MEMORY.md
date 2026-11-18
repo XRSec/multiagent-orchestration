@@ -26,7 +26,7 @@
   - `wf-moadmin-closed-loop` wires cross-hop `dependsOn` edges (`moci-verify` -> `["moadmin-plan", "mocode-impl"]`; `modoc-writeback` -> `["mocode-impl", "moadmin-review"]`) so QA and doc specialists receive upstream DoD and `TOUCHED_FILES` directly.
 - **`paseo-bots/client` UI & CDS Adaptation**:
   - `paseo-bots/client` runs on React Native (`react-native` / `react-native-web`) + `@getpaseo/plugin` `PluginTheme` (`theme.ts`, `native.ts`, `motion.ts`, `typography.ts`), with `tsc --noEmit` and `vitest run` in `paseo-bots/package.json`.
-  - When applying `/open-claude-ui` (CDS), bridge tokens, single-stroke borders, clay/accent role separation, `prefers-reduced-motion` curves, IME composition guards, 150ms scroll-pinning cooldown, and `tabular-nums` natively into RN primitives—never paste raw HTML/CSS.
+  - CDS contracts implemented natively (never raw HTML/CSS): `brandClay`/`warmPaper` tokens with zero `#000000`/`#ffffff`/`#fff` UI values (`native.ts`), single-stroke `Button` borders (`panel/controls.tsx`), `tabular-nums` alignment, `motion.ts` spring/bezier presets + `useReduceMotion()`, `isImeComposing` (`keyboard.ts`) across inputs, and `150ms` `canPinScrollToEnd` cooldown (`Stream.tsx`).
 
 ## reference
 - **Active Memory Shards**:
@@ -38,5 +38,6 @@
   - Bot roster & workflows SSOT: `paseo-bots-plugin-settings/bots.json`
   - Settings mutation & schema helper: `paseo-bots/shared/changes.ts`, `paseo-bots/shared/bot.ts`
   - Workflow engine, contracts & live UI: `paseo-bots/server/workflow-runner.ts`, `paseo-bots/shared/workflows.ts`, `paseo-bots/shared/protocol-cards.ts`, `paseo-bots/client/chat/stream/ProtocolCard.tsx`, `paseo-bots/client/WorkflowsScreen.tsx` (`bots.workflows.runs` RPC)
+  - CDS UI, motion & edge-guard spec: `docs/paseo/paseo-bots-client-ui-and-cds.md` (`paseo-bots/client/native.ts`, `paseo-bots/client/motion.ts`, `paseo-bots/client/keyboard.ts`)
   - Workflow architecture spec: `docs/paseo/paseo-bots-workflow-engine-and-routing.md` (`v1.2.0`)
   - Desktop Bots surface & chat routing: `paseo-bots/client/BotsSurfaceReady.tsx`, `paseo-bots/client/navigation.ts`

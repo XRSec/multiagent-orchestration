@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "bots": {
+      "type": "http",
+      "url": "http://127.0.0.1:54645/bots/bot-moci/c56d6f88-1cc3-4f40-8982-e6358687909b",
+      "headers": {
+        "Authorization": "Bearer 44dc374a3c916767cc539f5338dcd7f2471eefeac8c2e543ee1abce1e0005d7b"
+      }
+    }
+  }
+}

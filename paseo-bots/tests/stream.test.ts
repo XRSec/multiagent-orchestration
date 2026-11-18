@@ -311,3 +311,54 @@ describe("chat keyboard dismissal", () => {
     expect(chatKeyboardDismissMode("android")).toBe("on-drag");
   });
 });
+
+describe("TASK_CARD plugin rows", () => {
+  it("parses TASK_CARD plugin timeline items into standalone task-card rows and supports findRows", async () => {
+    const { PLUGIN_ID } = await import("../shared/version");
+    const { TASK_CARD } = await import("../shared/task-card");
+
+    const rows = buildRows(
+      [
+        entry(
+          {
+            type: "plugin",
+            pluginId: PLUGIN_ID,
+            kind: TASK_CARD.kind,
+            version: TASK_CARD.version,
+            data: {
+              taskId: "wf-123",
+              title: "Workflow: Delivery Pipeline",
+              status: "blocked",
+              summary: "1/2 done, 1 failed",
+              memberCount: 2,
+              engines: ["native"],
+              settledAt: "2026-01-01T00:05:00.000Z",
+              version: 3,
+              workflow: {
+                workflowId: "wf-delivery",
+                workflowName: "Delivery Pipeline",
+                status: "failed",
+                stages: [
+                  { id: "s1", name: "Plan", botId: "bot-moadmin", engine: "native", status: "done", dependsOn: [], retries: 0, maxRetries: 1 },
+                  { id: "s2", name: "Code", botId: "bot-mocode", engine: "native", status: "failed", dependsOn: ["s1"], retries: 1, maxRetries: 1, error: "Boom" },
+                ],
+              },
+            },
+          },
+          { seqStart: 10 },
+        ),
+      ],
+      false,
+    );
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.kind).toBe("task-card");
+    if (rows[0]!.kind === "task-card") {
+      expect(rows[0]!.card.taskId).toBe("wf-123");
+      expect(rows[0]!.card.workflow?.workflowName).toBe("Delivery Pipeline");
+    }
+
+    const items = layoutStream(rows, false).items;
+    expect(findRows(items, "delivery pipeline")).toEqual([0]);
+  });
+});

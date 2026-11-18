@@ -2,6 +2,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon } from "@getpaseo/plugin/client/ui";
 import { useEffect, useRef } from "react";
 import { ActivityIndicator, Platform, Pressable, Text, TextInput, View, type NativeSyntheticEvent, type TextInputKeyPressEventData } from "react-native";
+import { isImeComposing } from "../keyboard";
 import { CONTENT_MAX_WIDTH, nativeTokens, useHover } from "../native";
 import { ui } from "../typography";
 import { tooltip } from "../ui/Tooltip";
@@ -38,7 +39,8 @@ export function FindBar({
   const tokens = nativeTokens(colors);
   const input = useRef<TextInput>(null);
   useEffect(() => input.current?.focus(), []);
-  const onKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData & { shiftKey?: boolean }>) => {
+  const onKeyPress = (event: NativeSyntheticEvent<TextInputKeyPressEventData & { shiftKey?: boolean; isComposing?: boolean; keyCode?: number }>) => {
+    if (isImeComposing(event)) return;
     const { key, shiftKey } = event.nativeEvent;
     if (key === "Escape") onClose();
     else if (key === "Enter") {
@@ -83,7 +85,7 @@ export function FindBar({
           style={{ flex: 1, minWidth: 0, padding: 0, height: 24, fontSize: ui(14), color: colors.foreground, outlineWidth: 0 }}
         />
         {busy ? <ActivityIndicator size="small" color={colors.foregroundMuted} /> : null}
-        {!busy && query.trim() ? <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>{total ? `${position} of ${total}` : "No matches"}</Text> : null}
+        {!busy && query.trim() ? <Text style={{ fontSize: ui(12), color: colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>{total ? `${position} of ${total}` : "No matches"}</Text> : null}
         <FindButton colors={colors} icon="ChevronUp" label="Older match" onPress={onOlder} />
         <FindButton colors={colors} icon="ChevronDown" label="Newer match" onPress={onNewer} />
         <FindButton colors={colors} icon="X" label="Close find" onPress={onClose} />

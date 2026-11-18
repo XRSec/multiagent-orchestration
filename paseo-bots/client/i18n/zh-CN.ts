@@ -1457,5 +1457,9 @@ export const zhCN: DeepStringRecord<typeof en> = {
     refreshRuns: "刷新",
     noRunsYet: "暂无工作流运行记录。",
     activeRunsBadge: "{{count}} 个运行中",
+    resumeWorkflow: "继续执行",
+    resumingWorkflow: "正在恢复...",
+    resumeSuccess: "工作流已恢复执行。",
+    resumeFailed: "恢复工作流失败。",
   },
 } as const;

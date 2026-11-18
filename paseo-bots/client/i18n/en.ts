@@ -1451,5 +1451,9 @@ export const en = {
     refreshRuns: "Refresh",
     noRunsYet: "No workflow runs recorded yet.",
     activeRunsBadge: "{{count}} running",
+    resumeWorkflow: "Resume",
+    resumingWorkflow: "Resuming...",
+    resumeSuccess: "Workflow resumed.",
+    resumeFailed: "Failed to resume workflow.",
   },
 } as const;

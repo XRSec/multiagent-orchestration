@@ -428,6 +428,26 @@ new AgentSideConnection((client) => {
         })
         await new Promise(() => {})
       }
+      if (text.startsWith('spawn-child-and-hang:')) {
+        const childId = text.slice('spawn-child-and-hang:'.length)
+        await client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: `call-${childId}`,
+            title: 'invoke_subagent',
+            status: 'completed',
+            rawOutput: { conversationId: childId },
+          },
+        })
+        await new Promise<void>((resolve) => {
+          if (canceled.has(sessionId)) resolve()
+          else cancels.set(sessionId, resolve)
+        })
+        cancels.delete(sessionId)
+        canceled.delete(sessionId)
+        return { stopReason: 'cancelled' as const }
+      }
       if (text === 'metadata-subagent-stream-then-hang') {
         for (let i = 0; i < 6; i++) {
           await new Promise((resolve) => setTimeout(resolve, 30))

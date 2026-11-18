@@ -197,6 +197,25 @@ export async function updateTaskWorkflow(taskId: string, updater: (workflow: Wor
   });
 }
 
+/** Re-opens a settled or failed workflow task under its lease lock so it can be resumed. */
+export async function reopenTaskWorkflow(taskId: string, updater: (workflow: WorkflowRunState) => WorkflowRunState): Promise<TaskRecord> {
+  return withTaskLock(taskId, async () => {
+    const existing = await readTask(taskId);
+    if (!existing) throw new Error(`There is no task line "${taskId}" to reopen workflow state.`);
+    if (!existing.workflow) throw new Error(`Task line "${taskId}" has no workflow state.`);
+    const nextWorkflow = updater(existing.workflow);
+    const now = new Date().toISOString();
+    return writeRecord({
+      ...existing,
+      workflow: nextWorkflow,
+      status: "running",
+      settledAt: null,
+      version: existing.version + 1,
+      updatedAt: now,
+    });
+  });
+}
+
 /** Updates the recorded chatId for a specific workflow stage immediately. */
 export async function updateTaskStageChatId(taskId: string, stageId: string, chatId: string): Promise<TaskRecord> {
   return updateTaskWorkflow(taskId, (wf) => ({

@@ -1,8 +1,11 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { join } from "node:path";
 import { checkAppCall, type AppLimit } from "../shared/apps";
 import type { Bot, McpServerConfig } from "../shared/bot";
 import { chatEngine } from "../shared/chat";
+import { pluginDataPath } from "./bot-home";
 import { accounts, appTools, connectedSlugs, deadline, readState, session, writeState } from "./composio";
 import type { BotsHost } from "./host";
 import { answerMcp, type BotTool } from "./tools/mcp";
@@ -76,6 +79,102 @@ async function appLimits(bot: Bot): Promise<Map<string, AppLimit>> {
   return limits;
 }
 
+export const DEFAULT_RELAY_PORT = 54645;
+export const RELAY_BIND_MAX_RETRIES = 5;
+export const RELAY_BIND_RETRY_DELAY_MS = 150;
+
+/**
+ * Resolves the preferred port to listen on.
+ * Highest precedence: PASEO_BOTS_PORT environment variable.
+ * In Vitest test environments (process.env.VITEST), defaults to 0 (ephemeral)
+ * to avoid test workers colliding on 54645, unless explicitly overridden.
+ * In production, preserves savedPort if valid, otherwise falls back to DEFAULT_RELAY_PORT (54645).
+ */
+export function resolvePreferredPort(
+  savedPort?: number | null,
+  options?: { isTest?: boolean },
+): number {
+  if (process.env.PASEO_BOTS_PORT) {
+    const parsed = Number(process.env.PASEO_BOTS_PORT);
+    if (Number.isInteger(parsed) && parsed > 0 && parsed <= 65535) return parsed;
+  }
+  const isTest = options?.isTest ?? !!process.env.VITEST;
+  if (isTest) {
+    return 0;
+  }
+  if (savedPort && Number.isInteger(savedPort) && savedPort > 0 && savedPort <= 65535) {
+    return savedPort;
+  }
+  return DEFAULT_RELAY_PORT;
+}
+
+/**
+ * Fast health probe to verify if the relay is up and responding on the specified port.
+ */
+export async function probeRelayHealth(port: number, timeoutMs = 1000): Promise<boolean> {
+  if (!port || port <= 0 || port > 65535) return false;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      method: "GET",
+      signal: deadline(timeoutMs),
+    });
+    if (!res.ok) return false;
+    const body = (await res.json().catch(() => null)) as { ok?: boolean } | null;
+    return !!body?.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Recursively scans directory for *.mcp.json files and replaces old loopback port with new port.
+ */
+export async function resyncMcpArtifacts(
+  oldPort: number,
+  newPort: number,
+  rootDir?: string,
+): Promise<number> {
+  if (oldPort === newPort || oldPort <= 0 || newPort <= 0) return 0;
+  const root = rootDir ?? pluginDataPath();
+  const oldPattern = `127.0.0.1:${oldPort}`;
+  const newTarget = `127.0.0.1:${newPort}`;
+  const oldHostPattern = `localhost:${oldPort}`;
+  const newHostTarget = `localhost:${newPort}`;
+
+  let updatedCount = 0;
+
+  async function walk(dir: string): Promise<void> {
+    let entries: import("node:fs").Dirent[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const fullPath = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === ".git") continue;
+        await walk(fullPath);
+      } else if (entry.isFile() && (entry.name === ".mcp.json" || entry.name.endsWith(".mcp.json"))) {
+        try {
+          const content = await readFile(fullPath, "utf8");
+          if (content.includes(oldPattern) || content.includes(oldHostPattern)) {
+            let replaced = content.split(oldPattern).join(newTarget);
+            replaced = replaced.split(oldHostPattern).join(newHostTarget);
+            await writeFile(fullPath, replaced, "utf8");
+            updatedCount++;
+          }
+        } catch (err) {
+          console.warn(`[paseo-bots] Failed to rewrite port in ${fullPath}:`, err);
+        }
+      }
+    }
+  }
+
+  await walk(root);
+  return updatedCount;
+}
+
 export class Relay {
   private server: Server | null = null;
   private listening: Promise<number> | null = null;
@@ -90,36 +189,139 @@ export class Relay {
     this.routes.push(route);
   }
 
-  /** Starts listening, on the previous port when it's free so running chats keep their URLs. */
-  start(): Promise<number> {
-    this.listening ??= (async () => {
-      const state = await readState();
+  get isListening(): boolean {
+    return this.server !== null && this.server.listening;
+  }
+
+  get port(): number | null {
+    if (!this.server || !this.server.listening) return null;
+    const address = this.server.address();
+    return typeof address === "object" && address ? address.port : null;
+  }
+
+  private tryListen(port: number): Promise<{ server: Server; port: number }> {
+    return new Promise((resolve, reject) => {
       const server = createServer((request, response) => void this.handle(request, response));
-      const listen = (port: number) =>
-        new Promise<number>((resolve, reject) => {
-          server.once("error", reject);
-          server.listen(port, "127.0.0.1", () => {
-            server.off("error", reject);
-            resolve((server.address() as { port: number }).port);
-          });
-        });
-      let port: number;
-      try {
-        port = await listen(state.port ?? 0);
-      } catch {
-        port = await listen(0);
+      const onError = (err: unknown) => {
+        cleanup();
+        try {
+          server.closeAllConnections?.();
+          server.close();
+        } catch {
+          // ignore
+        }
+        reject(err);
+      };
+      const onListening = () => {
+        cleanup();
+        const address = server.address();
+        const boundPort = typeof address === "object" && address ? address.port : port;
+        resolve({ server, port: boundPort });
+      };
+      const cleanup = () => {
+        server.removeListener("error", onError);
+        server.removeListener("listening", onListening);
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(port, "127.0.0.1");
+    });
+  }
+
+  /** Starts listening, on the preferred port when it's free so running chats keep their URLs. */
+  start(options?: { port?: number; maxRetries?: number; retryDelayMs?: number }): Promise<number> {
+    if (this.isListening && this.port !== null) return Promise.resolve(this.port);
+    if (this.listening) return this.listening;
+    this.listening = (async () => {
+      const state = await readState();
+      const preferred = options?.port ?? resolvePreferredPort(state.port);
+      const maxRetries = options?.maxRetries ?? (preferred > 0 ? RELAY_BIND_MAX_RETRIES : 0);
+      const retryDelay = options?.retryDelayMs ?? RELAY_BIND_RETRY_DELAY_MS;
+
+      let bound: { server: Server; port: number } | null = null;
+      let lastError: unknown = null;
+
+      if (preferred > 0) {
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+          try {
+            bound = await this.tryListen(preferred);
+            break;
+          } catch (err: unknown) {
+            lastError = err;
+            const isAddressInUse = (err as NodeJS.ErrnoException)?.code === "EADDRINUSE";
+            if (isAddressInUse && attempt < maxRetries) {
+              await new Promise((resolve) => setTimeout(resolve, retryDelay));
+              continue;
+            }
+            break;
+          }
+        }
       }
-      this.server = server;
-      if (port !== state.port) await writeState({ port });
-      return port;
-    })();
+
+      if (!bound) {
+        if (preferred > 0) {
+          console.warn(
+            `[paseo-bots] Preferred relay port ${preferred} unavailable after retries (${lastError instanceof Error ? lastError.message : String(lastError)}); falling back to ephemeral port 0...`,
+          );
+        }
+        bound = await this.tryListen(0);
+      }
+
+      this.server = bound.server;
+      const actualPort = bound.port;
+
+      if (state.port !== actualPort) {
+        const oldPort = state.port;
+        await writeState({ port: actualPort });
+        if (oldPort && oldPort !== actualPort) {
+          try {
+            await resyncMcpArtifacts(oldPort, actualPort);
+          } catch (resyncErr) {
+            console.error("[paseo-bots] Failed to resync MCP artifacts after port change:", resyncErr);
+          }
+        }
+      }
+
+      return actualPort;
+    })().catch((err) => {
+      this.listening = null;
+      throw err;
+    });
     return this.listening;
   }
 
-  stop() {
-    this.server?.close();
+  async stop(): Promise<void> {
+    const s = this.server;
     this.server = null;
     this.listening = null;
+    if (!s) return;
+    try {
+      s.closeIdleConnections?.();
+    } catch {
+      // ignore
+    }
+    await new Promise<void>((resolve) => {
+      let resolved = false;
+      const done = () => {
+        if (!resolved) {
+          resolved = true;
+          resolve();
+        }
+      };
+      const timer = setTimeout(() => {
+        try {
+          s.closeAllConnections?.();
+        } catch {
+          // ignore
+        }
+        done();
+      }, 250);
+      timer.unref?.();
+      s.close(() => {
+        clearTimeout(timer);
+        done();
+      });
+    });
   }
 
   /** The connected-apps server for a bot's chats, or null when connected apps aren't set up. */
@@ -140,6 +342,17 @@ export class Relay {
   private async handle(request: IncomingMessage, response: ServerResponse) {
     try {
       const path = (request.url ?? "").split("?")[0] ?? "";
+      if (path === "/health" || path === "/bots/health") {
+        if (request.method === "GET" || request.method === "HEAD") {
+          return json(response, 200, {
+            ok: true,
+            status: "healthy",
+            port: this.port,
+            pid: process.pid,
+          });
+        }
+        return response.writeHead(405, { allow: "GET, HEAD" }).end();
+      }
       const apps = /^\/mcp\/([^/]+)$/.exec(path);
       if (apps) return await this.handleApps(request, response, apps[1]!);
       const tools = /^\/bots\/([^/]+)\/([^/]+)$/.exec(path);

@@ -13,6 +13,7 @@ import {
   sendBotMessage,
 } from "../shared/chat";
 import { ASKED_BY_LABEL, ASKED_IN_LABEL, ASK_NOTIFY_LABEL } from "../shared/handoff";
+import { taskCardOf, type TaskCard } from "../shared/task-card";
 import { newUuid } from "../shared/uuid";
 import {
   buildStageBriefPrompt,
@@ -35,6 +36,7 @@ import {
   listTasks,
   readTask,
   rekeyMember,
+  reopenTaskWorkflow,
   reserveMemberSlot,
   settleTask,
   updateTaskStageChatId,
@@ -80,6 +82,7 @@ export interface StageDispatchContext {
   stageSeatKey?: string;
   stallTimeoutMs?: number;
   hardTimeoutMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface StageDispatchResult {
@@ -105,6 +108,7 @@ export interface RunWorkflowOptions {
   backoffBaseMs?: number;
   teamSessionId?: string;
   sessionBoardPath?: string;
+  signal?: AbortSignal;
   /** Optional hook for testing or custom stage dispatch. */
   dispatchStage?: (ctx: StageDispatchContext) => Promise<StageDispatchResult>;
 }
@@ -245,11 +249,25 @@ export function injectWorkspaceSnapshotToPrompt(
   return `<repair_brief>\n${snapshotBlock}\n</repair_brief>\n\n${prompt}`;
 }
 
+/** Returns true only when an error explicitly indicates the agent/chat does not exist. */
+function isAgentNotFoundError(error: unknown): boolean {
+  if (!error) return false;
+  const msg = typeof error === "string" ? error : error instanceof Error ? error.message : String(error);
+  return (
+    /\bnot\s+found\b/i.test(msg) ||
+    /\bunknown\s+(?:agent|chat)\b/i.test(msg) ||
+    /\bdoes\s+not\s+exist\b/i.test(msg) ||
+    /\bno\s+such\s+(?:agent|chat)\b/i.test(msg) ||
+    /\b404\b/i.test(msg)
+  );
+}
+
 export interface StageHeartbeatWaitResult {
   completed: boolean;
   stalled: boolean;
   hardTimedOut: boolean;
   agentDisappeared: boolean;
+  aborted?: boolean;
   agent: any | null;
   error?: string;
 }
@@ -266,11 +284,13 @@ export async function waitForStageWithHeartbeat(
     stallTimeoutMs?: number;
     hardTimeoutMs?: number;
     pollIntervalMs?: number;
+    signal?: AbortSignal;
   },
 ): Promise<StageHeartbeatWaitResult> {
   const stallTimeoutMs = options?.stallTimeoutMs ?? DEFAULT_STALL_TIMEOUT_MS;
   const hardTimeoutMs = options?.hardTimeoutMs ?? DEFAULT_STAGE_HARD_TIMEOUT_MS;
   const pollIntervalMs = options?.pollIntervalMs ?? 1000;
+  const signal = options?.signal;
 
   const ref = paseo.agents.ref(chatId);
   const startTime = Date.now();
@@ -295,6 +315,10 @@ export async function waitForStageWithHeartbeat(
 
   try {
     while (true) {
+      if (signal?.aborted) {
+        return { completed: false, stalled: false, hardTimedOut: false, agentDisappeared: false, aborted: true, agent: null, error: `Stage wait aborted for chat "${chatId}".` };
+      }
+
       const now = Date.now();
       if (now - startTime >= hardTimeoutMs) {
         return { completed: false, stalled: false, hardTimedOut: true, agentDisappeared: false, agent: null };
@@ -304,7 +328,30 @@ export async function waitForStageWithHeartbeat(
       }
 
       // Check current agent state
-      const snapshot = await ref.refresh().catch(() => null);
+      let snapshot: any = null;
+      let refreshError: unknown = null;
+      try {
+        snapshot = await ref.refresh();
+      } catch (err) {
+        refreshError = err;
+      }
+
+      if (signal?.aborted) {
+        return { completed: false, stalled: false, hardTimedOut: false, agentDisappeared: false, aborted: true, agent: null, error: `Stage wait aborted for chat "${chatId}".` };
+      }
+
+      if (refreshError !== null) {
+        if (isAgentNotFoundError(refreshError)) {
+          return { completed: false, stalled: false, hardTimedOut: false, agentDisappeared: true, agent: null };
+        }
+        // Transient IPC/transport/connection/shutdown error: retry polling instead of treating as disappeared.
+        const timeRemainingStall = stallTimeoutMs - (Date.now() - lastActivityTime);
+        const timeRemainingHard = hardTimeoutMs - (Date.now() - startTime);
+        const chunkWaitMs = Math.max(10, Math.min(pollIntervalMs, Math.max(1, timeRemainingStall), Math.max(1, timeRemainingHard)));
+        await new Promise((r) => setTimeout(r, chunkWaitMs));
+        continue;
+      }
+
       const agent = snapshot?.agent;
       if (!agent) {
         return { completed: false, stalled: false, hardTimedOut: false, agentDisappeared: true, agent: null };
@@ -487,8 +534,12 @@ async function defaultStageDispatcher(
   const waitResult = await waitForStageWithHeartbeat(paseo, chatId, {
     stallTimeoutMs,
     hardTimeoutMs,
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
   });
 
+  if (waitResult.aborted) {
+    return { ok: false, error: waitResult.error ?? `Stage "${ctx.stage.name}" was aborted.`, chatId };
+  }
   if (waitResult.agentDisappeared) {
     return { ok: false, error: `Chat "${chatId}" disappeared before completing.`, chatId };
   }
@@ -698,6 +749,7 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
     stallTimeoutMs,
     hardTimeoutMs,
     backoffBaseMs,
+    signal,
     dispatchStage,
   } = options;
 
@@ -740,6 +792,9 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
     ...wf,
     teamSessionId: wf.teamSessionId ?? teamSessionId,
     sessionBoardPath: wf.sessionBoardPath ?? sessionBoardPath,
+    ...(callerAgentId && !wf.callerAgentId ? { callerAgentId } : {}),
+    ...(callerBotId && !wf.callerBotId ? { callerBotId } : {}),
+    ...(userInput !== undefined && wf.userInput === undefined ? { userInput } : {}),
   }));
 
   while (true) {
@@ -930,6 +985,7 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
             stageSeatKey,
             stallTimeoutMs: effectiveStallTimeoutMs,
             hardTimeoutMs: effectiveHardTimeoutMs,
+            ...(signal ? { signal } : {}),
           };
           result = dispatchStage
             ? await dispatchStage(ctx)
@@ -986,7 +1042,7 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
           }).catch(() => null);
 
           // Apply exponential backoff ONLY for transient API/network errors before next retry
-          if (stageState.retries < stageDef.maxRetries && isTransientApiError(errorMessage)) {
+          if (!signal?.aborted && stageState.retries < stageDef.maxRetries && isTransientApiError(errorMessage)) {
             const backoffMs = computeBackoffMs(stageState.retries, backoffBaseMs);
             if (backoffMs > 0) {
               await new Promise((resolve) => setTimeout(resolve, backoffMs));
@@ -997,7 +1053,7 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
             ...wf,
             stages: wf.stages.map((s) => {
               if (s.id !== stageState.id) return s;
-              if (s.retries < s.maxRetries) {
+              if (!signal?.aborted && s.retries < s.maxRetries) {
                 return {
                   ...s,
                   engine: resolvedEngine,
@@ -1030,11 +1086,148 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
 
 const ORPHAN_REASON = "Workflow runner interrupted (process restarted or runner stopped).";
 
+function workflowDefinitionFromState(wf: WorkflowRunState): WorkflowDefinition {
+  return {
+    id: wf.workflowId,
+    name: wf.workflowName,
+    description: "",
+    stages: wf.stages.map((s) => ({
+      id: s.id,
+      name: s.name,
+      botId: s.botId,
+      prompt: s.prompt ?? "",
+      engine: s.engine,
+      dependsOn: s.dependsOn,
+      maxRetries: s.maxRetries,
+      ...(s.skillIds ? { skillIds: s.skillIds } : {}),
+      ...(s.mcpServerIds ? { mcpServerIds: s.mcpServerIds } : {}),
+    })),
+  };
+}
+
+export interface ResumeWorkflowOptions {
+  host: BotsHost;
+  relay: Relay;
+  taskId: string;
+  wait?: boolean;
+  waitTimeoutMs?: number;
+  dispatchStage?: (ctx: StageDispatchContext) => Promise<StageDispatchResult>;
+}
+
+export interface ResumeWorkflowResult {
+  ok: boolean;
+  card?: TaskCard;
+  state?: WorkflowRunState;
+  settled?: boolean;
+  error?: string;
+}
+
+/**
+ * Resumes a failed or blocked workflow task from its preserved completed stages.
+ */
+export async function resumeWorkflow(options: ResumeWorkflowOptions): Promise<ResumeWorkflowResult> {
+  const { host, relay, taskId, wait = false, waitTimeoutMs = 45_000, dispatchStage } = options;
+
+  if (isWorkflowTaskActive(taskId)) {
+    return { ok: false, error: `Workflow task "${taskId}" is already running.` };
+  }
+
+  const existing = await readTask(taskId).catch(() => null);
+  if (!existing || !existing.workflow) {
+    return { ok: false, error: `Workflow task "${taskId}" not found.` };
+  }
+  if (existing.workflow.status !== "failed" && existing.status !== "blocked") {
+    return {
+      ok: false,
+      error: `Workflow task "${taskId}" is "${existing.workflow.status}" and cannot be resumed.`,
+    };
+  }
+
+  const values = await host.values().catch(() => null);
+  const group = existing.groupId
+    ? (values?.groups ?? []).find((g) => g.id === existing.groupId) ?? null
+    : null;
+  const workflowId = existing.workflow.workflowId;
+  const workflow =
+    group?.workflows?.find((w) => w.id === workflowId)
+    ?? values?.workflows?.find((w) => w.id === workflowId)
+    ?? workflowDefinitionFromState(existing.workflow);
+
+  const reopened = await reopenTaskWorkflow(taskId, (wf) => ({
+    ...wf,
+    status: "running",
+    completedAt: null,
+    chatsArchivedAt: null,
+    currentStageIds: [],
+    stages: wf.stages.map((s) =>
+      s.status === "done"
+        ? s
+        : {
+            ...s,
+            status: "pending" as const,
+            error: null,
+            completedAt: null,
+            startedAt: null,
+            chatId: null,
+            retries: 0,
+          },
+    ),
+  }));
+
+  const reopenedWf = reopened.workflow!;
+  const callerAgentId = reopenedWf.callerAgentId ?? reopened.cardAgentId;
+  await publishWorkflowCard(host, taskId, callerAgentId).catch(() => false);
+  const card = taskCardOf(reopened);
+
+  const dagPromise = runWorkflowDag({
+    host,
+    relay,
+    taskId,
+    workflow,
+    userInput: reopenedWf.userInput,
+    group,
+    callerBotId: reopenedWf.callerBotId,
+    callerAgentId,
+    notifyCallerOnSettle: true,
+    ...(dispatchStage ? { dispatchStage } : {}),
+  });
+
+  if (wait) {
+    const outcome = await Promise.race([
+      dagPromise.then((state) => ({ settled: true as const, state })),
+      new Promise<{ settled: false }>((resolve) => setTimeout(() => resolve({ settled: false }), waitTimeoutMs)),
+    ]);
+    if (outcome.settled) {
+      const latest = await readTask(taskId).catch(() => null);
+      return {
+        ok: true,
+        card: latest ? taskCardOf(latest) : card,
+        state: outcome.state,
+        settled: true,
+      };
+    }
+    const latest = await readTask(taskId).catch(() => null);
+    return {
+      ok: true,
+      card: latest ? taskCardOf(latest) : card,
+      state: latest?.workflow ?? reopenedWf,
+      settled: false,
+    };
+  }
+
+  void dagPromise.catch((error: unknown) => {
+    console.error(`paseo-bots: resumed workflow "${workflow.id}" (task ${taskId}) crashed`, error);
+  });
+
+  return { ok: true, card, state: reopenedWf, settled: false };
+}
+
 export interface ReconcileOrphanWorkflowsOptions {
   host?: BotsHost;
   staleAfterMs?: number;
   nowMs?: number;
   tasks?: TaskRecord[];
+  republish?: boolean;
 }
 
 /**
@@ -1076,7 +1269,7 @@ export async function reconcileOrphanWorkflows(options?: ReconcileOrphanWorkflow
               ) {
                 let reply = "";
                 if (ref.timeline && typeof ref.timeline.refetch === "function") {
-                  const page = await ref.timeline.refetch({ direction: "tail", projection: "projected", limit: 80 }).catch(() => null);
+                  const page = await ref.timeline.refetch({ direction: "tail", projection: "projected", limit: 80, wholeTurns: true }).catch(() => null);
                   const items = (page?.entries ?? []).map((entry: any) => entry.item as { type: string; text?: unknown; name?: unknown });
                   reply = lastTurn(items).reply.trim();
                 }
@@ -1161,10 +1354,27 @@ export async function reconcileOrphanWorkflows(options?: ReconcileOrphanWorkflow
     if (!settled) {
       const currentTask = await readTask(task.taskId).catch(() => null);
       const isDone = currentTask?.workflow?.status === "done";
-      await settleTask(task.taskId, {
+      const settleRes = await settleTask(task.taskId, {
         status: isDone ? "done" : "blocked",
         note: isDone ? undefined : ORPHAN_REASON,
       }).catch(() => null);
+      if (settleRes?.settled) settled = true;
+    }
+
+    if (options?.host?.paseo && settled) {
+      const currentTask = await readTask(task.taskId).catch(() => null);
+      const wfState = currentTask?.workflow ?? task.workflow;
+      const notifyTarget = wfState.callerAgentId ?? currentTask?.cardAgentId ?? task.cardAgentId;
+      if (notifyTarget) {
+        await notifyWorkflowCallerOnSettle(options.host, {
+          callerAgentId: notifyTarget,
+          callerBotId: wfState.callerBotId,
+          workflow: workflowDefinitionFromState(wfState),
+          state: wfState,
+        }).catch((err) => {
+          console.warn(`paseo-bots: failed to wake caller agent "${notifyTarget}" on orphan workflow settlement:`, err);
+        });
+      }
     }
 
     if (options?.host?.paseo) {

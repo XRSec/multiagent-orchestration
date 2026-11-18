@@ -68,6 +68,7 @@ Authoritative registry of all repository documentation, organized into **Project
 | [design/paseo-bots/shards/03-workflow-engine-and-routing.md](design/paseo-bots/shards/03-workflow-engine-and-routing.md) | Shard 03: Three-Tier Routing, Declarative Workflow DAG & Resilient Execution | en-US | 125 | CURRENT |
 | [design/paseo-bots/shards/04-task-pyramid-and-settlement.md](design/paseo-bots/shards/04-task-pyramid-and-settlement.md) | Shard 04: Task Pyramid, File Leases & Idempotent Card Settlement | en-US | 115 | CURRENT |
 | [design/paseo-bots/shards/05-fallback-routines-and-surfaces.md](design/paseo-bots/shards/05-fallback-routines-and-surfaces.md) | Shard 05: Same-Provider Model Fallback, Routines, Analytics & Client Surfaces | en-US | 99 | CURRENT |
+| [design/paseo-bots/shards/06-client-ui-and-cds.md](design/paseo-bots/shards/06-client-ui-and-cds.md) | Shard 06: Client UI, CDS Tokens, Motion & Edge Guards | en-US | 80 | CURRENT |
 
 ### 7. Cross-Runtime Agent Architecture Patterns (`design/patterns/`)
 | Document | Title | Language | Lines | Status |

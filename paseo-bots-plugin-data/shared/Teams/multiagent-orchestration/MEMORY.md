@@ -14,9 +14,14 @@
 - **Engineering & Documentation Guardrails**:
   - Never invoke `rm` or `rm -rf`; always use universal safe delete (`SAFE_DELETE_BIN` or Node `fs.rmSync`).
   - Author internal specs, manifests, skills, and memory files in dense rule-first `en-US` with zero machine-specific absolute paths (D7); communicate with the operator in concise `zh-CN`.
+- **`paseo-bots/client` CDS UI, Motion Physics & Edge Guards**:
+  - `paseo-bots/client/native.ts` bridges CDS clay/paper tokens (`brandClay`, `brandClayPressed`, `brandClaySoft`, `warmPaper`) natively into `PluginTheme` with zero `#000000`/`#ffffff`/`#fff` UI violations; `panel/controls.tsx` `Button` strips borders on `secondary`/`ghost` for single-stroke containment, and numeric metrics/timers use `tabular-nums`.
+  - `paseo-bots/client/motion.ts` exports calibrated spring/bezier presets (`SPRING_BOUNCY`, `SPRING_SNAPPY`, `SPRING_GENTLE`, `SPRING_HEAVY_SNAP`, `CDS_EASE_OUT`, `CDS_WEB_CURVE`) gated by `useReduceMotion()` (`prefers-reduced-motion`).
+  - `paseo-bots/client/keyboard.ts` (`isImeComposing`) guards CJK IME composition across `Composer.tsx`, `FindBar.tsx`, `Stream.tsx`, and `BotLauncherCore.tsx`; `Stream.tsx` enforces a `150ms` `canPinScrollToEnd` cooldown.
 
 ## reference
 - **Workflow Subsystem & UI Pointers**:
   - Engine & blackboard helpers: `paseo-bots/server/workflow-runner.ts`, `paseo-bots/shared/workflows.ts`, `paseo-bots/shared/protocol-cards.ts`
   - Live workflow runs RPC, protocol cards & routing UI: `paseo-bots/shared/rpc.ts` (`bots.workflows.runs`), `paseo-bots/index.server.ts`, `paseo-bots/client/WorkflowsScreen.tsx`, `paseo-bots/client/chat/stream/ProtocolCard.tsx`, `paseo-bots/client/navigation.ts`, `paseo-bots/client/BotsSurfaceReady.tsx`
+  - CDS UI, motion & edge-guard spec: `docs/paseo/paseo-bots-client-ui-and-cds.md` (`paseo-bots/client/native.ts`, `paseo-bots/client/motion.ts`, `paseo-bots/client/keyboard.ts`)
   - Architecture & storage specs: `docs/paseo/paseo-bots-workflow-engine-and-routing.md` (`v1.2.0`), `docs/paseo/paseo-bots-configuration-and-storage.md`

@@ -1,6 +1,24 @@
 import { useEffect, useState } from "react";
 import { Dimensions, Keyboard, LayoutAnimation, Platform, TurboModuleRegistry, NativeModules, type KeyboardEvent } from "react-native";
 
+export type ImeLikeEvent =
+  | {
+      isComposing?: boolean;
+      keyCode?: number;
+      nativeEvent?: { isComposing?: boolean; keyCode?: number };
+    }
+  | null
+  | undefined;
+
+/**
+ * Guard against CJK IME composition Enter/Escape events (Safari/WebKit sends keyCode 229).
+ */
+export function isImeComposing(event: ImeLikeEvent): boolean {
+  if (!event) return false;
+  const target = event.nativeEvent ?? event;
+  return Boolean(target.isComposing) || target.keyCode === 229;
+}
+
 /** Paseo's keyboard shift (keyboard/shift/internal/policy.ts): iOS heights below this are the predictive bar alone. */
 const IOS_KEYBOARD_MIN_HEIGHT = 120;
 

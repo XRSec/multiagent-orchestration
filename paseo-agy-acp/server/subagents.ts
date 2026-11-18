@@ -13,6 +13,13 @@ import {
 export const isSubagentMessage = (name: string) =>
   isNativeToolName(name, 'send_message')
 
+export interface RunningChildInfo {
+  childSessionId: string
+  childNativeId: string
+  lastActivityAt: number
+  runningTools: ReadonlyArray<{ id: string; name: string; startedAt: number }>
+}
+
 export interface SubagentRegistryOptions {
   sessionId: string
   cwd: string
@@ -24,6 +31,8 @@ export interface SubagentRegistryOptions {
   isLoading: () => boolean
   isUnavailable: () => boolean
   retryTimeoutMs?: number
+  pollIntervalMs?: number
+  onChildActivity?: (childId: string, event: ProviderEvent) => void
 }
 
 /** Own child sub-session watchers, parent-child ownership, and resumption for one root session. */
@@ -36,6 +45,8 @@ export class SubagentRegistry {
   >()
   private killedChildren = new Set<string>()
   private resuming = new Set<string>()
+  private childLastActivity = new Map<string, number>()
+  private lastActivityAt = Date.now()
   private opts: SubagentRegistryOptions
 
   constructor(opts: SubagentRegistryOptions) {
@@ -64,6 +75,37 @@ export class SubagentRegistry {
 
   hasRunningChildren(): boolean {
     return [...this.children.values()].some((child) => child.isRunning())
+  }
+
+  getLastActivityAt(): number {
+    return this.lastActivityAt
+  }
+
+  recordActivity(childId?: string, timestamp = Date.now()): void {
+    this.lastActivityAt = timestamp
+    if (childId) {
+      this.childLastActivity.set(childId, timestamp)
+    }
+  }
+
+  getRunningChildrenInfo(): RunningChildInfo[] {
+    const prefix = `${this.opts.sessionId}:child:`
+    const list: RunningChildInfo[] = []
+    for (const [childId, handle] of this.children) {
+      if (handle.isRunning()) {
+        const nativeId = childId.startsWith(prefix)
+          ? childId.slice(prefix.length)
+          : childId
+        list.push({
+          childSessionId: childId,
+          childNativeId: nativeId,
+          lastActivityAt:
+            this.childLastActivity.get(childId) ?? this.lastActivityAt,
+          runningTools: handle.runningTools ? handle.runningTools() : [],
+        })
+      }
+    }
+    return list
   }
 
   getChildFailure = (
@@ -161,6 +203,10 @@ export class SubagentRegistry {
           (handle !== undefined && this.children.get(childId) !== handle)
         )
           return
+        const now = Date.now()
+        this.lastActivityAt = now
+        this.childLastActivity.set(childId, now)
+        this.opts.onChildActivity?.(childId, event)
         if (event.type === 'timeline.item')
           this.linkSubsession(childId, nativeId, event.item)
         if (event.type === 'session.turn') {
@@ -179,7 +225,7 @@ export class SubagentRegistry {
         }
         this.opts.emit(event)
       },
-      1000,
+      this.opts.pollIntervalMs ?? 1000,
       this.opts.isParentTurnActive,
       resume,
       (subagents) => {
@@ -211,6 +257,9 @@ export class SubagentRegistry {
     if (this.resuming.has(childId)) return
     this.resuming.add(childId)
     this.childFailures.delete(nativeId)
+    const now = Date.now()
+    this.lastActivityAt = now
+    this.childLastActivity.set(childId, now)
     void existing.cancel().then(() => {
       this.resuming.delete(childId)
       if (
@@ -273,6 +322,9 @@ export class SubagentRegistry {
       ) {
         this.resumeChild(nativeId, childId, existing)
       } else if (!existing) {
+        const now = Date.now()
+        this.lastActivityAt = now
+        this.childLastActivity.set(childId, now)
         this.opts.emit({
           type: 'session.opened',
           sessionId: childId,
@@ -305,6 +357,7 @@ export class SubagentRegistry {
     }
     this.children.clear()
     this.childFailures.clear()
+    this.childLastActivity.clear()
     await Promise.all(handles.map((h) => h.drain().catch(() => undefined)))
   }
 
@@ -355,6 +408,7 @@ export class SubagentRegistry {
       this.children.delete(childId)
       this.killedChildren.delete(childId)
       this.resuming.delete(childId)
+      this.childLastActivity.delete(childId)
       if (!this.opts.isUnavailable()) {
         this.opts.emit({ type: 'session.closed', sessionId: childId })
       }

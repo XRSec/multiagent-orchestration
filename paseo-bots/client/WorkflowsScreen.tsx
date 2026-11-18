@@ -6,11 +6,12 @@
  */
 
 import { useRpc, type PluginOpenScreenInput, type PluginScreenProps } from "@getpaseo/plugin/client";
+import { useToast } from "@getpaseo/plugin/client/react-native";
 import { Icon, ScrollView, SettingsCard, SettingsRow, SettingsSection } from "@getpaseo/plugin/client/ui";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Pressable, Text, View } from "react-native";
-import { workflowRunsRpc } from "../shared/rpc";
+import { workflowResumeRpc, workflowRunsRpc } from "../shared/rpc";
 import type { WorkflowDefinition } from "../shared/workflows";
 import { AvatarTheme } from "./Avatar";
 import { TaskCardView } from "./chat/stream/TaskCard";
@@ -40,6 +41,8 @@ function WorkflowsContent({ theme, openScreen, navigation }: PluginScreenProps &
   const { t } = useT();
   const { settings, commit } = useBotSettings();
   const fetchRuns = useRpc(workflowRunsRpc);
+  const resumeRun = useRpc(workflowResumeRpc);
+  const toast = useToast();
 
   const [selectedScope, setSelectedScope] = useState<string>("global");
 
@@ -149,6 +152,15 @@ function WorkflowsContent({ theme, openScreen, navigation }: PluginScreenProps &
                       openScreen(chatScreen({ botId, chatId }, botMap.get(botId)?.name ?? botId));
                     }
                   }}
+                  onResume={async (taskId) => {
+                    const res = await resumeRun({ taskId });
+                    if (res.ok) {
+                      toast.show(t("workflows.resumeSuccess"), { variant: "success" });
+                      await runsQuery.refetch();
+                    } else {
+                      toast.error(res.error ?? t("workflows.resumeFailed"));
+                    }
+                  }}
                 />
               ))}
             </View>
@@ -201,7 +213,7 @@ function WorkflowsContent({ theme, openScreen, navigation }: PluginScreenProps &
                 }}
               >
                 <Icon name="Globe" size={14} color={selectedScope === "global" ? colors.accent : colors.foregroundMuted} />
-                <Text style={{ fontSize: ui(13), fontWeight: "500", color: selectedScope === "global" ? colors.foreground : colors.foregroundMuted }}>
+                <Text style={{ fontSize: ui(13), fontWeight: "500", color: selectedScope === "global" ? colors.foreground : colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
                   {t("workflows.globalTemplates")} ({globalWorkflows.length})
                 </Text>
               </Pressable>
@@ -228,7 +240,7 @@ function WorkflowsContent({ theme, openScreen, navigation }: PluginScreenProps &
                     }}
                   >
                     <Icon name="Users" size={14} color={isSelected ? colors.accent : colors.foregroundMuted} />
-                    <Text style={{ fontSize: ui(13), fontWeight: "500", color: isSelected ? colors.foreground : colors.foregroundMuted }}>
+                    <Text style={{ fontSize: ui(13), fontWeight: "500", color: isSelected ? colors.foreground : colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
                       {group.name} ({count})
                     </Text>
                   </Pressable>

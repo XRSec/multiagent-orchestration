@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Animated, Dimensions, Easing, PanResponder, Platform, View } from "react-native";
+import { Animated, Dimensions, PanResponder, Platform, View } from "react-native";
 import { useT } from "../i18n";
+import { CDS_EASE_OUT, motionDuration, SPRING_SNAPPY, useReduceMotion } from "../motion";
 
 // This plugin typechecks without the DOM library. Declare only what this module uses.
 type PointerEventLike = { clientX: number; clientY: number };
@@ -112,8 +113,9 @@ const layers: object[] = [];
  * list), otherwise the level slides away and closes.
  */
 export function SlideOver({ onClose, onBack, children }: { onClose(): void; onBack?: () => boolean; children: ReactNode }) {
+  const reduceMotion = useReduceMotion();
   const width = Dimensions.get("window").width;
-  const offset = useRef(new Animated.Value(width)).current;
+  const offset = useRef(new Animated.Value(reduceMotion ? 0 : width)).current;
   const [closing, setClosing] = useState(false);
   const handlers = useRef({ onClose, onBack });
   handlers.current = { onClose, onBack };
@@ -121,15 +123,29 @@ export function SlideOver({ onClose, onBack, children }: { onClose(): void; onBa
 
   useEffect(() => {
     layers.push(layer);
-    Animated.timing(offset, { toValue: 0, duration: 250, easing: Easing.out(Easing.cubic), useNativeDriver: native }).start();
+    if (reduceMotion) {
+      offset.setValue(0);
+    } else {
+      Animated.timing(offset, { toValue: 0, duration: motionDuration(250, reduceMotion), easing: CDS_EASE_OUT, useNativeDriver: native }).start();
+    }
     return () => void layers.splice(layers.indexOf(layer), 1);
-  }, [offset, layer]);
+  }, [offset, layer, reduceMotion]);
 
-  const settle = () => Animated.spring(offset, { toValue: 0, useNativeDriver: native, bounciness: 0 }).start();
+  const settle = () => {
+    if (reduceMotion) {
+      offset.setValue(0);
+      return;
+    }
+    Animated.spring(offset, { toValue: 0, useNativeDriver: native, ...SPRING_SNAPPY }).start();
+  };
   const dismiss = () => {
     if (closing) return;
     setClosing(true);
-    Animated.timing(offset, { toValue: width, duration: 200, easing: Easing.in(Easing.cubic), useNativeDriver: native }).start(() => handlers.current.onClose());
+    if (reduceMotion) {
+      handlers.current.onClose();
+      return;
+    }
+    Animated.timing(offset, { toValue: width, duration: motionDuration(200, reduceMotion), easing: CDS_EASE_OUT, useNativeDriver: native }).start(() => handlers.current.onClose());
   };
   const finish = useRef(dismiss);
   finish.current = () => {

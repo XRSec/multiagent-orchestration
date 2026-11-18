@@ -684,7 +684,7 @@ export function installWebTooltips(appearance: () => WebTooltipAppearance): () =
       fontSize: `${look.fontSize}px`,
       lineHeight: "1.4",
       whiteSpace: "normal",
-      transition: "opacity 80ms ease-out",
+      transition: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "none" : "opacity 80ms cubic-bezier(0.16, 1, 0.3, 1)",
       opacity: "0",
       left: "-9999px",
       top: "-9999px",

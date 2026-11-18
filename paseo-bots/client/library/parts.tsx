@@ -106,7 +106,7 @@ export function AppLogo({ colors, app, size = 20 }: { colors: Colors; app: Pick<
   }
   const inner = Math.round(size * 0.75);
   return (
-    <View style={{ width: size, height: size, borderRadius: radius, alignItems: "center", justifyContent: "center", backgroundColor: "#ffffff" }}>
+    <View style={{ width: size, height: size, borderRadius: radius, alignItems: "center", justifyContent: "center", backgroundColor: nativeTokens(colors).warmPaper }}>
       <Image key={uri} accessibilityIgnoresInvertColors source={{ uri }} resizeMode="contain" onError={() => setFailed((count) => count + 1)} style={{ width: inner, height: inner }} />
     </View>
   );

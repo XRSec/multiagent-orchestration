@@ -32,7 +32,7 @@ import { listAnalyticsSessions } from "./server/analytics/sessions";
 import { deleteAnalyticsRecord, listAnalyticsHistory, saveAnalyticsRecord } from "./server/analytics/history";
 import { BOT_TOOLS } from "./server/tools";
 import { listTasks } from "./server/tasks";
-import { archiveSettledWorkflowStageChats, reconcileOrphanWorkflows } from "./server/workflow-runner";
+import { archiveSettledWorkflowStageChats, reconcileOrphanWorkflows, resumeWorkflow } from "./server/workflow-runner";
 import { saveUpload } from "./server/uploads";
 import { botMcpServers, botSettings, botSkills, EMPTY_LIBRARY, mcpServersRecord, type BotSettingsValues } from "./shared/bot";
 import { shellCommand } from "./shared/commands";
@@ -96,6 +96,7 @@ import {
   soulWriteRpc,
   systemPromptRpc,
   uploadRpc,
+  workflowResumeRpc,
   workflowRunsRpc,
 } from "./shared/rpc";
 
@@ -189,7 +190,17 @@ export default function contribute(server: PluginServerContext) {
   curator.start();
   const commands = new CommandAllowlist();
   // Every handler and hook receives the plugin's Paseo API; features that start chats need it.
-  const attach = ({ paseo }: PluginHandlerContext) => host.attach(paseo);
+  const attach = ({ paseo }: PluginHandlerContext) => {
+    host.attach(paseo);
+    if (!relay.isListening) {
+      void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't restart relay on attach", error));
+    }
+  };
+  host.onAttach(() => {
+    if (!relay.isListening) {
+      void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start relay on host attach", error));
+    }
+  });
 
   server.handle(helloRpc, (_input, context) => {
     attach(context);
@@ -350,6 +361,11 @@ export default function contribute(server: PluginServerContext) {
     const runs = tasks.filter((t) => !!t.workflow).slice(0, limit ?? 25).map((t) => taskCardOf(t));
     return { runs };
   });
+  server.handle(workflowResumeRpc, async ({ taskId }, context) => {
+    host.attach(context.paseo);
+    const res = await resumeWorkflow({ host, relay, taskId });
+    return { ok: res.ok, ...(res.card ? { card: res.card } : {}), ...(res.error ? { error: res.error } : {}) };
+  });
   server.addHook("agent.turn.before", async (event, context) => {
     host.attach(context.paseo);
     await turnStarted(host, journal, event).catch((error: unknown) => console.error("paseo-bots: couldn't check memory before a turn", error));
@@ -384,6 +400,6 @@ export default function contribute(server: PluginServerContext) {
     await stopProposalNotifications();
     await scheduler.stop();
     await disconnectSchedulerHost();
-    relay.stop();
+    await relay.stop();
   };
 }

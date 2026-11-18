@@ -1595,4 +1595,265 @@ describe("workflow-runner DAG execution", () => {
     const count3 = await archiveSettledWorkflowStageChats({ paseo: null } as any);
     expect(count3).toBe(0);
   });
+
+  it("reconcileOrphanWorkflows passes wholeTurns: true on timeline.refetch and notifies callerAgentId once without duplicates", async () => {
+    const { openTask, readTask } = await import("../server/tasks");
+    const { reconcileOrphanWorkflows } = await import("../server/workflow-runner");
+
+    const workflow = WorkflowDefinitionSchema.parse({
+      id: "wf-orphan-notify",
+      name: "Orphan Notify Pipeline",
+      stages: [
+        { id: "s1", name: "Stage 1", botId: "bot-worker", prompt: "Step 1" },
+      ],
+    });
+
+    const initWf = initWorkflowRunState(workflow);
+    initWf.status = "running";
+    initWf.callerAgentId = "originating-caller-agent";
+    initWf.callerBotId = "bot-moadmin";
+    initWf.stages[0]!.status = "running";
+    initWf.stages[0]!.chatId = "orphan-notify-stage-chat";
+
+    await openTask({
+      taskId: "task-orphan-notify-test",
+      title: "Orphan Notify Test",
+      acceptance: "Done",
+      workflow: initWf,
+    });
+
+    const refetchCalls: Array<Record<string, unknown>> = [];
+    const sentMessages: Array<{ agentId: string; text: string }> = [];
+
+    const mockPaseo = {
+      agents: {
+        ref: (id: string) => ({
+          refresh: async () => ({
+            agent: {
+              id,
+              status: "idle",
+              archivedAt: null,
+              lastError: null,
+              pendingPermissions: [],
+            },
+          }),
+          archive: async () => {},
+          send: async (text: string) => {
+            sentMessages.push({ agentId: id, text });
+          },
+          timeline: {
+            refetch: async (opts: Record<string, unknown>) => {
+              refetchCalls.push(opts);
+              return { entries: [] };
+            },
+            append: async () => {},
+          },
+        }),
+      },
+    };
+
+    const host = {
+      paseo: mockPaseo,
+      requirePaseo: () => mockPaseo,
+      bot: async () => null,
+      chatOf: async () => null,
+      values: async () => ({ bots: [], groups: [] }),
+    } as unknown as BotsHost;
+
+    const task = await readTask("task-orphan-notify-test");
+    expect(task).not.toBeNull();
+    task!.cardAgentId = "card-fallback-agent";
+
+    // First run settles and notifies callerAgentId
+    const reconciled1 = await reconcileOrphanWorkflows({ host, tasks: [task!], staleAfterMs: 0 });
+    expect(reconciled1).toHaveLength(1);
+    expect(refetchCalls.length).toBeGreaterThanOrEqual(1);
+    expect(refetchCalls[0]).toMatchObject({ wholeTurns: true });
+    expect(sentMessages).toHaveLength(1);
+    expect(sentMessages[0]!.agentId).toBe("originating-caller-agent");
+    expect(sentMessages[0]!.text).toContain("Orphan Notify Pipeline");
+    expect(sentMessages[0]!.text).toContain("FAILED");
+
+    // Second run on the already-settled task must not send duplicate notifications
+    const settledTask = await readTask("task-orphan-notify-test");
+    const reconciled2 = await reconcileOrphanWorkflows({ host, tasks: [settledTask!], staleAfterMs: 0 });
+    expect(reconciled2).toHaveLength(0);
+    expect(sentMessages).toHaveLength(1);
+  });
+
+  it("resumeWorkflow reopens a failed workflow, preserves done stages, resets failed/skipped stages, and completes the DAG", async () => {
+    const { openTask, readTask, settleTask } = await import("../server/tasks");
+    const { resumeWorkflow } = await import("../server/workflow-runner");
+
+    const workflow = WorkflowDefinitionSchema.parse({
+      id: "wf-resume-dag",
+      name: "Resume DAG Pipeline",
+      stages: [
+        { id: "s1", name: "Research", botId: "bot-modeep", prompt: "Do research" },
+        { id: "s2", name: "Code", botId: "bot-mocode", prompt: "Implement", dependsOn: ["s1"] },
+        { id: "s3", name: "Verify", botId: "bot-moci", prompt: "Verify", dependsOn: ["s2"] },
+      ],
+    });
+
+    const initWf = initWorkflowRunState(workflow);
+    initWf.status = "failed";
+    initWf.callerAgentId = "resume-caller-agent";
+    initWf.userInput = "Build feature X";
+    initWf.completedAt = new Date().toISOString();
+    initWf.stages[0] = {
+      ...initWf.stages[0]!,
+      status: "done",
+      output: "Research output preserved",
+      handoffFilePath: "/tmp/research.md",
+      chatId: "chat-s1",
+      completedAt: new Date().toISOString(),
+    };
+    initWf.stages[1] = {
+      ...initWf.stages[1]!,
+      status: "failed",
+      error: "Transient error",
+      retries: 1,
+      chatId: "chat-s2-old",
+      completedAt: new Date().toISOString(),
+    };
+    initWf.stages[2] = {
+      ...initWf.stages[2]!,
+      status: "skipped",
+    };
+
+    await openTask({
+      taskId: "task-resume-dag-test",
+      title: "Resume DAG Test",
+      acceptance: "All stages done",
+      workflow: initWf,
+    });
+    await settleTask("task-resume-dag-test", { status: "blocked", note: "Stage 2 failed" });
+
+    const dispatchedStages: string[] = [];
+    const sentMessages: string[] = [];
+
+    const mockPaseo = {
+      agents: {
+        ref: () => ({
+          refresh: async () => ({ agent: { status: "idle", archivedAt: null } }),
+          archive: async () => {},
+          send: async (text: string) => {
+            sentMessages.push(text);
+          },
+          timeline: {
+            refetch: async () => ({ entries: [] }),
+            append: async () => {},
+          },
+        }),
+      },
+    };
+
+    const host = {
+      paseo: mockPaseo,
+      requirePaseo: () => mockPaseo,
+      bots: async () => [],
+      bot: async () => null,
+      chatOf: async () => null,
+      values: async () => ({ bots: [], groups: [], workflows: [workflow] }),
+    } as unknown as BotsHost;
+
+    const relay = {} as unknown as Relay;
+
+    const res = await resumeWorkflow({
+      host,
+      relay,
+      taskId: "task-resume-dag-test",
+      wait: true,
+      dispatchStage: async (ctx) => {
+        dispatchedStages.push(ctx.stage.id);
+        expect(ctx.prompt).toContain("Build feature X");
+        if (ctx.stage.id === "s2") {
+          expect(ctx.prompt).toContain("Research output preserved");
+        }
+        return { ok: true, output: `Output from ${ctx.stage.id}`, chatId: `chat-${ctx.stage.id}-new` };
+      },
+    });
+
+    expect(res.ok).toBe(true);
+    expect(res.settled).toBe(true);
+    expect(res.state?.status).toBe("done");
+    // Only s2 and s3 should have been dispatched; s1 was preserved as done
+    expect(dispatchedStages).toEqual(["s2", "s3"]);
+
+    const finalTask = await readTask("task-resume-dag-test");
+    expect(finalTask?.status).toBe("done");
+    expect(finalTask?.settledAt).toBeTruthy();
+    expect(finalTask?.workflow?.stages[0]?.output).toBe("Research output preserved");
+    expect(finalTask?.workflow?.stages[1]?.status).toBe("done");
+    expect(finalTask?.workflow?.stages[2]?.status).toBe("done");
+    expect(sentMessages.some((m) => m.includes("Resume DAG Pipeline"))).toBe(true);
+
+    // Resuming an already-done task should return ok: false
+    const resAgain = await resumeWorkflow({ host, relay, taskId: "task-resume-dag-test" });
+    expect(resAgain.ok).toBe(false);
+  });
+
+  it("does not treat transient IPC/shutdown errors in ref.refresh() as agentDisappeared", async () => {
+    let attempts = 0;
+    const ipcPaseo = {
+      agents: {
+        ref: () => ({
+          refresh: async () => {
+            attempts += 1;
+            if (attempts <= 2) {
+              throw new Error("IPC channel closed");
+            }
+            return { agent: { status: "idle", updatedAt: "2026-11-18T00:00:01Z" } };
+          },
+        }),
+      },
+    };
+
+    const recovered = await waitForStageWithHeartbeat(ipcPaseo, "chat-ipc-recover", {
+      stallTimeoutMs: 500,
+      hardTimeoutMs: 1000,
+      pollIntervalMs: 15,
+    });
+    expect(attempts).toBe(3);
+    expect(recovered.completed).toBe(true);
+    expect(recovered.agentDisappeared).toBe(false);
+
+    // Aborted signal during IPC error returns aborted without agentDisappeared
+    const ac = new AbortController();
+    const abortingPaseo = {
+      agents: {
+        ref: () => ({
+          refresh: async () => {
+            ac.abort();
+            throw new Error("Transport not connected");
+          },
+        }),
+      },
+    };
+    const abortedResult = await waitForStageWithHeartbeat(abortingPaseo, "chat-ipc-abort", {
+      stallTimeoutMs: 500,
+      hardTimeoutMs: 1000,
+      pollIntervalMs: 15,
+      signal: ac.signal,
+    });
+    expect(abortedResult.aborted).toBe(true);
+    expect(abortedResult.agentDisappeared).toBe(false);
+
+    // Explicit not-found error still triggers agentDisappeared
+    const missingPaseo = {
+      agents: {
+        ref: () => ({
+          refresh: async () => {
+            throw new Error('Agent "chat-missing" not found');
+          },
+        }),
+      },
+    };
+    const missingResult = await waitForStageWithHeartbeat(missingPaseo, "chat-missing", {
+      stallTimeoutMs: 500,
+      hardTimeoutMs: 1000,
+      pollIntervalMs: 15,
+    });
+    expect(missingResult.agentDisappeared).toBe(true);
+  });
 });

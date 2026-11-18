@@ -19,7 +19,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@getpaseo/plugin": "0.16.0",
+    "@getpaseo/plugin": "0.16.2",
     "@tanstack/react-query": "^5.90.11",
     "@types/node": "^22.20.4",
     "@types/react": "~19.2.0",
@@ -51,7 +51,7 @@
     "composio"
   ],
   "dependencies": {
-    "@getpaseo/client": "0.16.0",
+    "@getpaseo/client": "0.16.2",
     "@modelcontextprotocol/sdk": "1.32.2"
   }
 }

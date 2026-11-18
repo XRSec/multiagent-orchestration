@@ -98,6 +98,12 @@ export interface NativeTokens {
   borderAccent: string;
   foregroundExtraMuted: string;
   accentBright: string;
+  /** CDS clay/brand palette reserved for agent-initiated actions and running states. */
+  brandClay: string;
+  brandClayPressed: string;
+  brandClaySoft: string;
+  /** Warm paper highlight (#f0efec) used for shimmers and switches instead of harsh #fff. */
+  warmPaper: string;
   interactionHighlight: string;
   statusDotRunning: string;
   statusDotSuccess: string;
@@ -107,21 +113,29 @@ export interface NativeTokens {
 
 const cache = new WeakMap<Colors, NativeTokens>();
 
+const WARM_INK = "#141413";
+const WARM_PAPER = "#f0efec";
+
 export function nativeTokens(colors: Colors): NativeTokens {
   const cached = cache.get(colors);
   if (cached) return cached;
   const dark = isDark(colors);
   const surface3 = mix(colors.surface2, colors.foreground, dark ? 0.87 : 0.93);
+  const brandClay = dark ? "#cc6b49" : "#d97757";
   const tokens: NativeTokens = {
     dark,
-    surfaceSidebar: dark ? mix(colors.surface0, "#000000", 0.83) : colors.surface2,
+    surfaceSidebar: dark ? mix(colors.surface0, WARM_INK, 0.83) : colors.surface2,
     surfaceSidebarSelected: dark ? colors.surface2 : surface3,
     surface3,
     surface4: mix(colors.surface2, colors.foreground, dark ? 0.76 : 0.85),
     borderAccent: dark ? mix(colors.border, colors.foreground, 0.95) : mix(colors.border, colors.surface0, 0.7),
     foregroundExtraMuted: mix(colors.foregroundMuted, colors.surface0, 0.65),
-    accentBright: mix(colors.accent, "#ffffff", dark ? 0.37 : 0.75),
-    interactionHighlight: dark ? "rgba(255, 255, 255, 0.08)" : "rgba(0, 0, 0, 0.06)",
+    accentBright: mix(colors.accent, WARM_PAPER, dark ? 0.37 : 0.75),
+    brandClay,
+    brandClayPressed: dark ? "#b85a39" : "#c6613f",
+    brandClaySoft: withAlpha(brandClay, dark ? 0.18 : 0.14),
+    warmPaper: WARM_PAPER,
+    interactionHighlight: dark ? "rgba(240, 239, 236, 0.08)" : "rgba(20, 20, 19, 0.06)",
     statusDotRunning: dark ? "#5caaf6" : "#268ae0",
     statusDotSuccess: dark ? "#35c264" : "#299f51",
     statusDotWarning: dark ? "#db932e" : "#b37824",

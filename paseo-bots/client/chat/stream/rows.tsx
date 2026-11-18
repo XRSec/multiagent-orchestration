@@ -23,6 +23,7 @@ import { RoutineRunCard } from "./RoutineRunCard";
 import { InteractionCard } from "./InteractionCard";
 import { HandoffCard } from "./HandoffCard";
 import { ProtocolCard } from "./ProtocolCard";
+import { TaskCardView } from "./TaskCard";
 import { isBriefDispatchMessage, segmentProtocolBlocks, type ProtocolSegment } from "../../../shared/protocol-cards";
 import { extractToolSources } from "../../../shared/tool-results";
 import { SourceCards } from "./SourceCards";
@@ -102,6 +103,17 @@ export function RowContent({ row, context, compactBottom }: { row: StreamRow; co
       return <InteractionCard colors={colors} compact={context.compact} initial={row.card} onUseDraft={context.useDraft} />;
     case "handoff":
       return <HandoffCard colors={colors} compact={context.compact} card={row.card} onOpenChat={context.openBotChat} />;
+    case "task-card":
+      return (
+        <TaskCardView
+          colors={colors}
+          card={row.card}
+          onOpenChat={(chatId, botId) => {
+            if (botId && context.openBotChat) context.openBotChat(botId, chatId);
+            else context.openChat?.(chatId);
+          }}
+        />
+      );
   }
 }
 

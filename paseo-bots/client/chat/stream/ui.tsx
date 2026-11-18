@@ -2,6 +2,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { copyText, Icon } from "@getpaseo/plugin/client/ui";
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Animated, Easing, Platform, Pressable, Text, View, type StyleProp, type TextStyle } from "react-native";
+import { CDS_EASE_OUT, useReduceMotion } from "../../motion";
 import { nativeTokens, useHover } from "../../native";
 import { speak, stopSpeaking, useSpeaking } from "../../speech";
 import { ui } from "../../typography";
@@ -28,7 +29,7 @@ const SHIMMER_CSS = `
 @keyframes pbot-toolcall-shimmer { 0% { background-position: 120% 0; } 100% { background-position: -20% 0; } }
 [data-pbot-shimmer] {
   color: inherit;
-  background-image: linear-gradient(90deg, currentColor 0%, currentColor 38%, #ffffff 50%, currentColor 62%, currentColor 100%);
+  background-image: linear-gradient(90deg, currentColor 0%, currentColor 38%, #f0efec 50%, currentColor 62%, currentColor 100%);
   background-size: 300% 100%;
   background-repeat: no-repeat;
   -webkit-background-clip: text;
@@ -53,17 +54,21 @@ function shimmerDuration(label: string, secondary?: string): number {
  * masked views.
  */
 function useShimmer(active: boolean, duration: number): { textProps: object; style: StyleProp<TextStyle> } {
+  const reduceMotion = useReduceMotion();
   const opacity = useRef(new Animated.Value(1)).current;
   useEffect(() => {
-    if (!active) return;
+    if (!active || reduceMotion) {
+      opacity.setValue(1);
+      return;
+    }
     if (isWeb) {
       ensureStyle("pbot-toolcall-shimmer", SHIMMER_CSS);
       return;
     }
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.45, duration: (duration * 1000) / 2, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 1, duration: (duration * 1000) / 2, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.45, duration: (duration * 1000) / 2, easing: CDS_EASE_OUT, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1, duration: (duration * 1000) / 2, easing: CDS_EASE_OUT, useNativeDriver: true }),
       ]),
     );
     loop.start();
@@ -71,8 +76,8 @@ function useShimmer(active: boolean, duration: number): { textProps: object; sty
       loop.stop();
       opacity.setValue(1);
     };
-  }, [active, duration, opacity]);
-  if (!active) return { textProps: {}, style: null };
+  }, [active, duration, opacity, reduceMotion]);
+  if (!active || reduceMotion) return { textProps: {}, style: null };
   if (isWeb) {
     return { textProps: { dataSet: { pbotShimmer: "" } }, style: { animationDuration: `${duration.toFixed(2)}s` } as TextStyle };
   }

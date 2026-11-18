@@ -70,7 +70,7 @@ export function Button({
           alignItems: "center",
           justifyContent: "center",
           gap: 8,
-          borderWidth: 1,
+          borderWidth: variant === "outline" || variant === "default" ? 1 : 0,
           borderColor: border,
           backgroundColor: fill,
           minHeight: size === "md" ? 44 : size === "sm" ? 32 : 28,
@@ -320,7 +320,7 @@ export function StatusBadge({ colors, label, variant = "muted" }: { colors: Colo
         paddingVertical: 3,
       }}
     >
-      <Text style={{ fontSize: ui(12), color: status ?? colors.foregroundMuted }}>{label}</Text>
+      <Text style={{ fontSize: ui(12), color: status ?? colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>{label}</Text>
     </View>
   );
 }
@@ -347,7 +347,7 @@ export function Switch({ colors, value, onValueChange, label, disabled }: { colo
             width: 16,
             height: 16,
             borderRadius: 8,
-            backgroundColor: value ? colors.accentForeground : "#ffffff",
+            backgroundColor: value ? colors.accentForeground : tokens.warmPaper,
             transform: [{ translateX: value ? 14 : 0 }],
             shadowColor: "rgba(0, 0, 0, 0.25)",
             shadowOffset: { width: 0, height: 1 },

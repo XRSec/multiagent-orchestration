@@ -97,8 +97,8 @@ export function BotLauncherPopover(props: BotLauncherPopoverProps) {
               { backgroundColor: colors.accent, opacity: pressed ? 0.85 : 1 },
             ]}
           >
-            <Icon name="Plus" size={14} color={colors.accentForeground ?? "#fff"} />
-            <Text style={[styles.newBotText, { color: colors.accentForeground ?? "#fff" }]}>
+            <Icon name="Plus" size={14} color={colors.accentForeground ?? tokens.warmPaper} />
+            <Text style={[styles.newBotText, { color: colors.accentForeground ?? tokens.warmPaper }]}>
               {t("plugin.newBot")}
             </Text>
           </Pressable>

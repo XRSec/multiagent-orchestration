@@ -19,6 +19,7 @@ import { PLUGIN_ID } from "../../../shared/version";
 import { botToolName } from "../../../shared/bot-tools";
 import { INTERACTION_CARD, InteractionSchema, interactionIdOf, interactionReplySummary, interactionSearchText, type Interaction } from "../../../shared/interaction";
 import { HANDOFF_CARD, HandoffCardSchema, handoffSearchText, type HandoffCard } from "../../../shared/handoff";
+import { TASK_CARD, TaskCardSchema, type TaskCard } from "../../../shared/task-card";
 import { appSignIns } from "../../../shared/apps";
 import { proposalIdOf } from "../../../shared/proposals";
 import { extractToolSources } from "../../../shared/tool-results";
@@ -61,7 +62,8 @@ export type StreamRow =
   | (RowBase & { kind: "compaction"; status: "loading" | "completed"; trigger?: "auto" | "manual"; preTokens?: number })
   | (RowBase & { kind: "routine-run"; card: RoutineRunCard })
   | (RowBase & { kind: "interaction"; card: Interaction })
-  | (RowBase & { kind: "handoff"; card: HandoffCard });
+  | (RowBase & { kind: "handoff"; card: HandoffCard })
+  | (RowBase & { kind: "task-card"; card: TaskCard });
 
 export interface TurnFooterInfo {
   /** Key of the assistant row the footer belongs to. */
@@ -241,6 +243,12 @@ export function buildRows(entries: readonly StreamEntry[], running: boolean): St
           if (card.success) rows.push({ ...base, key: `interaction:${card.data.id}`, kind: "interaction", card: card.data });
           break;
         }
+        if (item.kind === TASK_CARD.kind) {
+          if (item.version !== TASK_CARD.version) break;
+          const card = TaskCardSchema.safeParse(item.data);
+          if (card.success) rows.push({ ...base, key: `task-card:${card.data.taskId}`, kind: "task-card", card: card.data });
+          break;
+        }
         if (item.kind !== ROUTINE_RUN_CARD.kind) break;
         const card = RoutineRunCardSchema.safeParse(item.data);
         if (card.success) rows.push({ ...base, key: `plugin:${String(item.id ?? entry.seqStart)}`, kind: "routine-run", card: card.data });
@@ -304,7 +312,7 @@ function category(row: StreamRow | null | undefined): Category | null {
 
 /** turn-membership.ts continuesTurn: canonical turn ids first, else a user message starts a turn. */
 /** Routine result cards arrive between turns and belong to none. */
-const standsAlone = (row: StreamRow) => row.kind === "routine-run" || row.kind === "interaction" || row.kind === "handoff";
+const standsAlone = (row: StreamRow) => row.kind === "routine-run" || row.kind === "interaction" || row.kind === "handoff" || row.kind === "task-card";
 
 function continuesTurn(previous: StreamRow | null, next: StreamRow | null): boolean {
   if (!previous || !next || standsAlone(previous) || standsAlone(next)) return false;
@@ -503,7 +511,7 @@ export function findRows(items: readonly StreamLayoutItem[], needle: string): nu
   if (!needle) return [];
   return items.flatMap((item, index) => {
     const row = item.row;
-    const text = row.kind === "user" ? `${row.text}\n${row.cardReply ?? ""}` : row.kind === "assistant" || row.kind === "speak" ? row.text : row.kind === "interaction" ? interactionSearchText(row.card) : row.kind === "handoff" ? handoffSearchText(row.card) : "";
+    const text = row.kind === "user" ? `${row.text}\n${row.cardReply ?? ""}` : row.kind === "assistant" || row.kind === "speak" ? row.text : row.kind === "interaction" ? interactionSearchText(row.card) : row.kind === "handoff" ? handoffSearchText(row.card) : row.kind === "task-card" ? `${row.card.title}\n${row.card.summary}\n${row.card.workflow?.workflowName ?? ""}` : "";
     return text.toLowerCase().includes(needle) ? [index] : [];
   });
 }

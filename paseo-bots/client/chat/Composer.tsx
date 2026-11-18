@@ -603,7 +603,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
                 {primary === "send" ? (
                   <RoundButton
                     label={submitAccessibilityLabel({ canPressLoading, behavior, running })}
-                    background={colors.accent}
+                    background={nativeTokens(colors).brandClay}
                     disabled={sendDisabled}
                     onPress={canPressLoading ? () => void stop() : defaultAction}
                   >
@@ -611,7 +611,7 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
                   </RoundButton>
                 ) : primary === "active" && canInterrupt ? (
                   <RoundButton label={stopping ? "Canceling agent" : "Stop agent"} background={RED_600} disabled={stopping} onPress={() => void stop()}>
-                    {stopping ? <ActivityIndicator size="small" color="#ffffff" /> : <FilledSquare size={buttonIconSize} />}
+                    {stopping ? <ActivityIndicator size="small" color={nativeTokens(colors).warmPaper} /> : <FilledSquare size={buttonIconSize} color={nativeTokens(colors).warmPaper} />}
                   </RoundButton>
                 ) : null}
               </View>
@@ -673,10 +673,10 @@ function RoundButton({ label, background, disabled, onPress, children }: { label
   );
 }
 
-/** Lucide's Square filled white (the plugin Icon has no fill): an 18/24 box with a 2/24 radius. */
-function FilledSquare({ size }: { size: number }) {
+/** Lucide's Square filled warm off-white (the plugin Icon has no fill): an 18/24 box with a 2/24 radius. */
+function FilledSquare({ size, color }: { size: number; color: string }) {
   const side = Math.round((size * 18) / 24);
-  return <View style={{ width: side, height: side, borderRadius: (size * 2) / 24, backgroundColor: "#ffffff" }} />;
+  return <View style={{ width: side, height: side, borderRadius: (size * 2) / 24, backgroundColor: color }} />;
 }
 
 /** Paseo's queued message row: text over two lines, a pencil to edit and an accent arrow to send now. */

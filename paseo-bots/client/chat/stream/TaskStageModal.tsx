@@ -11,12 +11,14 @@ import * as UI from "@getpaseo/plugin/client/ui";
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import type { BotAvatar } from "../../../shared/bot";
+import { segmentProtocolBlocks } from "../../../shared/protocol-cards";
 import type { TaskCardWorkflowStage } from "../../../shared/task-card";
 import { formatElapsedDuration } from "../../../shared/workflows";
 import { Avatar } from "../../Avatar";
 import { useT } from "../../i18n";
 import { Button, StatusBadge, type BadgeVariant } from "../../panel/controls";
 import { ui } from "../../typography";
+import { ProtocolCard } from "./ProtocolCard";
 
 type Colors = PluginTheme["colors"];
 
@@ -51,6 +53,8 @@ export interface TaskStageModalProps {
   colors: Colors;
   allStages?: readonly TaskCardWorkflowStage[];
   onOpenChat?(chatId: string, botId?: string): void;
+  onResume?(): void | Promise<void>;
+  resuming?: boolean;
 }
 
 const STAGE_STATUS_VARIANT: Record<TaskCardWorkflowStage["status"], BadgeVariant> = {
@@ -73,12 +77,19 @@ export function TaskStageModal({
   colors,
   allStages = [],
   onOpenChat,
+  onResume,
+  resuming = false,
 }: TaskStageModalProps) {
   const { t } = useT();
   const toast = useToast();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const stageNameById = useMemo(() => new Map(allStages.map((s) => [s.id, s.name])), [allStages]);
+  const outputSegments = useMemo(
+    () => (stage?.output ? segmentProtocolBlocks(stage.output) : []),
+    [stage?.output],
+  );
+  const hasProtocolOutput = outputSegments.some((s) => s.kind === "protocol");
 
   if (!stage) return null;
 
@@ -186,6 +197,21 @@ export function TaskStageModal({
             label={t("workflows.openAgentChat")}
             onPress={() => {
               onOpenChat(stage.chatId!, stage.botId);
+              onClose();
+            }}
+          />
+        ) : null}
+
+        {/* Action Button: Resume Workflow */}
+        {stage.status === "failed" && onResume ? (
+          <Button
+            colors={colors}
+            size="md"
+            variant="default"
+            icon="RotateCcw"
+            label={resuming ? t("workflows.resumingWorkflow") : t("workflows.resumeWorkflow")}
+            onPress={() => {
+              void onResume();
               onClose();
             }}
           />
@@ -328,7 +354,19 @@ export function TaskStageModal({
                 backgroundColor: colors.surface0,
               }}
             >
-              <MarkdownText colors={colors} text={stage.output} />
+              {hasProtocolOutput ? (
+                <View style={{ gap: 6 }}>
+                  {outputSegments.map((seg, idx) => {
+                    if (seg.kind === "protocol") {
+                      return <ProtocolCard key={`proto-${idx}`} colors={colors} segment={seg} />;
+                    }
+                    if (!seg.text.trim()) return null;
+                    return <MarkdownText key={`md-${idx}`} colors={colors} text={seg.text} />;
+                  })}
+                </View>
+              ) : (
+                <MarkdownText colors={colors} text={stage.output} />
+              )}
             </ScrollView>
           </View>
         ) : null}

@@ -2,7 +2,7 @@
 
 - **Workflow**: `wf-moadmin-closed-loop` (`moAdmin 全流程闭环编排`)
 - **Task ID**: `wf-d9f268f7`
-- **Status**: `IN_PROGRESS` (Stage 1: `moadmin-plan` complete)
+- **Status**: `COMPLETED` (All 7 stages complete; `moadmin-finalize` settled memory and executive delivery)
 - **Target Repo**: `multiagent-orchestration` (`paseo-bots/client/**` + any other discovered visible UI surfaces)
 
 ## 1. Objective & Architectural Constraints
@@ -19,11 +19,11 @@ Apply Claude Design System (CDS, `/open-claude-ui`) optimizations across all vis
 
 ## 2. Definition of Done (DoD)
 
-- [ ] **DoD-1 (Recon Inventory)**: Complete inventory of all visible UI components in `paseo-bots/client/**` (and any other repo UI surfaces), mapping current tokens, motion, IME/scroll guards, and `open-claude-ui` gaps.
-- [ ] **DoD-2 (CDS Visual Polish)**: Warm editorial surface hierarchy (`surface-0`..`3` / hairline borders), single-stroke borders, clay/accent role separation, and `tabular-nums` alignment across all visible surfaces in light and dark modes.
-- [ ] **DoD-3 (Calibrated Motion Physics)**: `motion.ts` presets/curves (`SPRING_BOUNCY`, `SPRING_SNAPPY`, `SPRING_GENTLE`, `SPRING_HEAVY_SNAP`, `[0.16, 1, 0.3, 1]` / RN `Animated`/`Easing` equivalents) with `prefers-reduced-motion` support across interactive transitions, drawers, cards, and modals.
-- [ ] **DoD-4 (Interaction & Edge Guards)**: IME composition guard on all text inputs/composers, 150ms scroll-pinning cooldown on chat/streaming lists, and zero security regressions.
-- [ ] **DoD-5 (Verification)**: `paseo-bots` typecheck (`npm run typecheck` / `tsc --noEmit`), unit/UI tests (`npm test` / `vitest run`), and any applicable build/verification checks pass with `Exit_Code: 0`.
+- [x] **DoD-1 (Recon Inventory)**: Complete inventory of all visible UI components in `paseo-bots/client/**` (and any other repo UI surfaces), mapping current tokens, motion, IME/scroll guards, and `open-claude-ui` gaps.
+- [x] **DoD-2 (CDS Visual Polish)**: Warm editorial surface hierarchy (`surface-0`..`3` / hairline borders), single-stroke borders, clay/accent role separation, and `tabular-nums` alignment across all visible surfaces in light and dark modes.
+- [x] **DoD-3 (Calibrated Motion Physics)**: `motion.ts` presets/curves (`SPRING_BOUNCY`, `SPRING_SNAPPY`, `SPRING_GENTLE`, `SPRING_HEAVY_SNAP`, `[0.16, 1, 0.3, 1]` / RN `Animated`/`Easing` equivalents) with `prefers-reduced-motion` support across interactive transitions, drawers, cards, and modals.
+- [x] **DoD-4 (Interaction & Edge Guards)**: IME composition guard on all text inputs/composers, 150ms scroll-pinning cooldown on chat/streaming lists, and zero security regressions.
+- [x] **DoD-5 (Verification)**: `paseo-bots` typecheck (`npm run typecheck` / `tsc --noEmit`), unit/UI tests (`npm test` / `vitest run`), and any applicable build/verification checks pass with `Exit_Code: 0`.
 
 ## 3. Execution DAG & Specialist Assignments
 

@@ -133,6 +133,9 @@ type PendingPermission =
       timer?: NodeJS.Timeout
     }
   | PendingQuestionPermission
+export type InterruptReason =
+  'user_cancel' | 'parent_turn_stall' | 'child_wait_timeout'
+
 type Session = Awaited<ReturnType<typeof createSession>>
 interface SessionOptions {
   usage: AgyUsageSource
@@ -145,6 +148,10 @@ interface SessionOptions {
   toolNoticeMs?: number
   retryTimeoutMs?: number
   permissionTimeoutMs?: number
+  childIdleTimeoutMs?: number
+  childToolExecTimeoutMs?: number
+  childMaxWaitMs?: number
+  pollIntervalMs?: number
 }
 
 const SKIP_PERMISSIONS_FLAG = '--dangerously-skip-permissions'
@@ -534,7 +541,7 @@ export class SessionManager {
         permissionId: input.permissionId,
       })
       if (input.response.behavior === 'deny' && input.response.interrupt)
-        await session.interrupt()
+        await session.interrupt('user_cancel')
       return
     }
     if (input.type === 'session.configure')
@@ -576,7 +583,7 @@ export class SessionManager {
     } else if (input.type === 'session.interrupt') {
       if (session.state.reverting)
         throw new Error('Cannot interrupt while session is reverting')
-      await session.interrupt()
+      await session.interrupt('user_cancel')
     } else if (input.type === 'session.can_stop_runtime') {
       await session.syncExternalTranscript(false).catch(() => undefined)
       emit({
@@ -659,6 +666,43 @@ async function createSession(
   const timeline = new Timeline(id)
   const appDataDir = dataDirectory(launch, config?.env, cwd)
   const brainRoot = join(appDataDir, 'brain')
+  let childIdleTimeoutMs =
+    Number(config?.settings?.childIdleTimeoutMs) ||
+    Number(config?.providerOptions?.childIdleTimeoutMs) ||
+    options.childIdleTimeoutMs ||
+    Number(
+      launch?.env?.CHILD_IDLE_TIMEOUT_MS ?? process.env.CHILD_IDLE_TIMEOUT_MS,
+    ) ||
+    Number(
+      launch?.env?.PASEO_AGY_CHILD_IDLE_TIMEOUT_MS ??
+        process.env.PASEO_AGY_CHILD_IDLE_TIMEOUT_MS,
+    ) ||
+    180_000
+
+  let childToolExecTimeoutMs =
+    Number(config?.settings?.childToolExecTimeoutMs) ||
+    Number(config?.providerOptions?.childToolExecTimeoutMs) ||
+    options.childToolExecTimeoutMs ||
+    Number(
+      launch?.env?.CHILD_TOOL_EXEC_TIMEOUT_MS ??
+        process.env.CHILD_TOOL_EXEC_TIMEOUT_MS,
+    ) ||
+    Number(
+      launch?.env?.PASEO_AGY_CHILD_TOOL_EXEC_TIMEOUT_MS ??
+        process.env.PASEO_AGY_CHILD_TOOL_EXEC_TIMEOUT_MS,
+    ) ||
+    900_000
+
+  let childMaxWaitMs =
+    Number(config?.settings?.childMaxWaitMs) ||
+    Number(config?.providerOptions?.childMaxWaitMs) ||
+    options.childMaxWaitMs ||
+    Number(launch?.env?.CHILD_MAX_WAIT_MS ?? process.env.CHILD_MAX_WAIT_MS) ||
+    Number(
+      launch?.env?.PASEO_AGY_CHILD_MAX_WAIT_MS ??
+        process.env.PASEO_AGY_CHILD_MAX_WAIT_MS,
+    ) ||
+    1_800_000
   const supportsRevertAny = capabilities.some(
     (c) =>
       c === 'session.revert.conversation' ||
@@ -747,6 +791,7 @@ async function createSession(
     isLoading: () => state.loading,
     isUnavailable: () => state.closing || state.failed,
     retryTimeoutMs: options.retryTimeoutMs,
+    pollIntervalMs: options.pollIntervalMs,
   })
   let notificationLane = Promise.resolve()
   let relaunching = Promise.resolve()
@@ -1874,6 +1919,24 @@ async function createSession(
       toolStallTimeoutMs: options.toolStallTimeoutMs,
       toolNoticeMs: options.toolNoticeMs,
       retryTimeoutMs: options.retryTimeoutMs,
+      get childIdleTimeoutMs() {
+        return childIdleTimeoutMs
+      },
+      set childIdleTimeoutMs(value: number) {
+        childIdleTimeoutMs = value
+      },
+      get childToolExecTimeoutMs() {
+        return childToolExecTimeoutMs
+      },
+      set childToolExecTimeoutMs(value: number) {
+        childToolExecTimeoutMs = value
+      },
+      get childMaxWaitMs() {
+        return childMaxWaitMs
+      },
+      set childMaxWaitMs(value: number) {
+        childMaxWaitMs = value
+      },
       state,
       get initialized() {
         return currentInitialized
@@ -1908,6 +1971,10 @@ async function createSession(
       },
       hasChild: (nativeId: string) => subagents.hasChild(nativeId),
       hasRunningChildren: () => subagents.hasRunningChildren(),
+      getLastChildActivityAt: () => subagents.getLastActivityAt(),
+      getRunningChildrenInfo: () => subagents.getRunningChildrenInfo(),
+      recordChildActivity: (childId?: string, timestamp?: number) =>
+        subagents.recordActivity(childId, timestamp),
       getChildFailure: subagents.getChildFailure,
       isChildResumable: (nativeId: string) =>
         subagents.isChildResumable(nativeId),
@@ -2227,7 +2294,7 @@ async function createSession(
           notificationLane = notificationLane.then(() => update(item))
         await notificationLane
       },
-      async interrupt(): Promise<void> {
+      async interrupt(reason: InterruptReason = 'user_cancel'): Promise<void> {
         if (state.reverting)
           throw new Error('Cannot interrupt while session is reverting')
         if (state.interrupting) return state.interrupting
@@ -2250,10 +2317,20 @@ async function createSession(
             ))
           )
             return
-          state.turnAbort?.abort()
+          if (reason === 'user_cancel') {
+            state.turnAbort?.abort()
+          } else if (!state.turnAbort?.signal.aborted) {
+            state.turnAbort?.abort(
+              Object.assign(new Error(`Interrupted: ${reason}`), {
+                name: 'InterruptError',
+                reason,
+              }),
+            )
+          }
           cancelPermissions()
-          // Children stay registered when canceled so they are neither reopened nor left unclosed.
-          const canceling = subagents.cancelRunning()
+          // Converge cascade kill scope: ONLY user_cancel broadcasts hard cancel to running children.
+          const canceling =
+            reason === 'user_cancel' ? subagents.cancelRunning() : []
           await Promise.all(canceling)
           // Native session/cancel leaves background tasks alive; stop their owner when background work is active.
           let needsRelaunch =
@@ -2267,7 +2344,9 @@ async function createSession(
           try {
             if (needsRelaunch) {
               retiring.add(currentTransport)
-              await Promise.all(subagents.cancelAll())
+              if (reason === 'user_cancel') {
+                await Promise.all(subagents.cancelAll())
+              }
             }
             await currentTransport.request(
               currentTransport.rpc.cancel({ sessionId: state.nativeId }),
@@ -2496,11 +2575,17 @@ export const KNOWN_SETTINGS = new Set([
   'additionalDirectories',
   'promptFilePath',
   'allowedTools',
+  'childIdleTimeoutMs',
+  'childToolExecTimeoutMs',
+  'childMaxWaitMs',
 ])
 
 async function configureSession(
   session: Session,
-  changes: ProviderConfigChanges,
+  changes: Pick<
+    ProviderConfigChanges,
+    'model' | 'thinkingOption' | 'mode' | 'settings'
+  >,
   options?: { strictThinking?: boolean; fallbackStored?: boolean },
 ) {
   if (session.state.closing || session.state.failed)
@@ -2514,6 +2599,19 @@ async function configureSession(
     : []
   if (unknownSettings.length)
     throw new Error('Custom settings are not supported')
+  if (changes.settings?.childIdleTimeoutMs != null) {
+    session.childIdleTimeoutMs =
+      Number(changes.settings.childIdleTimeoutMs) || session.childIdleTimeoutMs
+  }
+  if (changes.settings?.childToolExecTimeoutMs != null) {
+    session.childToolExecTimeoutMs =
+      Number(changes.settings.childToolExecTimeoutMs) ||
+      session.childToolExecTimeoutMs
+  }
+  if (changes.settings?.childMaxWaitMs != null) {
+    session.childMaxWaitMs =
+      Number(changes.settings.childMaxWaitMs) || session.childMaxWaitMs
+  }
   const strictThinking = options?.strictThinking ?? true
   // Switching `model` dynamically adds or removes `thought_level` in `metadata.configOptions`
   // via the native RPC, so `thought_level` must be re-evaluated after `model` is applied.
@@ -2945,6 +3043,9 @@ async function promptSession(
   const turnDeadlineMs = session.turnStallTimeoutMs ?? 120_000
   const toolDeadlineMs = session.toolStallTimeoutMs ?? 600_000
   const toolNoticeMs = session.toolNoticeMs ?? 60_000
+  const childIdleTimeoutMs = session.childIdleTimeoutMs ?? 180_000
+  const childToolExecTimeoutMs = session.childToolExecTimeoutMs ?? 900_000
+  const childMaxWaitMs = session.childMaxWaitMs ?? 1_800_000
   let watchdogTimer: NodeJS.Timeout | undefined
   let watchdogFired = false
   let watchdogRevision = 0
@@ -2954,25 +3055,36 @@ async function promptSession(
   // Suspension markers: waiting on the user stops the clock instead of renewing it.
   let pausedAt: number | undefined
   let childWaitStartedAt: number | undefined
+  let lastChildActivityAt: number | undefined
   const stopWatchdog = () => {
     if (watchdogTimer) clearTimeout(watchdogTimer)
     watchdogTimer = undefined
   }
-  const fireStall = (error: Error) => {
+  const fireStall = (
+    error: Error,
+    reason: InterruptReason = 'parent_turn_stall',
+  ) => {
     if (watchdogFired) return
     watchdogFired = true
     settleForStall(error)
     session.state.turnAbort?.abort(error)
     // Never calls transport.fail() directly. session.interrupt() may relaunch the runtime when
     // background work is detected; the watchdog itself only guarantees the turn settles.
-    void session.interrupt().catch(() => undefined)
+    void session.interrupt(reason).catch(() => undefined)
   }
   const armWatchdog = () => {
     const tickMs = Math.min(
       1000,
       Math.max(
         10,
-        Math.floor(Math.min(turnDeadlineMs, toolDeadlineMs, toolNoticeMs) / 4),
+        Math.floor(
+          Math.min(
+            turnDeadlineMs,
+            toolDeadlineMs,
+            toolNoticeMs,
+            childIdleTimeoutMs,
+          ) / 4,
+        ),
       ),
     )
     const tick = () => {
@@ -2993,24 +3105,79 @@ async function promptSession(
         // User wait: suspend with no renewal. Waking resets the deadline below.
         pausedAt ??= now
         childWaitStartedAt = undefined
+        lastChildActivityAt = undefined
         scheduleTick()
         return
       }
       if (session.hasRunningChildren()) {
-        // Children that never report are bounded, not exempt indefinitely.
         pausedAt ??= now
         childWaitStartedAt ??= now
-        if (now - childWaitStartedAt >= turnDeadlineMs) {
+        const runningChildren = session.getRunningChildrenInfo()
+        const latestChildActivity = Math.max(
+          session.getLastChildActivityAt(),
+          childWaitStartedAt,
+        )
+        lastChildActivityAt = Math.max(
+          lastChildActivityAt ?? now,
+          latestChildActivity,
+        )
+
+        const totalWaitMs = now - childWaitStartedAt
+        const activeToolNames = runningChildren.flatMap((c) =>
+          c.runningTools.map((t) => t.name),
+        )
+        const hasActiveTools = activeToolNames.length > 0
+        const effectiveSilenceLimitMs = hasActiveTools
+          ? childToolExecTimeoutMs
+          : childIdleTimeoutMs
+        const silenceMs = now - lastChildActivityAt
+
+        const childIds =
+          runningChildren.map((c) => c.childSessionId).join(', ') || 'unknown'
+        const activeToolsStr = hasActiveTools
+          ? activeToolNames.join(', ')
+          : 'none'
+
+        if (totalWaitMs >= childMaxWaitMs) {
+          const message = `Turn ${turnId} reached maximum wait limit (${Math.round(
+            childMaxWaitMs / 1000,
+          )}s) for child session(s) [${childIds}] (total wait: ${Math.round(
+            totalWaitMs / 1000,
+          )}s, active tools: ${activeToolsStr}); failing turn.`
           fireStall(
-            Object.assign(
-              new Error(
-                `Turn ${turnId} waited ${Math.round(turnDeadlineMs / 1000)}s for a child session that never reported; failing it because no terminal evidence arrived.`,
-              ),
-              { name: 'TurnStalledError' },
-            ),
+            Object.assign(new Error(message), {
+              name: 'TurnStalledError',
+              reason: 'child_wait_timeout' as const,
+              childSessionIds: runningChildren.map((c) => c.childSessionId),
+              waitDurationMs: totalWaitMs,
+              silenceDurationMs: silenceMs,
+              activeTools: activeToolNames,
+            }),
+            'child_wait_timeout',
           )
           return
         }
+
+        if (silenceMs >= effectiveSilenceLimitMs) {
+          const message = `Turn ${turnId} timed out waiting for child session(s) [${childIds}] after ${Math.round(
+            silenceMs / 1000,
+          )}s of silence (total wait: ${Math.round(
+            totalWaitMs / 1000,
+          )}s, active tools: ${activeToolsStr}); failing turn because no terminal evidence arrived.`
+          fireStall(
+            Object.assign(new Error(message), {
+              name: 'TurnStalledError',
+              reason: 'child_wait_timeout' as const,
+              childSessionIds: runningChildren.map((c) => c.childSessionId),
+              waitDurationMs: totalWaitMs,
+              silenceDurationMs: silenceMs,
+              activeTools: activeToolNames,
+            }),
+            'child_wait_timeout',
+          )
+          return
+        }
+
         scheduleTick()
         return
       }
@@ -3029,6 +3196,7 @@ async function promptSession(
           session.state.turnToolFailure = { id: tool.id, error: message }
           fireStall(
             Object.assign(new Error(message), { name: 'TurnStalledError' }),
+            'parent_turn_stall',
           )
           return
         }
@@ -3060,6 +3228,7 @@ async function promptSession(
         // Wake: restart the deadline from the moment the wait ended.
         pausedAt = undefined
         childWaitStartedAt = undefined
+        lastChildActivityAt = undefined
         session.state.turnLastProgressAt = now
       }
       if (now - session.state.turnLastProgressAt >= turnDeadlineMs) {
@@ -3070,6 +3239,7 @@ async function promptSession(
             ),
             { name: 'TurnStalledError' },
           ),
+          'parent_turn_stall',
         )
         return
       }
@@ -3341,7 +3511,7 @@ async function promptSession(
                 1,
               )
               if (pendingQuestion.wokeUp && handled.declined) {
-                await session.interrupt()
+                await session.interrupt('user_cancel')
                 return { status: 'canceled' }
               }
               return {
@@ -3363,7 +3533,7 @@ async function promptSession(
             if (!isCurrent())
               throw new Error('ACP runtime replaced during question')
             if (response.behavior === 'deny') {
-              await session.interrupt()
+              await session.interrupt('user_cancel')
               return { status: 'canceled' }
             }
             const answerText =
@@ -3430,7 +3600,7 @@ async function promptSession(
         !session.state.closing &&
         !session.state.failed
       ) {
-        await session.interrupt().catch(() => undefined)
+        await session.interrupt('parent_turn_stall').catch(() => undefined)
       }
     }
     lastStep = await reconcileFinalSnapshot(lastStep)
@@ -3438,7 +3608,8 @@ async function promptSession(
     if (turnAbort.signal.aborted) {
       if (
         turnAbort.signal.reason instanceof Error &&
-        turnAbort.signal.reason.name === 'AbortError'
+        (turnAbort.signal.reason.name === 'AbortError' ||
+          turnAbort.signal.reason.name === 'InterruptError')
       ) {
         // Stall failures cancel the runtime for cleanup without changing their terminal status.
         if (status !== 'failed') status = 'canceled'
