@@ -6,7 +6,7 @@ Prerequisites: source .env before invoking credentials or protected gateways.
 
 IMPORTANT: Think and respond in Chinese. Bootstrap environment with `source .env` before invoking credentials or protected gateways.
 
-Top-level layout: `paseo-bots/` (Paseo bots plugin), `paseo-agy-acp/` (Antigravity ACP adapter), `paseo-bots-plugin-settings/` (bot roster SSOT `bots.json`), `paseo-bots-plugin-data/` (shareable bot skills & workspace assets), `paseo-sidecar/` (standalone SidecarMCP control plane), `docs/` (specs & standards), `scripts/`, `.githooks/`, `.github/`.
+Top-level layout: `paseo-bots/` (Paseo bots plugin, active core), `paseo-agy-acp/` (Antigravity ACP adapter, active core), `paseo-bots-plugin-settings/` (bot roster SSOT `bots.json`, decoupled `souls/` & `mcp-servers/`), `paseo-bots-plugin-data/` (shareable bot skills & managed seats), `docs/` (project & design shards), `scripts/`, `tools/`, `.githooks/`, `.github/`. (`paseo-sidecar/` is paused/experimental—ignore unless explicitly targeted.)
 
 ## 1. Core Operating Disciplines (Strict Mandate)
 
@@ -33,20 +33,19 @@ Top-level layout: `paseo-bots/` (Paseo bots plugin), `paseo-agy-acp/` (Antigravi
    - Repository engineering and documentation standards live under `docs/` and govern all code and specs.
 
 2. **Core Repository Standards**:
-   - **Script Standards** ([docs/dev-rules/script-standards.md](docs/dev-rules/script-standards.md)):
+   - **Script & Git Standards** ([docs/project/shards/06-script-and-git-standards.md](docs/project/shards/06-script-and-git-standards.md)):
      - **Line Budget**: `<= 500` normal; `500-800` requires one-line justification in header; `> 800` split into runner + modules (`./lib/`).
      - **Complexity**: Function length `<= 50` lines; cyclomatic complexity `<= 10`.
      - **Header Contract**: 3-4 lines declaring Purpose, Context, Usage, Prerequisites.
      - **Zero TTY Blocking**: Inputs via flags, env, or stdin only; no interactive prompts (`read -p`, `input()`).
      - **Exit Codes**: `0` OK, `1` error, `2` guardrail/hook violation (`TERM_BLOCK`), `124` timeout.
-   - **Agent-First Docs & Axioms** ([docs/axioms/STANDING_ORDER.md](docs/axioms/STANDING_ORDER.md), [docs/standards/documentation-standards.md](docs/standards/documentation-standards.md)):
-     - **Internal Artifacts**: Specs, skills, memory shards, protocols, and markdown rules MUST be authored in dense `en-US`.
-     - **User Verbatim Preservation**: User-facing replies follow the user's natural language; quotes, names, and code identifiers MUST remain verbatim.
-     - **Rule-First Density**: Lead with the rule, add a one-line rationale, add 1-2 examples only for edge cases; omit conversational filler.
-     - **Zero Demo Code**: Never include sample or demonstration code in specs/skills unless defining strict output templates.
-     - **Determinism by Code**: Enforce formats via schemas and host validation, not prose.
-     - **No Machine-Specific Paths (D7)**: Never hardcode machine-specific absolute paths (e.g., user home directories).
-     - **Index & Shards Topology**: Root definitions stay minimal; heavy schemas factor into shards; multi-step tasks track on-disk `.t3/TASK_MANIFEST.md`.
+   - **Agent-First Docs Standard** ([docs/project/shards/05-agent-first-docs-standard.md](docs/project/shards/05-agent-first-docs-standard.md)):
+     - **Language Discipline**: Internal plane (docs, specs, skills, memories, manifests, code, commits) in dense `en-US` only; user plane replies in natural `zh-CN`; keep quotes, proper nouns, paths, and identifiers verbatim.
+     - **Skills & Specs Are for Machines**: Written for LLMs/Agents, not humans. State the rule, then a 1-line reason; omit pleasantries and storytelling.
+     - **Zero Demo Code**: Never include sample or demonstration code unless defining strict output templates.
+     - **Determinism & Imperatives**: Enforce via schemas, numbers, and validators. Plain imperatives by default; reserve `MUST`/`NEVER` strictly for hard safety and system redlines.
+     - **No Machine-Specific Paths (D7)**: Never hardcode machine-specific user paths; cite files and symbols, never line numbers (D4).
+     - **Index & Shards Topology**: Micro-kernel `INDEX.md` (`<= 50-80` lines) routes on-demand `shards/*.md`; multi-step workflows track `.t3/TASK_MANIFEST.md` on disk.
 
 ---
 
@@ -90,7 +89,8 @@ Authoritative SSOT: [paseo-bots-plugin-settings/bots.json](paseo-bots-plugin-set
 
 ## 5. Docs Knowledge Tree (Routing)
 
-1. **Entry Point**: Doc catalogue and statuses: [docs/README.md](docs/README.md). Agent doc lookups route through [docs/INDEX.md](docs/INDEX.md); the read path and read cap are in [docs/_conventions.md](docs/_conventions.md) `[2.1.1]`.
-2. **Write-Back**: The change that alters a fact edits the doc stating it, in the same commit.
-3. **Doc Rules**: [docs/standards/documentation-standards.md](docs/standards/documentation-standards.md) binds every doc; [docs/_conventions.md](docs/_conventions.md) is its addendum.
-4. **Paseo Configuration & Storage**: Session and bot storage topology is managed by Paseo + ACP; see [docs/paseo/paseo-bots-configuration-and-storage.md](docs/paseo/paseo-bots-configuration-and-storage.md).
+1. **Master Router & Catalogue**: Agent read-path starts at [docs/INDEX.md](docs/INDEX.md) (micro-kernel router); full status catalogue lives in [docs/README.md](docs/README.md).
+2. **Two-Pillar Topology**:
+   - **Project Docs** ([docs/project/INDEX.md](docs/project/INDEX.md)): Repository overview, 10 Agent engineering principles, 14-Bot & 6-Team matrix, delivery/verification gates, and authoring/script standards.
+   - **Design Docs** ([docs/design/INDEX.md](docs/design/INDEX.md)): Active production specs for [paseo-agy-acp](docs/design/paseo-agy-acp/INDEX.md) and [paseo-bots](docs/design/paseo-bots/INDEX.md), plus runtime-agnostic [Agent patterns](docs/design/patterns/INDEX.md).
+3. **Same-Commit Write-Back**: Any change that alters an architectural or configuration fact updates its owning shard in the same commit ([docs/project/shards/05-agent-first-docs-standard.md](docs/project/shards/05-agent-first-docs-standard.md)).

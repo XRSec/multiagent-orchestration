@@ -1,75 +1,121 @@
 ---
-doc_id: DOCS-INDEX
+doc_id: DOCS-CATALOGUE
 status: CURRENT
+version: 3.0.0
 last_verified: 2026-11-18
 language: en-US
 ---
 
-# Documentation Index
+# Documentation Catalogue
 
-Status values are defined in [standards/documentation-standards.md](standards/documentation-standards.md). `UNAUDITED` means the document has not been checked against code since the v4.1 changes. Third-party reference material under `claude-managed-agents/` is excluded.
+Authoritative registry of all repository documentation, organized into **Project Documentation** and **Design Documentation** under the `agent-first-docs` micro-kernel & shards standard ([project/shards/05-agent-first-docs-standard.md](project/shards/05-agent-first-docs-standard.md)). Agents start lookups at [INDEX.md](INDEX.md).
+
+---
+
+## Part I: Project Documentation
+
+### 1. Root Manuals & Master Routers
+| Document | Title | Language | Lines | Status |
+| :--- | :--- | :--- | ---: | :--- |
+| [../AGENTS.md](../AGENTS.md) | AGENTS.md | en-US | 96 | CURRENT |
+| [../MEMORY.md](../MEMORY.md) | Multi-Agent Orchestration — Architectural Memory (Micro-Kernel) | en-US | 35 | CURRENT |
+| [INDEX.md](INDEX.md) | Documentation Router (Micro-Kernel) | en-US | 35 | CURRENT |
+| [README.md](README.md) | Documentation Catalogue | en-US | 121 | CURRENT |
+
+### 2. Project Governance, Philosophy & Standards (`project/`)
+| Document | Title | Language | Lines | Status |
+| :--- | :--- | :--- | ---: | :--- |
+| [project/INDEX.md](project/INDEX.md) | Project Documentation Router (Micro-Kernel) | en-US | 31 | CURRENT |
+| [project/shards/01-repository-overview.md](project/shards/01-repository-overview.md) | Repository Overview & Physical Topology | en-US | 115 | CURRENT |
+| [project/shards/02-agent-philosophy.md](project/shards/02-agent-philosophy.md) | 10 Core Agent Engineering Principles | en-US | 154 | CURRENT |
+| [project/shards/03-bot-fleet-and-teams.md](project/shards/03-bot-fleet-and-teams.md) | 14-Bot Fleet Matrix, Teams & Closed-Loop Workflow | en-US | 147 | CURRENT |
+| [project/shards/04-delivery-and-verification.md](project/shards/04-delivery-and-verification.md) | Multi-Agent Delivery, Handoff Contracts & Verification Gates | en-US | 136 | CURRENT |
+| [project/shards/05-agent-first-docs-standard.md](project/shards/05-agent-first-docs-standard.md) | Agent-First Documentation Standard (`agent-first-docs`) | en-US | 108 | CURRENT |
+| [project/shards/06-script-and-git-standards.md](project/shards/06-script-and-git-standards.md) | Script Engineering, Safe Deletion & Git Hygiene Standards | en-US | 109 | CURRENT |
+
+### 3. Package Overviews (Active Cores: `paseo-agy-acp`, `paseo-bots` · Paused: `paseo-sidecar`)
+| Document | Title | Language | Lines | Status |
+| :--- | :--- | :--- | ---: | :--- |
+| [../paseo-agy-acp/README.md](../paseo-agy-acp/README.md) | paseo-agy-acp | zh/en | 101 | CURRENT |
+| [../paseo-agy-acp/OVERVIEW.md](../paseo-agy-acp/OVERVIEW.md) | Antigravity ACP | en-US | 27 | CURRENT |
+| [../paseo-bots/README.md](../paseo-bots/README.md) | paseo-bots | en-US | 205 | CURRENT |
+| [../paseo-bots/OVERVIEW.md](../paseo-bots/OVERVIEW.md) | OVERVIEW.md | en-US | 29 | CURRENT |
+| [../paseo-sidecar/README.md](../paseo-sidecar/README.md) | SidecarMCP | en-US | 33 | CURRENT |
+
+---
+
+## Part II: Design Documentation
+
+### 4. Design Router
+| Document | Title | Language | Lines | Status |
+| :--- | :--- | :--- | ---: | :--- |
+| [design/INDEX.md](design/INDEX.md) | Design Documentation Router (Micro-Kernel) | en-US | 34 | CURRENT |
+
+### 5. Antigravity ACP Bridge Specifications (`design/paseo-agy-acp/`)
+| Document | Title | Language | Lines | Status |
+| :--- | :--- | :--- | ---: | :--- |
+| [design/paseo-agy-acp/INDEX.md](design/paseo-agy-acp/INDEX.md) | Paseo Antigravity ACP Bridge (`paseo-agy-acp`) Design Index | en-US | 33 | CURRENT |
+| [design/paseo-agy-acp/shards/01-dual-plane-and-brain-observer.md](design/paseo-agy-acp/shards/01-dual-plane-and-brain-observer.md) | Dual-Plane Architecture & Brain Transcript Observer | en-US | 136 | CURRENT |
+| [design/paseo-agy-acp/shards/02-turn-lifecycle-and-fail-closed-guards.md](design/paseo-agy-acp/shards/02-turn-lifecycle-and-fail-closed-guards.md) | Turn Lifecycle, Two-Clock Watchdogs & Fail-Closed Guards | en-US | 132 | CURRENT |
+| [design/paseo-agy-acp/shards/03-subagents-checkpoints-and-steer.md](design/paseo-agy-acp/shards/03-subagents-checkpoints-and-steer.md) | Subagent Trees, Checkpoints, Fork Revert & Steer Contract | en-US | 112 | CURRENT |
+
+### 6. Paseo Bots Orchestration Plugin Specifications (`design/paseo-bots/`)
+| Document | Title | Language | Lines | Status |
+| :--- | :--- | :--- | ---: | :--- |
+| [design/paseo-bots/INDEX.md](design/paseo-bots/INDEX.md) | Paseo Bots Orchestration Plugin (`@oliexe/paseo-bots`) | en-US | 35 | CURRENT |
+| [design/paseo-bots/shards/01-configuration-and-storage.md](design/paseo-bots/shards/01-configuration-and-storage.md) | Shard 01: Configuration Envelope, Decoupled Assets & Zero-Pollution Storage | en-US | 114 | CURRENT |
+| [design/paseo-bots/shards/02-seat-blackboard-and-prompts.md](design/paseo-bots/shards/02-seat-blackboard-and-prompts.md) | Shard 02: Managed Seats, Session Blackboard & Six-Block Prompt Assembly | en-US | 102 | CURRENT |
+| [design/paseo-bots/shards/03-workflow-engine-and-routing.md](design/paseo-bots/shards/03-workflow-engine-and-routing.md) | Shard 03: Three-Tier Routing, Declarative Workflow DAG & Resilient Execution | en-US | 125 | CURRENT |
+| [design/paseo-bots/shards/04-task-pyramid-and-settlement.md](design/paseo-bots/shards/04-task-pyramid-and-settlement.md) | Shard 04: Task Pyramid, File Leases & Idempotent Card Settlement | en-US | 115 | CURRENT |
+| [design/paseo-bots/shards/05-fallback-routines-and-surfaces.md](design/paseo-bots/shards/05-fallback-routines-and-surfaces.md) | Shard 05: Same-Provider Model Fallback, Routines, Analytics & Client Surfaces | en-US | 99 | CURRENT |
+
+### 7. Cross-Runtime Agent Architecture Patterns (`design/patterns/`)
+| Document | Title | Language | Lines | Status |
+| :--- | :--- | :--- | ---: | :--- |
+| [design/patterns/INDEX.md](design/patterns/INDEX.md) | Cross-Runtime Agent Architecture Patterns Index | en-US | 30 | CURRENT |
+| [design/patterns/shards/01-attention-and-compaction.md](design/patterns/shards/01-attention-and-compaction.md) | Attention Degradation Dynamics & Lossy Compaction Lifecycle | en-US | 112 | CURRENT |
+| [design/patterns/shards/02-cache-layers-and-instruction-budget.md](design/patterns/shards/02-cache-layers-and-instruction-budget.md) | Prompt Cache Layers, Instruction Budget & Tool Governance | en-US | 112 | CURRENT |
+| [design/patterns/shards/03-groupchat-anti-loop-and-delta.md](design/patterns/shards/03-groupchat-anti-loop-and-delta.md) | Group-Chat Monotonic Cursors, Safe Delta Slicing & Anti-Loop Gates | en-US | 107 | CURRENT |
+| [design/patterns/shards/04-blackboard-budget-and-arbitration.md](design/patterns/shards/04-blackboard-budget-and-arbitration.md) | Shared Blackboard Token Budgeting & Three-Tier Quality Arbitration | en-US | 109 | CURRENT |
+| [design/patterns/shards/05-multiagent-roi-and-memory.md](design/patterns/shards/05-multiagent-roi-and-memory.md) | Multi-Agent ROI, Write-Set Orthogonality & Progressive Memory | en-US | 108 | CURRENT |
+
+---
+
+## Part III: Technical Research & External References
+
+### 8. Source-Anchored Audits & Reconnaissance (`research/`)
+| Document | Title | Language | Lines | Status |
+| :--- | :--- | :--- | ---: | :--- |
+| [research/INDEX.md](research/INDEX.md) | Technical Research Router (Micro-Kernel) | en-US | 34 | REFERENCE |
+| [research/2026-11-16-bot-avatar-storage-architecture-and-decoupling.md](research/2026-11-16-bot-avatar-storage-architecture-and-decoupling.md) | Bot Avatar Storage Architecture & Asset Decoupling Spec | en-US | 89 | REFERENCE |
+| [research/2026-11-16-companion-data-desync-analysis.md](research/2026-11-16-companion-data-desync-analysis.md) | 深度侦察报告：排查“伙伴/助手内数据不同步、慢半拍”的根因与改造方案 | zh/en | 175 | REFERENCE |
+| [research/2026-11-16-paseo-agy-acp-steer-queue-mechanism.md](research/2026-11-16-paseo-agy-acp-steer-queue-mechanism.md) | Paseo 与 Antigravity ACP (agy) 消息排队 (Queue) 与引导 (Steer) 机制深度调研报告 | zh/en | 218 | REFERENCE |
+| [research/2026-11-16-paseo-chat-composer-bot-switch-feasibility.md](research/2026-11-16-paseo-chat-composer-bot-switch-feasibility.md) | Paseo 主输入框 Bot 切换器与轻量交互体验可行性调研报告 | zh/en | 189 | REFERENCE |
+| [research/2026-11-16-paseo-composer-pill-and-surface-slimming-recon.md](research/2026-11-16-paseo-composer-pill-and-surface-slimming-recon.md) | Paseo ComposerPill 消息路由与 BotsSurface 极简瘦身深度侦察报告 | zh/en | 151 | REFERENCE |
+| [research/AI运行时元MCP动态编排架构调研.md](research/AI%E8%BF%90%E8%A1%8C%E6%97%B6%E5%85%83MCP%E5%8A%A8%E6%80%81%E7%BC%96%E6%8E%92%E6%9E%B6%E6%9E%84%E8%B0%83%E7%A0%94.md) | AI运行时元MCP动态编排架构调研 | zh/en | 327 | REFERENCE |
+| [research/Claude Code 多智能体提示词方案对比.md](research/Claude%20Code%20%E5%A4%9A%E6%99%BA%E8%83%BD%E4%BD%93%E6%8F%90%E7%A4%BA%E8%AF%8D%E6%96%B9%E6%A1%88%E5%AF%B9%E6%AF%94.md) | Claude Code 多智能体提示词方案对比 | zh/en | 334 | REFERENCE |
+| [research/acp-peer-survey.md](research/acp-peer-survey.md) | ACP Peer Survey — Stale Running State and Missing Retry | en-US | 81 | REFERENCE |
+| [research/agy-acp-ecosystem-tracking.md](research/agy-acp-ecosystem-tracking.md) | Antigravity ACP (`agy acp`) Ecosystem & Robustness Tracking | en-US | 146 | REFERENCE |
+| [research/agy-acp-gate-report.md](research/agy-acp-gate-report.md) | ACP Turn-Termination Gate Report | en-US | 651 | REFERENCE |
+| [research/agy-acp-stale-run-audit.md](research/agy-acp-stale-run-audit.md) | AGY-ACP stale-run audit — "turn stopped, UI still running" | en-US | 201 | REFERENCE |
+| [research/agy-acp-upstream-0.1.3-port-assessment.md](research/agy-acp-upstream-0.1.3-port-assessment.md) | paseo-agy-acp: upstream v0.1.3 port assessment | en-US | 182 | REFERENCE |
+| [research/cindy-bot-model-fallback-architecture-report.md](research/cindy-bot-model-fallback-architecture-report.md) | Cindy Bot Model Fallback Architecture & Team Bot Adaptation Analysis | en-US | 171 | REFERENCE |
+| [research/magpie-agy-bridge-comparison.md](research/magpie-agy-bridge-comparison.md) | magpie-agy-bridge vs paseo-agy-acp — source-level lifecycle comparison | en-US | 185 | REFERENCE |
+| [research/paseo-agy-acp-local-audit.md](research/paseo-agy-acp-local-audit.md) | paseo-agy-acp: Local Codebase & Robustness Audit | en-US | 66 | REFERENCE |
+| [research/paseo-plugin-agent-team-research.md](research/paseo-plugin-agent-team-research.md) | Paseo 官方插件 `gyuha/agent-team` 深度技术调研报告 | zh/en | 350 | REFERENCE |
+| [research/t3-code-lifecycle.md](research/t3-code-lifecycle.md) | T3 Code Turn/Session Lifecycle — Source-Anchored Model vs `paseo-agy-acp` | en-US | 217 | REFERENCE |
+
+### 9. External & Upstream Reference Snapshots (`references/`)
+> Read-only vendor references. Upstream Paseo host docs (`55` files) are isolated under `references/paseo-upstream/` via [references/paseo-upstream/CLAUDE.md](references/paseo-upstream/CLAUDE.md).
 
 | Document | Title | Language | Lines | Status |
 | :--- | :--- | :--- | ---: | :--- |
-| [architecture/bot-independent-mcp-plugin-isolation-architecture.md](architecture/bot-independent-mcp-plugin-isolation-architecture.md) | 独立 Bot MCP Tools 与 Plugins 物理隔离架构设计规范 | zh/en mixed | 458 | UNAUDITED |
-| [architecture/cindy-chat-mechanisms-and-blackboard-system.md](architecture/cindy-chat-mechanisms-and-blackboard-system.md) | Cindy 私聊与群聊技术机制、共享黑板与防循环系统深度架构规范 | zh/en mixed | 439 | UNAUDITED |
-| [architecture/cindy-ui-parity-spec.md](architecture/cindy-ui-parity-spec.md) | Cindy-Grade Web UI Parity Specification & E2E Resilience Engine | en | 932 | CURRENT |
-| [architecture/claude-code-multiagent/INDEX.md](architecture/claude-code-multiagent/INDEX.md) | Claude Code Multi-Agent Architecture Shards Branch Index | en | 30 | CURRENT |
-| [architecture/claude-code-multiagent/shards/01_attention_compaction_lifecycle.md](architecture/claude-code-multiagent/shards/01_attention_compaction_lifecycle.md) | Attention Dynamics, Context Rot & Compaction Lifecycle | en | 94 | CURRENT |
-| [architecture/claude-code-multiagent/shards/02_instruction_hierarchy_cache_layers.md](architecture/claude-code-multiagent/shards/02_instruction_hierarchy_cache_layers.md) | Instruction Hierarchy, Cache Layers & Context Topology | en | 94 | CURRENT |
-| [architecture/claude-code-multiagent/shards/03_multiagent_orchestration_patterns.md](architecture/claude-code-multiagent/shards/03_multiagent_orchestration_patterns.md) | Multi-Agent Orchestration Patterns & Enterprise Architectures | en | 115 | CURRENT |
-| [architecture/claude-code-multiagent/shards/04_virtual_groupchat_progressive_memory.md](architecture/claude-code-multiagent/shards/04_virtual_groupchat_progressive_memory.md) | Virtual Group Chat, Stream Routing & Progressive Memory Pipeline | en | 112 | CURRENT |
-| [architecture/claude-code-multiagent/shards/05_agent_skill_mcp_governance.md](architecture/claude-code-multiagent/shards/05_agent_skill_mcp_governance.md) | Agent Skills, MCP Governance & Runtime Isolation | en | 95 | CURRENT |
-| [architecture/groupchat/INDEX.md](architecture/groupchat/INDEX.md) | Group Chat Agent Architecture Shards Branch Index | zh-CN | 28 | CURRENT |
-| [architecture/groupchat/01-storage-topology-and-workspaces.md](architecture/groupchat/01-storage-topology-and-workspaces.md) | 存储拓扑与多级工作区隔离规范 (Storage Topology & Multi-Level Workspace Isolation) | zh-CN | 622 | CURRENT |
-| [architecture/groupchat/02-session-channel-and-lanes.md](architecture/groupchat/02-session-channel-and-lanes.md) | 会话专线拓扑与多通道并发隔离模型规范 | zh-CN | 612 | CURRENT |
-| [architecture/groupchat/03-single-speaker-and-interjection-fsm.md](architecture/groupchat/03-single-speaker-and-interjection-fsm.md) | 群聊单发言人确定性调度与插话状态机架构规范 | zh-CN | 550 | CURRENT |
-| [architecture/groupchat/04-sequence-monotonicity-and-delta-injection.md](architecture/groupchat/04-sequence-monotonicity-and-delta-injection.md) | 群聊时序单调性、水位推进与增量切片注入规范 | zh-CN | 645 | CURRENT |
-| [architecture/groupchat/05-shared-blackboard-and-token-budget.md](architecture/groupchat/05-shared-blackboard-and-token-budget.md) | 共享黑板系统与 1,400 Tokens 预算装配算法规范 | zh-CN | 937 | CURRENT |
-| [architecture/groupchat/06-anti-loop-defense-and-silent-skip.md](architecture/groupchat/06-anti-loop-defense-and-silent-skip.md) | 五维立体防循环唤醒机制与静默退出原子规范 | zh-CN | 400 | CURRENT |
-| [architecture/groupchat/07-three-tier-quality-ladder-and-arbitration.md](architecture/groupchat/07-three-tier-quality-ladder-and-arbitration.md) | 三级阶梯式质量仲裁与防死锁熔断机制规范 | zh-CN | 586 | CURRENT |
-| [architecture/groupchat/08-claude-agent-sdk-harness-reality.md](architecture/groupchat/08-claude-agent-sdk-harness-reality.md) | Claude Agent SDK 底层物理真相与子进程模型架构规范 | zh-CN | 457 | CURRENT |
-| [architecture/groupchat/09-lifecycle-gates-and-permission-pipeline.md](architecture/groupchat/09-lifecycle-gates-and-permission-pipeline.md) | 生命周期门禁、权限流水线与物理安全防护规范 | zh-CN | 490 | CURRENT |
-| [architecture/groupchat/10-blackboard-sqlite-and-mcp-protocol.md](architecture/groupchat/10-blackboard-sqlite-and-mcp-protocol.md) | 黑板物理存储 (SQLite WAL) 与 MCP 工具协议契约规范 | zh-CN | 881 | CURRENT |
-| [architecture/collaboration-efficiency-and-cache-memory-optimization.md](architecture/collaboration-efficiency-and-cache-memory-optimization.md) | Collaboration, Cache and Prompt Optimization Catalog | en | 125 | PROPOSED |
-| [architecture/companion-groupchat-blackboard-v4-production-full-spec.md](architecture/companion-groupchat-blackboard-v4-production-full-spec.md) | 基于 Claude Agent SDK 的多伙伴群聊与共享黑板协同架构生产级演进与工程全集规范 (v4.0-PRODUCTION) | zh/en mixed | 645 | UNAUDITED |
-| [architecture/daemon-architecture-and-implementation-specs.md](architecture/daemon-architecture-and-implementation-specs.md) | Multi-Agent Orchestration 守护进程 (Daemon) 深度架构与实现规范 | zh/en mixed | 226 | UNAUDITED |
-| [architecture/enterprise-multiagent-orchestration-architecture-compendium.md](architecture/enterprise-multiagent-orchestration-architecture-compendium.md) | Multi-Agent Orchestration 工业级多智能体协同平台：企业级深度架构全集与设计规范 | zh/en mixed | 610 | UNAUDITED |
-| [architecture/moadmin-orchestration-and-agent-first-standards-deep-dive.md](architecture/moadmin-orchestration-and-agent-first-standards-deep-dive.md) | moAdmin 编排架构、用户真实需求翻译与 Agent-First 协议深度设计规范全集 | zh/en mixed | 455 | UNAUDITED |
-| [architecture/multi-agent-linkage-reference-study.md](architecture/multi-agent-linkage-reference-study.md) | Multi-Agent Linkage Reference Study | en | 119 | PROPOSED |
-| [architecture/multiagent_web_chat_view.md](architecture/multiagent_web_chat_view.md) | Multi-Agent Web Chat View & Execution Status Card Architecture Specification | en | 347 | CURRENT |
-| [architecture/paseo-architecture-and-claude-agent-sdk-integration.md](architecture/paseo-architecture-and-claude-agent-sdk-integration.md) | Paseo 前后端分离架构与 Claude Agent SDK 集成深度技术规范 | zh/en mixed | 479 | UNAUDITED |
-| [architecture/prompt-topology-and-isolation.md](architecture/prompt-topology-and-isolation.md) | Prompt Topology, Plane Decoupling & Prompt Diet Architecture Spec | en | 121 | CURRENT |
-| [architecture/prompt_distill_design.md](architecture/prompt_distill_design.md) | Claude Code 前置小模型意图提炼与多轮历史正文滚动沉淀插件 (Prompt Distill) 架构设计与工程规范 | zh/en mixed | 199 | UNAUDITED |
-| [architecture/repository-architecture-overview.md](architecture/repository-architecture-overview.md) | Repository Architecture Overview | en | 162 | AUDIT (code-checked, undated) |
-| [architecture/session-lifecycle-compaction-and-rewind-specs.md](architecture/session-lifecycle-compaction-and-rewind-specs.md) | Session Lifecycle, Rewind and Compaction | en | 100 | TARGET (conformance in section 6) |
-| [architecture/session-physical-storage-topology.md](architecture/session-physical-storage-topology.md) | Multi-Agent Claude Session Physical Storage & Resolution Topology | en | 148 | CURRENT |
-| [architecture/storage-and-runtime-architecture-specs.md](architecture/storage-and-runtime-architecture-specs.md) | Multi-Agent Storage & Runtime Architecture Specification | en | 224 | MIXED (status note in section 2) |
-| [architecture/unified-device-gateway-design.md](architecture/unified-device-gateway-design.md) | Multi-Agent Orchestration 网络与网关架构设计规范 (Cindy 风格) | zh/en mixed | 192 | UNAUDITED |
-| [architecture/unified-capabilities-api-spec.md](architecture/unified-capabilities-api-spec.md) | Unified Multi-Scope Capabilities API & Cross-Page State Convergence Specification | en | 273 | CURRENT |
-| [architecture.md](architecture.md) | System Architecture: Headless Subprocess Pool & Full-Duplex Stream Eng | en | 146 | HISTORICAL |
-| [axioms/STANDING_ORDER.md](axioms/STANDING_ORDER.md) | [0] ROOT: AGENT-FIRST OPERATIONAL PROTOCOL (STANDING ORDER) | en | 58 | UNAUDITED |
-| [dev-rules/bot-group-orchestration.md](dev-rules/bot-group-orchestration.md) | [0] ROOT: BOT GROUP & MULTI-AGENT COLLABORATION SPECIFICATION | en | 76 | UNAUDITED |
-| [dev-rules/ipc-and-sqlite.md](dev-rules/ipc-and-sqlite.md) | [0] ROOT: IPC STREAM & SQLITE DELTA SHARDING SPECIFICATION | en | 38 | UNAUDITED |
-| [dev-rules/ndjson-pool.md](dev-rules/ndjson-pool.md) | [0] ROOT: CLAUDE RUNTIME DRIVER & ENGINE SPECIFICATION | en | 40 | UNAUDITED |
-| [dev-rules/orchestrator-mcp.md](dev-rules/orchestrator-mcp.md) | [0] ROOT: HOST-INTERNAL ORCHESTRATOR MCP SPECIFICATION | en | 29 | UNAUDITED |
-| [dev-rules/script-standards.md](dev-rules/script-standards.md) | [0] ROOT: PRACTICAL SCRIPT STANDARDS & DEVELOPMENT CONVENTIONS | en | 53 | UNAUDITED |
-| [dev-rules/web-parser-and-studio.md](dev-rules/web-parser-and-studio.md) | [0] ROOT: CLAUDE STREAM PARSER & PARTNER STUDIO SPECIFICATION | en | 52 | UNAUDITED |
-| [paseo/INDEX.md](paseo/INDEX.md) | Paseo Plugin Specifications Branch Index | en | 26 | CURRENT |
-| [paseo/paseo-bots-configuration-and-storage.md](paseo/paseo-bots-configuration-and-storage.md) | Paseo Bots Plugin Configuration, Envelope & Storage Topology Specification | en | 187 | CURRENT |
-| [paseo/paseo-bots-partner-settings-ui.md](paseo/paseo-bots-partner-settings-ui.md) | Paseo Bots Partner Settings & TeamMap UI Specification | en | 46 | CURRENT |
-| [paseo/paseo-bots-teamwork-workspace-and-session-architecture.md](paseo/paseo-bots-teamwork-workspace-and-session-architecture.md) | Paseo Bots Teamwork Seat Topology, Session Blackboard & Unified Prompt Assembly Specification | en | 352 | CURRENT |
-| [paseo/paseo-bots-workflow-engine-and-routing.md](paseo/paseo-bots-workflow-engine-and-routing.md) | Paseo Bots Workflow Engine, Subagent Routing & Session Injection Specification | en | 216 | CURRENT |
-| [paseo/same-provider-fallback-models.md](paseo/same-provider-fallback-models.md) | Same-Provider Fallback Models Architecture & Runtime Execution Specification | en | 215 | CURRENT |
-| [protocols/agent-definition-specification.md](protocols/agent-definition-specification.md) | Claude Code Native Sub-Agent Specification | en | 404 | CURRENT |
-| [protocols/dispatch-protocol.md](protocols/dispatch-protocol.md) | Concurrency Dispatch Protocol (Fan-Out & Fan-In) | en | 31 | UNAUDITED |
-| [protocols/map-protocol.md](protocols/map-protocol.md) | Machine Action Protocol (MAP) Specification | en | 81 | UNAUDITED |
-| [protocols/orchestrator-mcp.md](protocols/orchestrator-mcp.md) | Protocol Specification: Host-Internal Orchestrator MCP (`nexus-orchest | en | 87 | UNAUDITED |
-| [protocols/p2p-protocol.md](protocols/p2p-protocol.md) | Agent-to-Agent P2P Query Protocol | en | 25 | UNAUDITED |
-| [protocols/partner-contract.md](protocols/partner-contract.md) | Specification: "Folder-as-an-Agent" (Partner Contract) | en | 88 | HISTORICAL |
-| [protocols/relay-protocol.md](protocols/relay-protocol.md) | Pipeline Relay Protocol (Handoff FSM) | en | 23 | UNAUDITED |
-| [protocols/steering-protocol.md](protocols/steering-protocol.md) | Protocol Specification: Real-Time Mid-Flight Steering & Dual-Channel I | en | 105 | UNAUDITED |
-| [reviews/DISPATCH_M3_GATEWAY_BENCHMARK.md](reviews/DISPATCH_M3_GATEWAY_BENCHMARK.md) | DISPATCH RECEIPT: M3-WORKSTREAM-GATEWAY-BENCHMARK | en | 44 | UNAUDITED |
-| [reviews/DISPATCH_M4_FOUR_DIMENSIONS_INTEGRATION.md](reviews/DISPATCH_M4_FOUR_DIMENSIONS_INTEGRATION.md) | DISPATCH RECEIPT: M4-FOUR-DIMENSIONS-WEB-INTEGRATION | en | 107 | UNAUDITED |
-| [reviews/DISPATCH_M4_WEB_WORKSPACE_REGULATION.md](reviews/DISPATCH_M4_WEB_WORKSPACE_REGULATION.md) | DISPATCH RECEIPT: M4-WEB-WORKSPACE-MIGRATION-REGULATION | en | 49 | UNAUDITED |
-| [standards/documentation-standards.md](standards/documentation-standards.md) | Documentation Standards | en | 46 | CURRENT |
+| [references/INDEX.md](references/INDEX.md) | External & Upstream References Router (Micro-Kernel) | en-US | 24 | REFERENCE |
+| [references/claude-subagents-official.md](references/claude-subagents-official.md) | 创建自定义 subagents | zh/en | 1478 | REFERENCE |
+| [references/claude-managed-agents/README.md](references/claude-managed-agents/README.md) | Anthropic Claude Managed Agents (托管智能体) 架构体系深度解析 | en-US | 147 | REFERENCE |
+| [references/claude-managed-agents/01-multiagent-orchestration.md](references/claude-managed-agents/01-multiagent-orchestration.md) | 多智能体编排 (Multiagent Orchestration) | en-US | 536 | REFERENCE |
+| [references/claude-managed-agents/02-session-threads.md](references/claude-managed-agents/02-session-threads.md) | 会话线程 (Session Threads) | en-US | 265 | REFERENCE |
+| [references/claude-managed-agents/03-workflow-runs.md](references/claude-managed-agents/03-workflow-runs.md) | 工作流运行 (Workflow Runs) | en-US | 418 | REFERENCE |
+| [references/claude-managed-agents/04-agent-memory.md](references/claude-managed-agents/04-agent-memory.md) | 智能体记忆 (Memory) | en-US | 399 | REFERENCE |
+| [references/claude-managed-agents/05-dreams.md](references/claude-managed-agents/05-dreams.md) | 梦境 (Dreams) | en-US | 286 | REFERENCE |
+| [references/paseo-upstream/CLAUDE.md](references/paseo-upstream/CLAUDE.md) | CLAUDE.md | en-US | 205 | REFERENCE |
