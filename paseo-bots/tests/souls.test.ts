@@ -227,13 +227,13 @@ describe("Bot Souls Storage and Decoupling", () => {
     }
   });
 
-  it("validates all 14 repository bots have decoupled souls and slim bots.json", async () => {
+  it("validates all 15 repository bots have decoupled souls and slim bots.json", async () => {
     const botsJsonPath = resolve(__dirname, "../../paseo-bots-plugin-settings/bots.json");
     const jsonContent = await readFile(botsJsonPath, "utf8");
     const rawData = JSON.parse(jsonContent) as { version: number; values: { bots: Bot[] } };
 
     expect(rawData.version).toBe(4);
-    expect(rawData.values.bots.length).toBe(14);
+    expect(rawData.values.bots.length).toBe(15);
 
     const soulsDir = resolveSoulsDir();
     for (const bot of rawData.values.bots) {

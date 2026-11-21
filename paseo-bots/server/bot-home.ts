@@ -1,8 +1,25 @@
 import { existsSync, lstatSync, renameSync, symlinkSync } from "node:fs";
 import { lstat, mkdir, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { expandPortablePath, type PortablePathEnv } from "../shared/chat";
+
+/**
+ * Safely resolves the directory of the current module across CommonJS, ESM,
+ * and bundled virtual contexts (where typeof __dirname or import.meta.url may be undefined).
+ */
+export function resolveCurrentDir(metaUrl?: string): string {
+  if (typeof __dirname === "string" && __dirname.length > 0) {
+    return typeof __dirname === "string" ? __dirname : "";
+  } else if (typeof metaUrl === "string" && metaUrl.length > 0) {
+    return dirname(fileURLToPath(metaUrl));
+  } else {
+    return process.cwd();
+  }
+}
+
+const currentDir = resolveCurrentDir(typeof import.meta !== "undefined" ? import.meta.url : undefined);
 
 /**
  * Resolves the checkout root of this multiagent-orchestration repository across macOS/Linux/Windows.
@@ -13,8 +30,8 @@ export function resolveRepoRootPath(): string {
   if (envOverride) return resolve(envOverride);
 
   const candidates = [
-    resolve(__dirname, "../.."),
-    resolve(__dirname, "../../.."),
+    resolve(currentDir, "../.."),
+    resolve(currentDir, "../../.."),
     resolve(process.cwd(), ".."),
     resolve(process.cwd()),
   ];
@@ -26,7 +43,7 @@ export function resolveRepoRootPath(): string {
       return candidate;
     }
   }
-  return resolve(__dirname, "../..");
+  return resolve(currentDir, "../..");
 }
 
 export function portablePathEnv(): { repoRootPath: string; userHomePath: string } {

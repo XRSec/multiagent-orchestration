@@ -9,6 +9,7 @@ import type { PluginTheme } from "@getpaseo/plugin";
 import { Text, View } from "react-native";
 import type { OrphanedAgyAgentEntry } from "../shared/rpc";
 import { useT } from "./i18n";
+import { nativeTokens } from "./native";
 import { Button } from "./panel/controls";
 
 type Colors = PluginTheme["colors"];
@@ -24,6 +25,7 @@ export interface AgyOrphanBannerProps {
 
 export function AgyOrphanBanner({ colors, orphans, busy, onDisable, onDelete, onDismiss }: AgyOrphanBannerProps) {
   const { t } = useT();
+  const tokens = nativeTokens(colors);
 
   if (orphans.length === 0) return null;
 
@@ -39,10 +41,10 @@ export function AgyOrphanBanner({ colors, orphans, busy, onDisable, onDelete, on
         paddingVertical: 8,
         backgroundColor: colors.surface1,
         borderBottomWidth: 1,
-        borderBottomColor: colors.border,
+        borderBottomColor: tokens.borderAccent,
       }}
     >
-      <Text style={{ color: colors.foreground, fontSize: 13, flex: 1, minWidth: 180 }} numberOfLines={2}>
+      <Text style={{ color: colors.foreground, fontSize: 13, flex: 1, minWidth: 180, fontVariant: ["tabular-nums"] }} numberOfLines={2}>
         {t("settings.agyOrphans.surfaceNotice", {
           count: orphans.length,
           files: orphans.map((o) => o.fileName).join(", "),

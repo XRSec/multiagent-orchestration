@@ -1,0 +1,37 @@
+---
+doc_id: DESIGN-PASEO-FEED-INDEX
+status: CURRENT
+version: 1.2.0
+last_verified: 2026-11-21
+language: en-US
+---
+
+# Decoupled Micro-Plugins (`paseo-feed` & `paseo-long-session`) Design Index
+
+Parent router: [../INDEX.md](../INDEX.md) · Package guide: [../../../paseo-feed/README.md](../../../paseo-feed/README.md). Governs standalone Paseo micro-plugins operating alongside `paseo-bots/` via Paseo hooks, labels, metadata, and disk ledgers without cross-plugin code imports.
+
+## 1. Core Invariants
+
+1. **Zero Cross-Plugin Runtime Coupling**: Communicate across `paseo-feed/`, `paseo-long-session/`, and `paseo-bots/` strictly via `@getpaseo/plugin` lifecycle hooks, agent labels/metadata, and `~/.paseo/` disk state rather than shared runtime singletons.
+2. **Single Pointer Index, Idempotent Migration & Dynamic LRU Hydration**: Persist one lightweight `FeedPointerSchema` record per turn (including optional `workflowTaskId`, `workflowId`, `workflowStageId`, `workflowStageName` and `<= 120`-char previews via `previewSnippet`) in `~/.paseo/plugin-data/paseo-feed/index.jsonl` (`upsertPointers`, `indexFilePath` in `paseo-feed/server/store.ts`), excluding shadow/curation agents (`shouldIgnoreAgent`). Startup runs `migrateLegacyChannelsToIndex` once under `LEGACY_CHANNELS_MIGRATION_MARKER` (`".legacy-channels-migrated-v1"`), unioning `teamIds` via `preserveExisting` while keeping legacy `channels/*.jsonl` untouched. Hydrate full timelines on demand per cursor page via `FeedHydrator` (`paseo-feed/server/hydrator.ts`: `DEFAULT_MAX_ENTRIES = 128`, `DEFAULT_ACTIVE_TTL_MS = 15_000`, sticky archived entries, `hydrated: false` preview fallback).
+3. **Provider-Agnostic Proactive Compaction**: Steer `compactCommand` (`/compact`) when `contextWindowUsedTokens` reaches `resolveEffectiveThreshold` (`DEFAULT_COMPACT_THRESHOLD_TOKENS = 250_000`, clamped to `[MIN_COMPACT_THRESHOLD_TOKENS (50_000), MAX_COMPACT_THRESHOLD_TOKENS (1_000_000)]`) only after confirming `session.commands()` support and idle turn state.
+4. **SHA-256 Hash-Gated Memory Handshake**: On compaction turns (`isCompactionTurn`), `paseo-long-session` sets `LONG_SESSION_SYNC_METADATA.pendingMemorySync = true`; `paseo-bots` (`CompanionSessionManager`) clears the flag and re-injects `MEMORY.md` only when its SHA-256 digest differs from `lastSyncedMemoryHash`.
+
+## 2. Continuous Virtual Feed (`paseo-feed/`)
+
+- **Single Pointer Index, Migration & Roster**: `resolveFeedDataDir`, `indexFilePath` (`PASEO_FEED_DATA_DIR`, default `~/.paseo/plugin-data/paseo-feed`), `upsertPointers` (`UpsertPointersOptions.preserveExisting`), `migrateLegacyChannelsToIndex` (`LEGACY_CHANNELS_MIGRATION_MARKER`), `readAllPointers`, `readChannelPointers` (`limit = 20`, `beforeCursor`, `encodePointerCursor`/`decodePointerCursor`, `compareCursorKeys`), `markAgentArchived`, and `summarizeChannelPointers` in `paseo-feed/server/store.ts`; `loadRoster` and `resolveChannelLeadBot` (`PASEO_BOTS_SETTINGS_PATH`, cold-start `RosterBot` fields) in `paseo-feed/server/roster.ts`.
+- **Workflow Distillation, LRU Hydration & Cold-Start Send**: Exported labels `WORKFLOW_TASK_LABEL`, `WORKFLOW_STAGE_LABEL`, `LIFECYCLE_MOUNT_LABEL`, `GLOBAL_ASSISTANT_LABEL`, `LONG_SESSION_ENABLED_LABEL` (`paseo-feed/shared/protocol.ts`) feed `extractWorkflowMeta` and `inferFeedSource` (`dm | team | routine | delegated | workflow`) across `paseo-feed/server/extractor.ts`, `hydrator.ts`, `store.ts`, and `sync.ts` (excluding `"workflow"` from `humanOnly`). When zero active chats exist, `sendToFeedChannel` (`paseo-feed/server/sync.ts`) cold-starts via `paseo.agents.create` with `BOT_LABEL`, `LIFECYCLE_MOUNT_LABEL`, optional `GLOBAL_ASSISTANT_LABEL`/`LONG_SESSION_ENABLED_LABEL`, and team `TEAM_SESSION_LABEL`/`SESSION_ROLE_LABEL`, returning `reason: "created"` (falling back to `"no_active_chat"` if `agents.create` is unavailable); plugin load also syncs `paseo-plugin.json` display title.
+- **4-Pillar Standalone UI & Deep-Links**: `paseo-feed/index.client.tsx` registers 1 clean sidebar pillar (`FeedSidebar`, `Feed (助理)` with `summarizeSidebarActivity` badge) alongside `paseo-bots`'s 3 pillars (`Bots`, `Team`, `Workflow`), plus Command Center `open-feeds`. `FeedScreen` (`paseo-feed/client/FeedScreen.tsx`) pairs `ChannelList` (`全部` / `助理` / `伙伴` / `团队`) with a virtualized `<FlatList>` (`PAGE_SIZE = 20`, `LOAD_OLDER_SCROLL_THRESHOLD = 60`), header `"打开会话 ↗"` jump (`resolveHeaderChatAgentId`), `FeedMessageCard` (`"workflow"` badge + stage pill via `resolveWorkflowStageLabel`, `hydrated: false` preview indicator, `openAgent`), and `FeedComposer` (`"created"` status notice via `resolveComposerNotice` + jump button).
+- **`paseo-bots` Bridge & Legacy Fallback**: `botFeedReadRpc` (`paseo-bots/shared/rpc.ts`) invokes `readMergedBotFeed` (`paseo-bots/server/feed-bridge.ts`), slicing `index.jsonl` pointers (`feedIndexFilePath`, `DEFAULT_LIMIT = 20`, `MAX_LIMIT = 500`) prior to selective timeline hydration (`TIMELINE_HYDRATE_TURNS = 50`, `distillTimelineToFeedEntries` in `paseo-bots/shared/feed-view.ts`), classifying `"workflow"` and projecting workflow metadata, falling back read-only to legacy `channels/<kind>__<id>.jsonl`, and powering `BotFeedPane` (`paseo-bots/client/BotFeedPane.tsx`, `FEED_PAGE_SIZE = 20`).
+
+## 3. Proactive Compaction & Memory Sync (`paseo-long-session/`)
+
+- **Settings & Eligibility**: `longSessionSettings` (`paseo-long-session/shared/protocol.ts`: `defaultThresholdTokens`, `enabledForAllAntigravity`, `compactCommand`); `isLongSessionEligible` matches `LONG_SESSION_ENABLED_LABEL`, `GLOBAL_ASSISTANT_LABEL`, or `enabledForAllAntigravity`; `resolveEffectiveThreshold` honors `LONG_SESSION_THRESHOLD_LABEL` via `clampCompactThreshold`.
+- **Compaction Hook & State**: `handleTurnAfter` (`paseo-long-session/server/compaction.ts`, registered in `paseo-long-session/index.server.ts`) inspects tail entries with `isCompactionTurn`. On compaction turns it writes `LongSessionSyncStateSchema` (`pendingMemorySync`, `lastSyncedMemoryHash`, `compactedAtTurnId`, `compactedAt`, `compactionCount`) under `LONG_SESSION_SYNC_METADATA`; otherwise it dispatches idempotent `compactCommand` (`messageId: long-session-compact:<turnId>`).
+
+## 4. Verification Gate
+
+```bash
+npm --prefix paseo-feed run typecheck && npm --prefix paseo-feed test
+npm --prefix paseo-long-session run typecheck && npm --prefix paseo-long-session test
+```

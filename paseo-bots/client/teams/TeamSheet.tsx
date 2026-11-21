@@ -6,6 +6,7 @@ import { randomSeed } from "../../shared/avatar";
 import type { Bot, BotGroup, TeamLogo as Logo, WorkflowDefinition } from "../../shared/bot";
 import { teamLogoOf, teamsOf, type TeamDraft } from "../../shared/groups";
 import { TeamLogo } from "../Avatar";
+import { isImeComposing } from "../keyboard";
 import { errorText, nativeTokens } from "../native";
 import { useT } from "../i18n";
 import { Button, InputField, SheetActions, TextAreaField } from "../panel/controls";
@@ -59,7 +60,19 @@ export function TeamEditorForm({
     <>
       <View style={{ marginBottom: 24 }}>
         <SettingsCard>
-          <InputField colors={colors} label={t("teams.nameLabel")} initialValue={name} placeholder={t("teams.namePlaceholder")} onChangeText={setName} />
+          <InputField
+            colors={colors}
+            label={t("teams.nameLabel")}
+            initialValue={name}
+            placeholder={t("teams.namePlaceholder")}
+            onChangeText={setName}
+            onKeyPress={(e) => {
+              if (isImeComposing(e)) return;
+              if ((e.nativeEvent as any)?.key === "Enter" && name.trim()) {
+                onSave({ name: name.trim().slice(0, 60), logo, leadId: lead, memberIds: members.map((bot) => bot.id), instructions, workflows });
+              }
+            }}
+          />
         </SettingsCard>
       </View>
       <SettingsSection title={t("teams.logoSection")}>

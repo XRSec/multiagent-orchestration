@@ -5,8 +5,9 @@ export type ImeLikeEvent =
   | {
       isComposing?: boolean;
       keyCode?: number;
-      nativeEvent?: { isComposing?: boolean; keyCode?: number };
+      nativeEvent?: unknown;
     }
+  | object
   | null
   | undefined;
 
@@ -14,9 +15,12 @@ export type ImeLikeEvent =
  * Guard against CJK IME composition Enter/Escape events (Safari/WebKit sends keyCode 229).
  */
 export function isImeComposing(event: ImeLikeEvent): boolean {
-  if (!event) return false;
-  const target = event.nativeEvent ?? event;
-  return Boolean(target.isComposing) || target.keyCode === 229;
+  if (!event || typeof event !== "object") return false;
+  const target = ((event as { nativeEvent?: unknown }).nativeEvent ?? event) as {
+    isComposing?: boolean;
+    keyCode?: number;
+  };
+  return Boolean(target?.isComposing) || target?.keyCode === 229;
 }
 
 /** Paseo's keyboard shift (keyboard/shift/internal/policy.ts): iOS heights below this are the predictive bar alone. */

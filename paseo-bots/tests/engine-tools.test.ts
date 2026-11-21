@@ -115,7 +115,7 @@ describe("subagent engine", () => {
 
   it("keeps today's tool face unchanged for a chat without an engine", async () => {
     const { BOT_TOOLS, toolsForEngine } = await import("../server/tools");
-    const today = ["list_bots", "ask_bot", "check_chat", "search_chats", "open_task", "list_tasks", "run_workflow", "resume_workflow", "get_setup", "propose_skill", "propose_routine", "list_routines", "run_routine", "cancel_routine_run", "propose_changes", "show_card"];
+    const today = ["list_bots", "list_teams", "ask_bot", "check_chat", "search_chats", "open_task", "list_tasks", "run_workflow", "resume_workflow", "get_setup", "propose_skill", "propose_routine", "list_routines", "run_routine", "cancel_routine_run", "propose_changes", "show_card"];
     expect(BOT_TOOLS.map((tool) => tool.name)).toEqual(today);
     expect(toolsForEngine(BOT_TOOLS, null).map((tool) => tool.name)).toEqual(today);
     expect(await listedTools(null)).toEqual(today);
@@ -124,7 +124,7 @@ describe("subagent engine", () => {
     const tools = { type: "http" as const, url: "http://127.0.0.1:1/bots/b/a", headers: {} };
     const bot = makeBot({ alwaysAllow: ["bots/ask_bot"] });
     expect(buildAgentConfig(bot, EMPTY_LIBRARY, "m", "", { tools }).toolPolicy?.preapproved.map((grant) => grant.tool)).toEqual([
-      "list_bots", "check_chat", "search_chats", "open_task", "list_tasks", "run_workflow", "resume_workflow", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app", "show_card", "list_routines", "ask_bot",
+      "list_bots", "list_teams", "check_chat", "search_chats", "open_task", "list_tasks", "run_workflow", "resume_workflow", "get_setup", "propose_skill", "propose_routine", "propose_changes", "connect_app", "show_card", "list_routines", "ask_bot",
     ]);
     expect(buildAgentConfig(bot, EMPTY_LIBRARY, "m", "", { tools }, null, undefined, "native").toolPolicy?.preapproved.map((grant) => grant.tool)).not.toContain("ask_bot");
   });

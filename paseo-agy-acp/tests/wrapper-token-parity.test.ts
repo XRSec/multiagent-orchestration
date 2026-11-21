@@ -76,7 +76,7 @@ test('wrapper token vocabulary matches provider and stays capacity-narrow', (t) 
   assert.deepEqual(wrapperList, providerList, drift)
 
   const capacityTokens = parseStringArray(source, 'CAPACITY_SIGNAL_TOKENS')
-  for (const banned of ['UNAVAILABLE', 'capacity']) {
+  for (const banned of ['UNAVAILABLE', 'capacity', '\\b503\\b']) {
     assert.ok(
       !capacityTokens.includes(banned),
       `CAPACITY_SIGNAL_TOKENS must not contain bare ${JSON.stringify(
@@ -84,4 +84,28 @@ test('wrapper token vocabulary matches provider and stays capacity-narrow', (t) 
       )}; got ${JSON.stringify(sorted(capacityTokens))}`,
     )
   }
+
+  const retryableMatcher = new RegExp(
+    parseStringArray(source, 'RETRYABLE_TOKENS').join('|'),
+    'i',
+  )
+  const capacityMatcher = new RegExp(capacityTokens.join('|'), 'i')
+  assert.equal(
+    retryableMatcher.test(
+      'I1119 20:46:21.190358 68513 server.go:2814] Tool confirmation for conversation 5111c33f step 503',
+    ) &&
+      capacityMatcher.test(
+        'I1119 20:46:21.190358 68513 server.go:2814] Tool confirmation for conversation 5111c33f step 503',
+      ),
+    false,
+  )
+  assert.equal(
+    retryableMatcher.test(
+      'I1117 14:18:23.548468 532 run.go:317] Run: attempt 1 failed (UNAVAILABLE (code 503): No capacity available for model gemini-3.8-flash-high on the server), retrying in 4s',
+    ) &&
+      capacityMatcher.test(
+        'I1117 14:18:23.548468 532 run.go:317] Run: attempt 1 failed (UNAVAILABLE (code 503): No capacity available for model gemini-3.8-flash-high on the server), retrying in 4s',
+      ),
+    true,
+  )
 })

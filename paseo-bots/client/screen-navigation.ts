@@ -2,7 +2,7 @@ import type { PluginOpenScreenInput, PluginScreenLocation, PluginScreenParams } 
 import type { LibraryTarget } from "./navigation";
 import { newUuid } from "../shared/uuid";
 
-export type BotScreen = "bots" | "bot-chat" | "bot-settings" | "bot-section" | "bot-library" | "bot-library-item" | "bot-teams" | "workflows" | "bot-workflows";
+export type BotScreen = "bots" | "bot-chat" | "bot-settings" | "bot-section" | "bot-library" | "bot-library-item" | "teams" | "bot-teams" | "workflows" | "bot-workflows";
 
 export const BOT_SCREENS: { id: BotScreen; title: string }[] = [
   { id: "bots", title: "Bots" },
@@ -11,6 +11,7 @@ export const BOT_SCREENS: { id: BotScreen; title: string }[] = [
   { id: "bot-section", title: "Bot settings" },
   { id: "bot-library", title: "Skills & Tools" },
   { id: "bot-library-item", title: "Skills & Tools" },
+  { id: "teams", title: "Teams" },
   { id: "bot-teams", title: "Team map" },
 ];
 
@@ -40,29 +41,55 @@ export function pinnedBotScreen(bot: { id: string; name: string }, current: Plug
   return { screenId: "bot-chat", params: { botId: bot.id, title: bot.name, ...(latest ? { chatId: latest.id } : { draftId: newUuid() }) } };
 }
 
-// Team map is a temporary view, not a landing page. A restored route from an
-// earlier app/plugin session should open the bot list without needing history.
-const navigationSession = newUuid();
-export function teamMapScreen(): PluginOpenScreenInput {
-  return { screenId: "bot-teams", params: { navigationSession } };
+export function teamsScreen(): PluginOpenScreenInput {
+  return { screenId: "teams" };
 }
 
-export function resolveBotScreen(screen: BotScreen, params: PluginScreenParams): BotScreen {
-  return screen === "bot-teams" && params.navigationSession !== navigationSession ? "bots" : screen;
+export function teamMapScreen(): PluginOpenScreenInput {
+  return { screenId: "bot-teams" };
+}
+
+export function resolveBotScreen(screen: BotScreen, _params: PluginScreenParams): BotScreen {
+  return screen;
 }
 
 export function parentScreen(screen: BotScreen, params: PluginScreenParams): { label: string; target: PluginOpenScreenInput } | null {
-  if (screen === "bots") return null;
+  if (screen === "bots" || screen === "teams" || screen === "workflows") return null;
   if (screen === "bot-section" && params.botId) {
     return { label: "Bot settings", target: { screenId: "bot-settings", params: { botId: params.botId, title: "Bot settings" } } };
   }
   if (screen === "bot-library-item") return { label: "Skills & Tools", target: { screenId: "bot-library" } };
-  if (screen === "workflows" || screen === "bot-workflows") return { label: "Workflows", target: { screenId: "workflows" } };
+  if (screen === "bot-teams") return { label: "Teams", target: { screenId: "teams" } };
+  if (screen === "bot-workflows") return { label: "Workflows", target: { screenId: "workflows" } };
   return { label: "Bots", target: { screenId: "bots" } };
 }
 
-export function workflowsScreen(): PluginOpenScreenInput {
-  return { screenId: "workflows" };
+export function workflowsScreen(scope?: string): PluginOpenScreenInput {
+  const trimmed = scope?.trim();
+  return trimmed ? { screenId: "workflows", params: { scope: trimmed } } : { screenId: "workflows" };
+}
+
+export function feedScreen(kind: "bot" | "team", id: string, title?: string): PluginOpenScreenInput {
+  const trimmedTitle = title?.trim();
+  return {
+    screenId: "bots",
+    params: {
+      feedKind: kind,
+      feedId: id,
+      ...(trimmedTitle ? { title: trimmedTitle } : {}),
+    },
+  };
+}
+
+export function teamChatScreen(groupId: string): PluginOpenScreenInput {
+  return {
+    screenId: "bots",
+    params: {
+      groupId,
+      teamId: groupId,
+      teamChat: "1",
+    },
+  };
 }
 
 export function libraryScreen(target: LibraryTarget | null, title?: string): PluginOpenScreenInput {

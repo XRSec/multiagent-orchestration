@@ -10,6 +10,8 @@ import React, { useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import type { ParsedCompanionIntent } from "../../../shared/companion-intent";
 import { useT } from "../../i18n";
+import { triggerLayoutAnimation, useReduceMotion } from "../../motion";
+import { nativeTokens } from "../../native";
 import { ui } from "../../typography";
 
 type Colors = PluginTheme["colors"];
@@ -21,17 +23,23 @@ export interface CompanionIntentBadgeProps {
 
 export function CompanionIntentBadge({ colors, companion }: CompanionIntentBadgeProps) {
   const { t } = useT();
+  const tokens = nativeTokens(colors);
+  const reduceMotion = useReduceMotion();
   const [expanded, setExpanded] = useState(false);
 
   const isWeb = Platform.OS === "web";
+
+  const toggleExpanded = () => {
+    triggerLayoutAnimation(200, reduceMotion);
+    setExpanded((prev) => !prev);
+  };
 
   return (
     <View
       style={{
         borderRadius: 8,
-        borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: colors.surface2,
+        borderWidth: 0,
+        backgroundColor: tokens.brandClaySoft,
         marginTop: 6,
         overflow: "hidden",
         alignSelf: "stretch",
@@ -41,7 +49,7 @@ export function CompanionIntentBadge({ colors, companion }: CompanionIntentBadge
         accessibilityRole="button"
         accessibilityLabel={expanded ? t("companion.collapseTooltip") : t("companion.expandTooltip")}
         accessibilityState={{ expanded }}
-        onPress={() => setExpanded((prev) => !prev)}
+        onPress={toggleExpanded}
         style={{
           flexDirection: "row",
           alignItems: "center",
@@ -52,7 +60,7 @@ export function CompanionIntentBadge({ colors, companion }: CompanionIntentBadge
         }}
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 }}>
-          <Icon name="Sparkles" size={13} color={colors.accent} />
+          <Icon name="Sparkles" size={13} color={tokens.brandClay} />
           <Text
             numberOfLines={1}
             ellipsizeMode="tail"
@@ -74,9 +82,9 @@ export function CompanionIntentBadge({ colors, companion }: CompanionIntentBadge
       </Pressable>
 
       {expanded && (
-        <View style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingHorizontal: 10, paddingVertical: 8, gap: 8 }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: tokens.borderAccent, paddingHorizontal: 10, paddingVertical: 8, gap: 8 }}>
           <View style={{ gap: 2 }}>
-            <Text style={{ fontSize: ui(11), fontWeight: "600", letterSpacing: 0.2, color: colors.accent }}>
+            <Text style={{ fontSize: ui(11), fontWeight: "600", letterSpacing: 0.2, color: tokens.brandClay, fontVariant: ["tabular-nums"] }}>
               {t("companion.distilledRequirement")} (T{companion.turnIndex})
             </Text>
             <Text
@@ -91,17 +99,16 @@ export function CompanionIntentBadge({ colors, companion }: CompanionIntentBadge
           </View>
 
           <View style={{ gap: 2 }}>
-            <Text style={{ fontSize: ui(11), fontWeight: "600", letterSpacing: 0.2, color: colors.accent }}>
+            <Text style={{ fontSize: ui(11), fontWeight: "600", letterSpacing: 0.2, color: tokens.brandClay }}>
               {t("companion.compiledPrompt")}
             </Text>
             <View
               style={{
                 borderRadius: 6,
-                borderWidth: 1,
+                borderWidth: 0,
                 padding: 8,
                 marginTop: 2,
                 backgroundColor: colors.surface1,
-                borderColor: colors.border,
               }}
             >
               <Text

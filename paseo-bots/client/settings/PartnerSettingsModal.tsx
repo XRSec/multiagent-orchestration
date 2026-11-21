@@ -15,6 +15,7 @@ import type { TeamDraft } from "../../shared/groups";
 import { Avatar, TeamLogo } from "../Avatar";
 import type { LocalHost } from "../data";
 import { useT } from "../i18n";
+import { isImeComposing } from "../keyboard";
 import { nativeTokens } from "../native";
 import { BotPanel, type PanelProps, type SectionId } from "../panel/BotPanel";
 import { TeamEditorForm } from "../teams/TeamSheet";
@@ -258,8 +259,7 @@ function TargetSelectorRow({ label, colors, items }: { label: string; colors: Co
               paddingHorizontal: 10,
               paddingVertical: 5,
               borderRadius: 20,
-              borderWidth: 1,
-              borderColor: item.active ? colors.accent : colors.border,
+              borderWidth: 0,
               backgroundColor: item.active ? colors.surface2 : colors.surface1,
             }}
           >

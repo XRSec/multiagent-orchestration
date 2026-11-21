@@ -1,4 +1,13 @@
-import { primaryGroupForBot, type Bot, type BotGroup, type FallbackModel } from "../shared/bot";
+import {
+  GLOBAL_ASSISTANT_LABEL,
+  isGlobalAssistantBot,
+  LONG_SESSION_ENABLED_LABEL,
+  LONG_SESSION_SYNC_METADATA,
+  primaryGroupForBot,
+  type Bot,
+  type BotGroup,
+  type FallbackModel,
+} from "../shared/bot";
 import {
   chatLabels,
   ENGINE_LABEL,
@@ -16,10 +25,11 @@ import {
   type SubagentEngine,
 } from "../shared/chat";
 import { resolveSessionRole, teamsOf } from "../shared/groups";
-import { ASKED_IN_LABEL } from "../shared/handoff";
+import { ASKED_IN_LABEL, resolveTierDepth } from "../shared/handoff";
 import { newUuid } from "../shared/uuid";
 import { ensureManagedSessionHome } from "./bot-home";
 import type { BotsHost } from "./host";
+import { computeMemorySyncSnapshot } from "./memory";
 import { systemPrompt } from "./prompt";
 import type { Relay } from "./relay";
 
@@ -183,12 +193,17 @@ export async function startChat(
   };
   const placement = resolveBotPlacement(effectiveBot, group, home);
 
+  const isGlobalAssistant =
+    isGlobalAssistantBot(effectiveBot) && !input.askedByBotId && !input.isWorkflowStage;
+
   const sessionRole = resolveSessionRole({
     botId: bot.id,
     group,
     askedByBotId: input.askedByBotId,
     isWorkflowStage: input.isWorkflowStage,
+    isGlobalAssistant,
   });
+  const tierDepth = resolveTierDepth(input.labels);
 
   const plugin = { tools: await relay.mountTools(bot.id, agentId), apps: bot.apps.length ? await relay.mountApps(bot.id) : null };
   const promptResult = await systemPrompt(
@@ -205,9 +220,11 @@ export async function startChat(
       sessionBoardPath: home.sessionBoardPath,
       targetProjectDirs: placement.targetProjectDirs,
       sessionRole,
+      tierDepth,
       agentId,
       isWorkflowStage: input.isWorkflowStage,
       askedByBotId: input.askedByBotId,
+      isGlobalAssistant,
       ...(input.syncAgy !== undefined ? { syncAgy: input.syncAgy } : {}),
       ...(input.agyAgentsDir !== undefined ? { agyAgentsDir: input.agyAgentsDir } : {}),
     },
@@ -221,9 +238,15 @@ export async function startChat(
     ...input.labels,
     [TEAM_SESSION_LABEL]: teamSessionId,
     [SESSION_ROLE_LABEL]: sessionRole,
+    ...(isGlobalAssistant
+      ? {
+          [GLOBAL_ASSISTANT_LABEL]: "true",
+          [LONG_SESSION_ENABLED_LABEL]: "true",
+        }
+      : {}),
   };
 
-  return startBotChat(
+  const startedChatId = await startBotChat(
     paseo,
     {
       bot: effectiveBot,
@@ -245,4 +268,20 @@ export async function startChat(
     },
     onFallback,
   );
+
+  if (isGlobalAssistant) {
+    const snapshot = await computeMemorySyncSnapshot(home.botHomePath, home.teamRootPath).catch(() => null);
+    await paseo.agents
+      .ref(startedChatId)
+      .setMetadata({
+        [LONG_SESSION_SYNC_METADATA]: {
+          pendingMemorySync: false,
+          lastSyncedMemoryHash: snapshot?.hash ?? null,
+          compactionCount: 0,
+        },
+      })
+      .catch(() => null);
+  }
+
+  return startedChatId;
 }

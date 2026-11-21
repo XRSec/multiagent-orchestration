@@ -1,3 +1,5 @@
+import type { ToolFootprintDigest } from "./companion-intent";
+
 // A bot's daily log and recent-work brief, after OpenMausBot's memory/log and
 // recent-work.ts. The app writes one line per finished turn to
 // memory/log/YYYY-MM-DD.md; the newest line from each chat of the last two days
@@ -37,6 +39,197 @@ export interface TimelineItemLike {
   type: string;
   text?: unknown;
   name?: unknown;
+  input?: unknown;
+  output?: unknown;
+  call?: unknown;
+  params?: unknown;
+  locations?: unknown;
+  exitCode?: unknown;
+  error?: unknown;
+  [key: string]: unknown;
+}
+
+const MUTATION_TOOLS = new Set([
+  "write_file",
+  "edit_file",
+  "create_file",
+  "delete_file",
+  "apply_patch",
+  "patch_file",
+  "fs/write_text_file",
+]);
+
+const INSPECTION_TOOLS = new Set([
+  "read_file",
+  "view_file",
+  "fs/read_text_file",
+  "list_files",
+  "directory_list",
+  "search_files",
+  "grep",
+]);
+
+const CMD_TOOLS = new Set([
+  "run_command",
+  "bash",
+  "terminal",
+  "exec",
+  "terminal/run",
+]);
+
+/**
+ * Deterministically extracts ToolFootprintDigest from timeline items of the latest turn.
+ * Extracts mutatedFiles (<=12), inspectedFiles (<=8), commandOutcomes (<=5), errorHeadlines (<=2).
+ */
+export function extractToolFootprintDigest(items: readonly TimelineItemLike[]): ToolFootprintDigest {
+  let start = items.length;
+  while (start > 0 && items[start - 1]!.type !== "user_message") start--;
+  const turn = items.slice(start);
+
+  const mutatedFiles: string[] = [];
+  const inspectedFiles: string[] = [];
+  const commandOutcomes: Array<{ command: string; exitCode: number }> = [];
+  const errorHeadlines: string[] = [];
+
+  for (const item of turn) {
+    const rawName =
+      typeof item.name === "string"
+        ? item.name
+        : typeof (item as any)?.detail?.name === "string"
+          ? (item as any).detail.name
+          : "";
+    const name = toolLabel(rawName).toLowerCase();
+
+    const extractPath = (): string | null => {
+      const anyItem = item as Record<string, any>;
+      const input =
+        anyItem.detail?.input ||
+        anyItem.input ||
+        anyItem.params ||
+        anyItem.call?.input ||
+        anyItem.call ||
+        anyItem.args;
+      const pathVal =
+        input?.Path ||
+        input?.path ||
+        input?.filePath ||
+        input?.file_path ||
+        input?.file ||
+        input?.TargetFile ||
+        input?.AbsolutePath;
+      if (typeof pathVal === "string" && pathVal.trim()) {
+        return pathVal.trim();
+      }
+      const locations = anyItem.locations || anyItem.detail?.locations;
+      if (Array.isArray(locations) && locations.length > 0) {
+        const loc = locations[0];
+        const p = typeof loc === "string" ? loc : loc?.path || loc?.uri;
+        if (typeof p === "string" && p.trim()) return p.trim();
+      }
+      return null;
+    };
+
+    if (MUTATION_TOOLS.has(name) || [...MUTATION_TOOLS].some((t) => name.endsWith(t))) {
+      const p = extractPath();
+      if (p && !mutatedFiles.includes(p) && mutatedFiles.length < 12) {
+        mutatedFiles.push(p);
+      }
+    } else if (INSPECTION_TOOLS.has(name) || [...INSPECTION_TOOLS].some((t) => name.endsWith(t))) {
+      const p = extractPath();
+      if (p && !mutatedFiles.includes(p) && !inspectedFiles.includes(p) && inspectedFiles.length < 8) {
+        inspectedFiles.push(p);
+      }
+    }
+
+    if (CMD_TOOLS.has(name) || [...CMD_TOOLS].some((t) => name.endsWith(t))) {
+      const anyItem = item as Record<string, any>;
+      const input =
+        anyItem.detail?.input ||
+        anyItem.input ||
+        anyItem.params ||
+        anyItem.call?.input ||
+        anyItem.call ||
+        anyItem.args;
+      const cmdVal =
+        input?.CommandLine ||
+        input?.command ||
+        input?.cmd ||
+        anyItem.detail?.input?.CommandLine ||
+        anyItem.detail?.input?.command ||
+        (typeof anyItem.text === "string" ? anyItem.text : "");
+      const cmdStr = typeof cmdVal === "string" ? cmdVal.trim() : "";
+
+      let exitCode = 0;
+      if (typeof anyItem.exitCode === "number") {
+        exitCode = anyItem.exitCode;
+      } else if (typeof anyItem.detail?.exitCode === "number") {
+        exitCode = anyItem.detail.exitCode;
+      } else if (typeof anyItem.output?.exitCode === "number") {
+        exitCode = anyItem.output.exitCode;
+      } else if (typeof anyItem.detail?.output?.exitCode === "number") {
+        exitCode = anyItem.detail.output.exitCode;
+      } else if (typeof anyItem.text === "string") {
+        const exitMatch = /Command exited with code (\d+)/i.exec(anyItem.text);
+        if (exitMatch) {
+          exitCode = parseInt(exitMatch[1]!, 10);
+        } else if (/exit code:?\s*(\d+)/i.test(anyItem.text)) {
+          const m = /exit code:?\s*(\d+)/i.exec(anyItem.text);
+          if (m) exitCode = parseInt(m[1]!, 10);
+        }
+      }
+
+      if (cmdStr && commandOutcomes.length < 5) {
+        commandOutcomes.push({
+          command: cmdStr.length > 80 ? `${cmdStr.slice(0, 77)}…` : cmdStr,
+          exitCode,
+        });
+      }
+    }
+
+    // Error headlines extraction
+    const anyItem = item as Record<string, any>;
+    const text =
+      typeof anyItem.text === "string"
+        ? anyItem.text
+        : typeof anyItem.output === "string"
+          ? anyItem.output
+          : typeof anyItem.detail?.text === "string"
+            ? anyItem.detail.text
+            : typeof anyItem.detail?.output === "string"
+              ? anyItem.detail.output
+              : "";
+    const isExplicitError =
+      (anyItem.exitCode !== undefined && anyItem.exitCode !== 0) ||
+      (anyItem.detail?.exitCode !== undefined && anyItem.detail?.exitCode !== 0) ||
+      (anyItem.output?.exitCode !== undefined && anyItem.output?.exitCode !== 0) ||
+      (anyItem.detail?.output?.exitCode !== undefined && anyItem.detail?.output?.exitCode !== 0);
+    if (item.type === "tool_result" || isExplicitError || anyItem.error || anyItem.detail?.error) {
+      if ((isExplicitError || /error|failed|exception|fatal/i.test(text)) && errorHeadlines.length < 2) {
+        const lines = text
+          .split("\n")
+          .map((l: string) => l.trim())
+          .filter(
+            (l: string) =>
+              l &&
+              !l.startsWith("Command exited with code") &&
+              !/^exit code:?\s*\d+/i.test(l)
+          );
+        const firstLine =
+          lines.find((l: string) => /error|failed|exception|fatal/i.test(l)) ||
+          lines[0];
+        if (firstLine && !errorHeadlines.includes(firstLine)) {
+          errorHeadlines.push(firstLine.slice(0, 160));
+        }
+      }
+    }
+  }
+
+  return {
+    mutatedFiles,
+    inspectedFiles,
+    commandOutcomes,
+    errorHeadlines,
+  };
 }
 
 /** The latest turn in a chat's timeline: the bot's last reply and the tools it used. */
@@ -47,8 +240,15 @@ export function lastTurn(items: readonly TimelineItemLike[]): { reply: string; t
   const reply = [...turn].reverse().find((item) => item.type === "assistant_message" && String(item.text ?? "").trim());
   const tools: string[] = [];
   for (const item of turn) {
-    if (item.type !== "tool_call" || typeof item.name !== "string") continue;
-    const label = toolLabel(item.name);
+    if (item.type !== "tool_call") continue;
+    const rawName =
+      typeof item.name === "string"
+        ? item.name
+        : typeof (item as any)?.detail?.name === "string"
+          ? (item as any).detail.name
+          : "";
+    if (!rawName) continue;
+    const label = toolLabel(rawName);
     if (!tools.includes(label) && tools.length < MAX_TOOLS) tools.push(label);
   }
   return { reply: String(reply?.text ?? ""), tools };

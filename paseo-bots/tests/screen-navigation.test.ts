@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { BOT_SCREENS, chatScreen, chatSelectionKey, libraryScreen, libraryTarget, rememberStartedChat, startedChat, claimAutomaticChat, retryAutomaticChat, resolveBotScreen, parentScreen, teamMapScreen, pinnedBotScreen } from "../client/screen-navigation";
+import { BOT_SCREENS, type BotScreen, chatScreen, chatSelectionKey, feedScreen, libraryScreen, libraryTarget, rememberStartedChat, startedChat, claimAutomaticChat, retryAutomaticChat, resolveBotScreen, parentScreen, teamChatScreen, teamMapScreen, teamsScreen, pinnedBotScreen, workflowsScreen } from "../client/screen-navigation";
 import type { LibraryTarget } from "../client/navigation";
 
 describe("mobile screen navigation", () => {
@@ -64,21 +64,43 @@ describe("mobile screen navigation", () => {
     expect(startedChat("host-a", empty?.params?.draftId)).toBe("first-chat");
   });
 
-  it("opens Bots for old and cold-restored Team map routes without needing route history", async () => {
-    expect(resolveBotScreen("bot-teams", {})).toBe("bots");
+  it("exposes teams and bot-teams directly across cold restarts and resolves back cleanly", async () => {
+    expect(BOT_SCREENS).toContainEqual({ id: "teams", title: "Teams" });
+    expect(teamsScreen()).toEqual({ screenId: "teams" });
+    expect(resolveBotScreen("teams", {})).toBe("teams");
+    expect(resolveBotScreen("bot-teams", {})).toBe("bot-teams");
     const opened = teamMapScreen();
-    expect(resolveBotScreen("bot-teams", opened.params!)).toBe("bot-teams");
+    expect(resolveBotScreen("bot-teams", opened.params ?? {})).toBe("bot-teams");
     vi.resetModules();
     const restarted = await import("../client/screen-navigation");
-    expect(restarted.resolveBotScreen("bot-teams", opened.params!)).toBe("bots");
-    expect(restarted.resolveBotScreen("bot-teams", restarted.teamMapScreen().params!)).toBe("bot-teams");
+    expect(restarted.resolveBotScreen("teams", {})).toBe("teams");
+    expect(restarted.resolveBotScreen("bot-teams", opened.params ?? {})).toBe("bot-teams");
+    expect(parentScreen("teams", {})).toBeNull();
+    expect(parentScreen("bot-teams", {})).toEqual({ label: "Teams", target: { screenId: "teams" } });
   });
 
-  it("gives every detail screen an explicit parent independent of the host Back stack", () => {
-    expect(parentScreen("bots", {})).toBeNull();
-    for (const { id } of BOT_SCREENS.filter(({ id }) => id !== "bots")) {
-      expect(parentScreen(id, { botId: "bot-1" })).not.toBeNull();
+  it("gives every detail screen an explicit parent without self-loops and returns null for top-level pillars", () => {
+    const topLevel: BotScreen[] = ["bots", "teams", "workflows"];
+    for (const id of topLevel) {
+      expect(parentScreen(id, {})).toBeNull();
     }
+    expect(workflowsScreen()).toEqual({ screenId: "workflows" });
+
+    const subScreens: BotScreen[] = [
+      ...BOT_SCREENS.filter(({ id }) => !topLevel.includes(id)).map(({ id }) => id),
+      "bot-workflows",
+    ];
+    for (const id of subScreens) {
+      const parent = parentScreen(id, { botId: "bot-1" });
+      expect(parent).not.toBeNull();
+      expect(parent?.target.screenId).not.toBe(id);
+    }
+
+    expect(parentScreen("bot-teams", {})).toEqual({ label: "Teams", target: { screenId: "teams" } });
+    expect(parentScreen("bot-workflows", {})).toEqual({ label: "Workflows", target: { screenId: "workflows" } });
+    expect(parentScreen("bot-chat", { botId: "bot-1" })).toEqual({ label: "Bots", target: { screenId: "bots" } });
+    expect(parentScreen("bot-settings", { botId: "bot-1" })).toEqual({ label: "Bots", target: { screenId: "bots" } });
+    expect(parentScreen("bot-library", {})).toEqual({ label: "Bots", target: { screenId: "bots" } });
     expect(parentScreen("bot-section", { botId: "bot-1" })?.target).toMatchObject({ screenId: "bot-settings", params: { botId: "bot-1" } });
     expect(parentScreen("bot-library-item", {})?.target.screenId).toBe("bot-library");
     // Other restored details remain accessible, with an explicit way home.
@@ -105,5 +127,41 @@ describe("mobile screen navigation", () => {
     expect(startedChat("host-a", "draft-2")).toBeNull();
     rememberStartedChat("host-a", undefined, "unrelated");
     expect(startedChat("host-a", undefined)).toBeNull();
+  });
+
+  it("supports scoped workflows, feed, and team chat deep-link descriptors compatible with BOT_SCREENS", () => {
+    const validScreenIds = new Set(BOT_SCREENS.map((s) => s.id));
+
+    expect(workflowsScreen()).toEqual({ screenId: "workflows" });
+    expect(workflowsScreen("   ")).toEqual({ screenId: "workflows" });
+    expect(workflowsScreen("global")).toEqual({ screenId: "workflows", params: { scope: "global" } });
+    expect(workflowsScreen("team:team-alpha")).toEqual({ screenId: "workflows", params: { scope: "team:team-alpha" } });
+    expect(workflowsScreen("bot:bot-mocode")).toEqual({ screenId: "workflows", params: { scope: "bot:bot-mocode" } });
+
+    const botFeed = feedScreen("bot", "bot-mocode");
+    expect(validScreenIds.has(botFeed.screenId as BotScreen)).toBe(true);
+    expect(botFeed).toEqual({
+      screenId: "bots",
+      params: { feedKind: "bot", feedId: "bot-mocode" },
+    });
+    expect(resolveBotScreen(botFeed.screenId as BotScreen, botFeed.params ?? {})).toBe("bots");
+    expect(parentScreen(botFeed.screenId as BotScreen, botFeed.params ?? {})).toBeNull();
+
+    const teamFeed = feedScreen("team", "team-alpha", "Alpha Feed");
+    expect(validScreenIds.has(teamFeed.screenId as BotScreen)).toBe(true);
+    expect(teamFeed).toEqual({
+      screenId: "bots",
+      params: { feedKind: "team", feedId: "team-alpha", title: "Alpha Feed" },
+    });
+    expect(parentScreen(teamFeed.screenId as BotScreen, teamFeed.params ?? {})).toBeNull();
+
+    const teamChat = teamChatScreen("team-alpha");
+    expect(validScreenIds.has(teamChat.screenId as BotScreen)).toBe(true);
+    expect(teamChat).toEqual({
+      screenId: "bots",
+      params: { groupId: "team-alpha", teamId: "team-alpha", teamChat: "1" },
+    });
+    expect(resolveBotScreen(teamChat.screenId as BotScreen, teamChat.params ?? {})).toBe("bots");
+    expect(parentScreen(teamChat.screenId as BotScreen, teamChat.params ?? {})).toBeNull();
   });
 });

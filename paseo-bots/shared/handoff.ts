@@ -5,6 +5,20 @@ import { BOT_LABEL } from "./bot";
 export const ASKED_BY_LABEL = "paseo-bots.asked-by";
 export const ASKED_IN_LABEL = "paseo-bots.asked-in";
 export const ASK_NOTIFY_LABEL = "paseo-bots.notify";
+export const TIER_DEPTH_LABEL = "paseo-bots.tier-depth";
+export const MAX_TIER_DEPTH = 3;
+
+export function resolveTierDepth(labels?: Record<string, string>): 1 | 2 | 3 {
+  const depth = labels?.[TIER_DEPTH_LABEL];
+  if (depth === "1" || depth === "2" || depth === "3") {
+    return Number(depth) as 1 | 2 | 3;
+  }
+  if (labels?.[ASKED_BY_LABEL]) {
+    return 2;
+  }
+  return 1;
+}
+
 export const HANDOFF_REQUEST_METADATA = "paseo-bots.handoff-request";
 export const HandoffRequestSchema = z.object({
   requesterBotId: z.string().min(1).max(200),

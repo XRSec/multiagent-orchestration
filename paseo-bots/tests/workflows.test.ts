@@ -1,22 +1,39 @@
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { BotSchema, EMPTY_LIBRARY, type Bot, type BotGroup } from "../shared/bot";
 import { applyChanges } from "../shared/changes";
 import { teamPrompt } from "../shared/groups";
+import { workflowRunRpc } from "../shared/rpc";
 import { TaskCardSchema, taskCardOf } from "../shared/task-card";
+import type { BotsHost } from "../server/host";
+import type { Relay } from "../server/relay";
 import {
   WorkflowDefinitionSchema,
   WorkflowStageDefinitionSchema,
+  WorkflowStopReasonSchema,
+  WorkflowErrorCategorySchema,
+  WorkflowBudgetConfigSchema,
+  StageUsageMetadataSchema,
+  StageOutputContractSchema,
+  TaskStageStateSchema,
+  WorkflowRunStateSchema,
   buildStageBriefPrompt,
   initWorkflowRunState,
   parseWorkerHandoff,
   readyStages,
   resolveStepEngine,
   validateWorkflowDAG,
+  extractJsonFromOutput,
+  validateStageOutputContract,
+  checkBudget,
+  sumUsage,
   MAX_INLINE_UPSTREAM_CHARS,
   type WorkflowDefinition,
   type WorkflowStageDefinition,
+  type StageOutputContract,
+  type WorkflowBudgetConfig,
 } from "../shared/workflows";
 
 const NOW = "2026-11-18T00:00:00.000Z";
@@ -497,6 +514,464 @@ describe("workflows schema & DAG validation", () => {
       expect(prompt).toContain("<worker_handoff>");
       expect(prompt).toContain("STATUS: PASS");
       expect(prompt).toContain("Config updated.");
+    });
+  });
+
+  describe("workflow runtime optimizations (google-antigravity-sdk patterns)", () => {
+    it("validates WorkflowStopReasonSchema and WorkflowErrorCategorySchema values", () => {
+      const validStopReasons = [
+        "completed",
+        "failed",
+        "timeout",
+        "stall_timeout",
+        "budget_exceeded",
+        "policy_denied",
+        "validation_failed",
+        "cancelled",
+      ];
+      for (const reason of validStopReasons) {
+        expect(WorkflowStopReasonSchema.parse(reason)).toBe(reason);
+      }
+      expect(() => WorkflowStopReasonSchema.parse("invalid_reason")).toThrow();
+
+      const validErrorCategories = [
+        "transient_api",
+        "validation",
+        "policy_denied",
+        "dag_invalid",
+        "cancelled",
+        "timeout",
+        "stall_timeout",
+        "budget_exceeded",
+        "unknown",
+      ];
+      for (const cat of validErrorCategories) {
+        expect(WorkflowErrorCategorySchema.parse(cat)).toBe(cat);
+      }
+      expect(() => WorkflowErrorCategorySchema.parse("nonexistent_cat")).toThrow();
+    });
+
+    it("parses declarative budget config on WorkflowDefinition and WorkflowStageDefinition", () => {
+      const budget = WorkflowBudgetConfigSchema.parse({
+        maxModelCalls: 10,
+        maxToolCalls: 50,
+        maxTotalTokens: 20000,
+      });
+
+      const stage = WorkflowStageDefinitionSchema.parse({
+        id: "stage-budgeted",
+        name: "Budgeted Stage",
+        botId: "bot-worker",
+        budget,
+        outputContract: {
+          format: "json",
+          requiredKeys: ["summary", "result"],
+        },
+      });
+
+      expect(stage.budget).toEqual({
+        maxModelCalls: 10,
+        maxToolCalls: 50,
+        maxTotalTokens: 20000,
+      });
+      expect(stage.outputContract).toEqual({
+        format: "json",
+        requiredKeys: ["summary", "result"],
+      });
+
+      const wf = WorkflowDefinitionSchema.parse({
+        id: "wf-budgeted",
+        name: "Budgeted Workflow",
+        budget: { maxTotalTokens: 100000 },
+        stages: [stage],
+      });
+      expect(wf.budget?.maxTotalTokens).toBe(100000);
+
+      // Verify backward compatibility: stage and workflow without budget/contract parse cleanly
+      const legacyStage = WorkflowStageDefinitionSchema.parse({
+        id: "legacy",
+        name: "Legacy",
+        botId: "bot-w",
+      });
+      expect(legacyStage.budget).toBeUndefined();
+      expect(legacyStage.outputContract).toBeUndefined();
+    });
+
+    it("parses optional observability fields on TaskStageStateSchema and WorkflowRunStateSchema", () => {
+      const stageState = TaskStageStateSchema.parse({
+        id: "s1",
+        name: "Stage 1",
+        botId: "bot-w",
+        engine: "native",
+        status: "done",
+        stopReason: "completed",
+        errorCategory: undefined,
+        durationMs: 1450,
+        usage: {
+          promptTokens: 100,
+          candidatesTokens: 40,
+          thoughtsTokens: 10,
+          totalTokens: 150,
+          toolCalls: 3,
+          modelCalls: 1,
+        },
+        repairGuidance: null,
+      });
+
+      expect(stageState.stopReason).toBe("completed");
+      expect(stageState.durationMs).toBe(1450);
+      expect(stageState.usage?.totalTokens).toBe(150);
+
+      const runState = WorkflowRunStateSchema.parse({
+        workflowId: "wf-1",
+        workflowName: "Flow 1",
+        status: "done",
+        startedAt: NOW,
+        stopReason: "completed",
+        durationMs: 3200,
+        usage: {
+          totalTokens: 150,
+          modelCalls: 1,
+        },
+        stages: [stageState],
+      });
+
+      expect(runState.stopReason).toBe("completed");
+      expect(runState.durationMs).toBe(3200);
+      expect(runState.usage?.totalTokens).toBe(150);
+    });
+
+    it("extracts JSON correctly from raw text, code fences, and embedded blocks", () => {
+      // 1. Raw JSON
+      const rawRes = extractJsonFromOutput('{"status": "ok", "value": 42}');
+      expect(rawRes.success).toBe(true);
+      expect(rawRes.data).toEqual({ status: "ok", value: 42 });
+
+      // 2. Fenced ```json ... ```
+      const fencedRes = extractJsonFromOutput('Here is the data:\n```json\n{"summary": "done", "code": 0}\n```\nHope it helps!');
+      expect(fencedRes.success).toBe(true);
+      expect(fencedRes.data).toEqual({ summary: "done", code: 0 });
+
+      // 3. Fenced without json tag ``` ... ```
+      const plainFence = extractJsonFromOutput('```\n{"key": "val"}\n```');
+      expect(plainFence.success).toBe(true);
+      expect(plainFence.data).toEqual({ key: "val" });
+
+      // 4. Embedded substring { ... }
+      const embeddedRes = extractJsonFromOutput('Leading text {"embedded": true} trailing text');
+      expect(embeddedRes.success).toBe(true);
+      expect(embeddedRes.data).toEqual({ embedded: true });
+
+      // 5. Invalid JSON
+      const invalidRes = extractJsonFromOutput("Not JSON at all {broken");
+      expect(invalidRes.success).toBe(false);
+    });
+
+    it("validates stage output contracts and generates structured repair guidance", () => {
+      const contract: StageOutputContract = {
+        format: "json",
+        requiredKeys: ["status", "findings"],
+      };
+
+      // Valid output satisfying contract
+      const validOut = JSON.stringify({ status: "PASS", findings: ["all tests pass"] });
+      const validCheck = validateStageOutputContract(validOut, contract);
+      expect(validCheck.valid).toBe(true);
+
+      // Missing required key
+      const missingOut = JSON.stringify({ status: "PASS" });
+      const missingCheck = validateStageOutputContract(missingOut, contract);
+      expect(missingCheck.valid).toBe(false);
+      expect(missingCheck.error).toContain("missing required key(s): \"findings\"");
+      expect(missingCheck.repairGuidance).toContain("<repair_guidance>" in {} ? "" : "Structured output validation failed");
+      expect(missingCheck.repairGuidance).toContain("findings");
+
+      // Malformed JSON
+      const malformedCheck = validateStageOutputContract("This is plain text with no json", contract);
+      expect(malformedCheck.valid).toBe(false);
+      expect(malformedCheck.error).toContain("failed JSON contract validation");
+      expect(malformedCheck.repairGuidance).toContain("Output could not be parsed as valid JSON");
+    });
+
+    it("enforces budget checks and sums usage metadata", () => {
+      const budget: WorkflowBudgetConfig = {
+        maxModelCalls: 5,
+        maxToolCalls: 20,
+        maxTotalTokens: 10000,
+      };
+
+      expect(checkBudget(budget, { modelCalls: 3, toolCalls: 10, totalTokens: 5000 }).exceeded).toBe(false);
+      expect(checkBudget(budget, { modelCalls: 6 }).exceeded).toBe(true);
+      expect(checkBudget(budget, { toolCalls: 25 }).exceeded).toBe(true);
+      expect(checkBudget(budget, { totalTokens: 12000 }).exceeded).toBe(true);
+
+      const u1 = { promptTokens: 100, totalTokens: 150, modelCalls: 1, toolCalls: 2 };
+      const u2 = { promptTokens: 200, totalTokens: 350, modelCalls: 2, toolCalls: 3 };
+      const combined = sumUsage(u1, u2);
+      expect(combined.promptTokens).toBe(300);
+      expect(combined.totalTokens).toBe(500);
+      expect(combined.modelCalls).toBe(3);
+      expect(combined.toolCalls).toBe(5);
+    });
+
+    it("injects <repair_guidance> into <repair_brief> when repairGuidance is present on retry", () => {
+      const prompt = buildStageBriefPrompt({
+        workflowName: "Pipeline",
+        stage: makeStage({ id: "stage-1", name: "Worker" }),
+        attempt: 2,
+        previousError: "Stage output JSON is missing required key(s): \"summary\".",
+        repairGuidance: "Structured output validation failed: Missing required key(s): \"summary\".",
+      });
+
+      expect(prompt).toContain("<repair_brief>");
+      expect(prompt).toContain("<repair_guidance>");
+      expect(prompt).toContain("Structured output validation failed: Missing required key(s): \"summary\".");
+      expect(prompt).toContain("</repair_guidance>");
+      expect(prompt).toContain("</repair_brief>");
+    });
+  });
+
+  describe("TaskCard context, workflowRunRpc, and startWorkflowFromRpc", () => {
+    let rpcHome = "";
+    const previousHome = process.env.PASEO_HOME;
+
+    beforeAll(() => {
+      rpcHome = mkdtempSync(join(tmpdir(), "paseo-bots-wf-rpc-"));
+      process.env.PASEO_HOME = rpcHome;
+    });
+
+    afterAll(() => {
+      if (previousHome === undefined) delete process.env.PASEO_HOME;
+      else process.env.PASEO_HOME = previousHome;
+      rmSync(rpcHome, { recursive: true, force: true });
+    });
+
+    it("propagates groupId and sourceChatId (with cardAgentId fallback) onto TaskCard", () => {
+      const wf = WorkflowDefinitionSchema.parse({
+        id: "wf-ctx",
+        name: "Context Flow",
+        stages: [{ id: "s1", name: "Stage 1", botId: "bot-a" }],
+      });
+      const run = initWorkflowRunState(wf);
+
+      const withExplicit = taskCardOf({
+        taskId: "task-explicit",
+        title: "Workflow: Context Flow",
+        status: "running",
+        version: 1,
+        settledAt: null,
+        groupId: "team-alpha",
+        sourceChatId: "chat-source-1",
+        cardAgentId: "chat-card-fallback",
+        members: [],
+        workflow: run,
+      });
+      expect(TaskCardSchema.parse(withExplicit)).toMatchObject({
+        groupId: "team-alpha",
+        sourceChatId: "chat-source-1",
+      });
+
+      const withFallback = taskCardOf({
+        taskId: "task-fallback",
+        title: "Workflow: Context Flow",
+        status: "running",
+        version: 1,
+        settledAt: null,
+        cardAgentId: "chat-card-only",
+        members: [],
+        workflow: run,
+      });
+      expect(TaskCardSchema.parse(withFallback)).toMatchObject({
+        sourceChatId: "chat-card-only",
+      });
+      expect(withFallback.groupId).toBeUndefined();
+
+      const bare = taskCardOf({
+        taskId: "task-bare",
+        title: "Workflow: Context Flow",
+        status: "running",
+        version: 1,
+        settledAt: null,
+        members: [],
+        workflow: run,
+      });
+      expect("groupId" in bare).toBe(false);
+      expect("sourceChatId" in bare).toBe(false);
+    });
+
+    it("validates workflowRunRpc input and output schemas", () => {
+      expect(workflowRunRpc.name).toBe("bots.workflows.run");
+
+      const parsedIn = workflowRunRpc.input.parse({
+        workflowId: "wf-build",
+        goal: "Ship release",
+        groupId: "team-1",
+        params: { branch: "main", dryRun: false },
+        idempotencyKey: "req-123",
+      });
+      expect(parsedIn.params).toEqual({ branch: "main", dryRun: false });
+
+      expect(() => workflowRunRpc.input.parse({ workflowId: "", goal: "Ship" })).toThrow();
+      expect(() => workflowRunRpc.input.parse({ workflowId: "wf-build", goal: "" })).toThrow();
+
+      const parsedOut = workflowRunRpc.output.parse({
+        ok: true,
+        taskId: "wf-abc",
+        chatId: "chat-1",
+        status: "done",
+        reused: false,
+      });
+      expect(parsedOut).toEqual({
+        ok: true,
+        taskId: "wf-abc",
+        chatId: "chat-1",
+        status: "done",
+        reused: false,
+      });
+    });
+
+    it("handles validation, missing workflows, happy-path team/global launch, and idempotency in startWorkflowFromRpc", async () => {
+      const { startWorkflowFromRpc } = await import("../server/tools/workflows");
+
+      const lead = makeBot({ id: "bot-lead", name: "moAdmin", contactBots: "off" });
+      const worker = makeBot({ id: "bot-worker", name: "moCode", contactBots: "off" });
+      const teamWf = WorkflowDefinitionSchema.parse({
+        id: "wf-team-rpc",
+        name: "Team RPC Flow",
+        stages: [{ id: "impl", name: "Implement", botId: "bot-worker", prompt: "Implement goal" }],
+      });
+      const globalWf = WorkflowDefinitionSchema.parse({
+        id: "wf-global-rpc",
+        name: "Global RPC Flow",
+        stages: [{ id: "audit", name: "Audit", botId: "bot-worker", prompt: "Audit goal" }],
+      });
+      const cyclicWf = {
+        id: "wf-cyclic-rpc",
+        name: "Cyclic RPC Flow",
+        description: "",
+        stages: [
+          { id: "a", name: "A", botId: "bot-worker", prompt: "", engine: "auto" as const, dependsOn: ["b"], maxRetries: 1 },
+          { id: "b", name: "B", botId: "bot-worker", prompt: "", engine: "auto" as const, dependsOn: ["a"], maxRetries: 1 },
+        ],
+      };
+
+      const group: BotGroup = {
+        id: "team-rpc",
+        name: "RPC Team",
+        logo: null,
+        leadId: "bot-lead",
+        memberIds: ["bot-lead", "bot-worker"],
+        instructions: "",
+        cwd: null,
+        mounts: [],
+        workflows: [teamWf, cyclicWf],
+        createdAt: NOW,
+        updatedAt: NOW,
+      };
+
+      const paseo = {
+        agents: {
+          list: async () => ({ entries: [{ agent: { id: "lead-chat-rpc" } }] }),
+          ref: () => ({
+            timeline: {
+              append: async () => {},
+              refetch: async () => ({ entries: [] }),
+            },
+          }),
+        },
+      };
+      const host = {
+        paseo,
+        attach() {},
+        onAttach: () => () => {},
+        chatOf: async () => ({ botId: "bot-lead", title: null, routineId: null, labels: {} }),
+        values: async () => ({ bots: [lead, worker], groups: [group], workflows: [globalWf] }),
+        requirePaseo: () => paseo,
+        bots: async () => [lead, worker],
+        bot: async (id: string) => [lead, worker].find((b) => b.id === id) ?? null,
+      } as unknown as BotsHost;
+
+      // 1. Validation & missing workflow / group errors
+      expect(await startWorkflowFromRpc(host, { workflowId: "wf-team-rpc", goal: "   " })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("goal"),
+      });
+      expect(await startWorkflowFromRpc(host, { workflowId: "missing-wf", goal: "Do X" })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("not found"),
+      });
+      expect(
+        await startWorkflowFromRpc(host, { workflowId: "wf-team-rpc", goal: "Do X", groupId: "unknown-team" }),
+      ).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("unknown-team"),
+      });
+      expect(await startWorkflowFromRpc(host, { workflowId: "wf-cyclic-rpc", goal: "Do X" })).toMatchObject({
+        ok: false,
+        error: expect.stringContaining("invalid DAG"),
+      });
+
+      // 2. Team workflow happy path with params + idempotencyKey
+      const dispatchSpy = vi.fn(async (ctx) => ({
+        ok: true,
+        output: `Ran ${ctx.stage.id}: ${ctx.prompt}`,
+      }));
+      const firstRun = await startWorkflowFromRpc(
+        host,
+        {
+          workflowId: "wf-team-rpc",
+          goal: "Build widget",
+          params: { env: "staging" },
+          idempotencyKey: "key-alpha",
+        },
+        { relay: {} as Relay, wait: true, dispatchStage: dispatchSpy },
+      );
+
+      expect(firstRun.ok).toBe(true);
+      expect(firstRun.reused).toBe(false);
+      expect(firstRun.status).toBe("done");
+      expect(firstRun.chatId).toBe("lead-chat-rpc");
+      expect(firstRun.card).toMatchObject({
+        taskId: firstRun.taskId,
+        groupId: "team-rpc",
+        sourceChatId: "lead-chat-rpc",
+        status: "done",
+      });
+      expect(dispatchSpy).toHaveBeenCalledTimes(1);
+      expect(dispatchSpy.mock.calls[0]?.[0]?.prompt).toContain("Build widget");
+      expect(dispatchSpy.mock.calls[0]?.[0]?.prompt).toContain('"env": "staging"');
+
+      // 3. Replaying with same idempotencyKey returns reused: true without re-running DAG
+      const replayRun = await startWorkflowFromRpc(
+        host,
+        {
+          workflowId: "wf-team-rpc",
+          goal: "Build widget",
+          params: { env: "staging" },
+          idempotencyKey: "key-alpha",
+        },
+        { relay: {} as Relay, wait: true, dispatchStage: dispatchSpy },
+      );
+      expect(replayRun.ok).toBe(true);
+      expect(replayRun.reused).toBe(true);
+      expect(replayRun.taskId).toBe(firstRun.taskId);
+      expect(dispatchSpy).toHaveBeenCalledTimes(1);
+
+      // 4. Global workflow happy path without groupId
+      const globalRun = await startWorkflowFromRpc(
+        host,
+        { workflowId: "wf-global-rpc", goal: "Audit repo" },
+        {
+          relay: {} as Relay,
+          wait: true,
+          dispatchStage: async () => ({ ok: true, output: "Audit ok" }),
+        },
+      );
+      expect(globalRun.ok).toBe(true);
+      expect(globalRun.reused).toBe(false);
+      expect(globalRun.status).toBe("done");
+      expect(globalRun.card?.groupId).toBeUndefined();
+      expect(globalRun.card?.sourceChatId).toBe("lead-chat-rpc");
     });
   });
 });

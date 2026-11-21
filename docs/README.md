@@ -1,8 +1,8 @@
 ---
 doc_id: DOCS-CATALOGUE
 status: CURRENT
-version: 3.0.0
-last_verified: 2026-11-18
+version: 3.2.0
+last_verified: 2026-11-21
 language: en-US
 ---
 
@@ -17,29 +17,31 @@ Authoritative registry of all repository documentation, organized into **Project
 ### 1. Root Manuals & Master Routers
 | Document | Title | Language | Lines | Status |
 | :--- | :--- | :--- | ---: | :--- |
-| [../AGENTS.md](../AGENTS.md) | AGENTS.md | en-US | 96 | CURRENT |
-| [../MEMORY.md](../MEMORY.md) | Multi-Agent Orchestration — Architectural Memory (Micro-Kernel) | en-US | 35 | CURRENT |
-| [INDEX.md](INDEX.md) | Documentation Router (Micro-Kernel) | en-US | 35 | CURRENT |
-| [README.md](README.md) | Documentation Catalogue | en-US | 121 | CURRENT |
+| [../AGENTS.md](../AGENTS.md) | AGENTS.md | en-US | 97 | CURRENT |
+| [../MEMORY.md](../MEMORY.md) | Multi-Agent Orchestration — Architectural Memory (Micro-Kernel) | en-US | 39 | CURRENT |
+| [INDEX.md](INDEX.md) | Documentation Router (Micro-Kernel) | en-US | 36 | CURRENT |
+| [README.md](README.md) | Documentation Catalogue | en-US | 129 | CURRENT |
 
 ### 2. Project Governance, Philosophy & Standards (`project/`)
 | Document | Title | Language | Lines | Status |
 | :--- | :--- | :--- | ---: | :--- |
 | [project/INDEX.md](project/INDEX.md) | Project Documentation Router (Micro-Kernel) | en-US | 31 | CURRENT |
-| [project/shards/01-repository-overview.md](project/shards/01-repository-overview.md) | Repository Overview & Physical Topology | en-US | 115 | CURRENT |
+| [project/shards/01-repository-overview.md](project/shards/01-repository-overview.md) | Repository Overview & Physical Topology | en-US | 117 | CURRENT |
 | [project/shards/02-agent-philosophy.md](project/shards/02-agent-philosophy.md) | 10 Core Agent Engineering Principles | en-US | 154 | CURRENT |
-| [project/shards/03-bot-fleet-and-teams.md](project/shards/03-bot-fleet-and-teams.md) | 14-Bot Fleet Matrix, Teams & Closed-Loop Workflow | en-US | 147 | CURRENT |
+| [project/shards/03-bot-fleet-and-teams.md](project/shards/03-bot-fleet-and-teams.md) | 15-Bot Fleet Matrix, Teams & Closed-Loop Workflow | en-US | 153 | CURRENT |
 | [project/shards/04-delivery-and-verification.md](project/shards/04-delivery-and-verification.md) | Multi-Agent Delivery, Handoff Contracts & Verification Gates | en-US | 136 | CURRENT |
 | [project/shards/05-agent-first-docs-standard.md](project/shards/05-agent-first-docs-standard.md) | Agent-First Documentation Standard (`agent-first-docs`) | en-US | 108 | CURRENT |
 | [project/shards/06-script-and-git-standards.md](project/shards/06-script-and-git-standards.md) | Script Engineering, Safe Deletion & Git Hygiene Standards | en-US | 109 | CURRENT |
 
-### 3. Package Overviews (Active Cores: `paseo-agy-acp`, `paseo-bots` · Paused: `paseo-sidecar`)
+### 3. Package Overviews & Shared Skills (Active Cores: `paseo-agy-acp`, `paseo-bots` · Micro-Plugins: `paseo-feed`, `paseo-long-session` · Paused: `paseo-sidecar`)
 | Document | Title | Language | Lines | Status |
 | :--- | :--- | :--- | ---: | :--- |
 | [../paseo-agy-acp/README.md](../paseo-agy-acp/README.md) | paseo-agy-acp | zh/en | 101 | CURRENT |
 | [../paseo-agy-acp/OVERVIEW.md](../paseo-agy-acp/OVERVIEW.md) | Antigravity ACP | en-US | 27 | CURRENT |
 | [../paseo-bots/README.md](../paseo-bots/README.md) | paseo-bots | en-US | 205 | CURRENT |
 | [../paseo-bots/OVERVIEW.md](../paseo-bots/OVERVIEW.md) | OVERVIEW.md | en-US | 29 | CURRENT |
+| [../paseo-feed/README.md](../paseo-feed/README.md) | Paseo Feeds (`@xrsec/paseo-feed`) | en-US | 54 | CURRENT |
+| [../paseo-bots-plugin-data/library/skills/x-research/SKILL.md](../paseo-bots-plugin-data/library/skills/x-research/SKILL.md) | `x-research` (Shared X.com Research Skill) | en-US | 126 | CURRENT |
 | [../paseo-sidecar/README.md](../paseo-sidecar/README.md) | SidecarMCP | en-US | 33 | CURRENT |
 
 ---
@@ -49,28 +51,33 @@ Authoritative registry of all repository documentation, organized into **Project
 ### 4. Design Router
 | Document | Title | Language | Lines | Status |
 | :--- | :--- | :--- | ---: | :--- |
-| [design/INDEX.md](design/INDEX.md) | Design Documentation Router (Micro-Kernel) | en-US | 34 | CURRENT |
+| [design/INDEX.md](design/INDEX.md) | Design Documentation Router (Micro-Kernel) | en-US | 36 | CURRENT |
 
 ### 5. Antigravity ACP Bridge Specifications (`design/paseo-agy-acp/`)
 | Document | Title | Language | Lines | Status |
 | :--- | :--- | :--- | ---: | :--- |
 | [design/paseo-agy-acp/INDEX.md](design/paseo-agy-acp/INDEX.md) | Paseo Antigravity ACP Bridge (`paseo-agy-acp`) Design Index | en-US | 33 | CURRENT |
-| [design/paseo-agy-acp/shards/01-dual-plane-and-brain-observer.md](design/paseo-agy-acp/shards/01-dual-plane-and-brain-observer.md) | Dual-Plane Architecture & Brain Transcript Observer | en-US | 136 | CURRENT |
+| [design/paseo-agy-acp/shards/01-dual-plane-and-brain-observer.md](design/paseo-agy-acp/shards/01-dual-plane-and-brain-observer.md) | Dual-Plane Architecture & Brain Transcript Observer | en-US | 138 | CURRENT |
 | [design/paseo-agy-acp/shards/02-turn-lifecycle-and-fail-closed-guards.md](design/paseo-agy-acp/shards/02-turn-lifecycle-and-fail-closed-guards.md) | Turn Lifecycle, Two-Clock Watchdogs & Fail-Closed Guards | en-US | 132 | CURRENT |
 | [design/paseo-agy-acp/shards/03-subagents-checkpoints-and-steer.md](design/paseo-agy-acp/shards/03-subagents-checkpoints-and-steer.md) | Subagent Trees, Checkpoints, Fork Revert & Steer Contract | en-US | 112 | CURRENT |
 
 ### 6. Paseo Bots Orchestration Plugin Specifications (`design/paseo-bots/`)
 | Document | Title | Language | Lines | Status |
 | :--- | :--- | :--- | ---: | :--- |
-| [design/paseo-bots/INDEX.md](design/paseo-bots/INDEX.md) | Paseo Bots Orchestration Plugin (`@oliexe/paseo-bots`) | en-US | 35 | CURRENT |
+| [design/paseo-bots/INDEX.md](design/paseo-bots/INDEX.md) | Paseo Bots Orchestration Plugin (`@oliexe/paseo-bots` — 15-bot roster, `bot-chief`, 3-Tier Chief of Staff, Continuous Feed fusion, 4-pillar cross-navigation) | en-US | 42 | CURRENT |
 | [design/paseo-bots/shards/01-configuration-and-storage.md](design/paseo-bots/shards/01-configuration-and-storage.md) | Shard 01: Configuration Envelope, Decoupled Assets & Zero-Pollution Storage | en-US | 114 | CURRENT |
 | [design/paseo-bots/shards/02-seat-blackboard-and-prompts.md](design/paseo-bots/shards/02-seat-blackboard-and-prompts.md) | Shard 02: Managed Seats, Session Blackboard & Six-Block Prompt Assembly | en-US | 102 | CURRENT |
 | [design/paseo-bots/shards/03-workflow-engine-and-routing.md](design/paseo-bots/shards/03-workflow-engine-and-routing.md) | Shard 03: Three-Tier Routing, Declarative Workflow DAG & Resilient Execution | en-US | 125 | CURRENT |
-| [design/paseo-bots/shards/04-task-pyramid-and-settlement.md](design/paseo-bots/shards/04-task-pyramid-and-settlement.md) | Shard 04: Task Pyramid, File Leases & Idempotent Card Settlement | en-US | 115 | CURRENT |
-| [design/paseo-bots/shards/05-fallback-routines-and-surfaces.md](design/paseo-bots/shards/05-fallback-routines-and-surfaces.md) | Shard 05: Same-Provider Model Fallback, Routines, Analytics & Client Surfaces | en-US | 99 | CURRENT |
+| [design/paseo-bots/shards/04-task-pyramid-and-settlement.md](design/paseo-bots/shards/04-task-pyramid-and-settlement.md) | Shard 04: Task Pyramid, File Leases & Idempotent Card Settlement | en-US | 118 | CURRENT |
+| [design/paseo-bots/shards/05-fallback-routines-and-surfaces.md](design/paseo-bots/shards/05-fallback-routines-and-surfaces.md) | Shard 05: Same-Provider Model Fallback, Routines, Analytics & Client Surfaces | en-US | 102 | CURRENT |
 | [design/paseo-bots/shards/06-client-ui-and-cds.md](design/paseo-bots/shards/06-client-ui-and-cds.md) | Shard 06: Client UI, CDS Tokens, Motion & Edge Guards | en-US | 80 | CURRENT |
 
-### 7. Cross-Runtime Agent Architecture Patterns (`design/patterns/`)
+### 7. Decoupled Micro-Plugin Specifications (`design/paseo-feed/`)
+| Document | Title | Language | Lines | Status |
+| :--- | :--- | :--- | ---: | :--- |
+| [design/paseo-feed/INDEX.md](design/paseo-feed/INDEX.md) | Decoupled Micro-Plugins (`paseo-feed` & `paseo-long-session`) Design Index | en-US | 37 | CURRENT |
+
+### 8. Cross-Runtime Agent Architecture Patterns (`design/patterns/`)
 | Document | Title | Language | Lines | Status |
 | :--- | :--- | :--- | ---: | :--- |
 | [design/patterns/INDEX.md](design/patterns/INDEX.md) | Cross-Runtime Agent Architecture Patterns Index | en-US | 30 | CURRENT |
@@ -84,7 +91,7 @@ Authoritative registry of all repository documentation, organized into **Project
 
 ## Part III: Technical Research & External References
 
-### 8. Source-Anchored Audits & Reconnaissance (`research/`)
+### 9. Source-Anchored Audits & Reconnaissance (`research/`)
 | Document | Title | Language | Lines | Status |
 | :--- | :--- | :--- | ---: | :--- |
 | [research/INDEX.md](research/INDEX.md) | Technical Research Router (Micro-Kernel) | en-US | 34 | REFERENCE |
@@ -106,7 +113,7 @@ Authoritative registry of all repository documentation, organized into **Project
 | [research/paseo-plugin-agent-team-research.md](research/paseo-plugin-agent-team-research.md) | Paseo 官方插件 `gyuha/agent-team` 深度技术调研报告 | zh/en | 350 | REFERENCE |
 | [research/t3-code-lifecycle.md](research/t3-code-lifecycle.md) | T3 Code Turn/Session Lifecycle — Source-Anchored Model vs `paseo-agy-acp` | en-US | 217 | REFERENCE |
 
-### 9. External & Upstream Reference Snapshots (`references/`)
+### 10. External & Upstream Reference Snapshots (`references/`)
 > Read-only vendor references. Upstream Paseo host docs (`55` files) are isolated under `references/paseo-upstream/` via [references/paseo-upstream/CLAUDE.md](references/paseo-upstream/CLAUDE.md).
 
 | Document | Title | Language | Lines | Status |

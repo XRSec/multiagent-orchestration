@@ -2,8 +2,9 @@ import type { PaseoApi } from "../paseo";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { foldText, lastTurn } from "../../shared/activity";
-import { BOT_LABEL } from "../../shared/bot";
-import { ASKED_BY_LABEL, ASKED_IN_LABEL, ASK_NOTIFY_LABEL, HANDOFF_REQUEST_METADATA, handoffRequest, type HandoffCard } from "../../shared/handoff";
+import { BOT_LABEL, isGlobalAssistantBot, type BotGroup } from "../../shared/bot";
+import { ASKED_BY_LABEL, ASKED_IN_LABEL, ASK_NOTIFY_LABEL, HANDOFF_REQUEST_METADATA, TIER_DEPTH_LABEL, handoffRequest, type HandoffCard } from "../../shared/handoff";
+import { teamsOf } from "../../shared/groups";
 import { startChat } from "../chats";
 import { publishHandoff } from "../handoffs";
 import { acquireLease, releaseLease, renewLease } from "../leases";
@@ -24,6 +25,42 @@ export const listBots = defineTool({
       .map((entry) => {
         const about = [entry.title, entry.description].filter((part) => part.trim()).join(" — ");
         return `- ${entry.name} (id: ${entry.id})${about ? `: ${about}` : ""}`;
+      })
+      .join("\n");
+  },
+});
+
+export const listTeams = defineTool({
+  name: "list_teams",
+  description: "List teams/projects on this Paseo host: id, name, working folder (cwd), lead, members, and workflows. Use with ask_bot(team_id) or run_workflow(group_id) for cross-project routing.",
+  input: z.object({}),
+  async run(_args, { host }) {
+    const values = await host.values().catch(() => null);
+    const groups = values?.groups ?? [];
+    if (groups.length === 0) return "There are no teams configured.";
+    const activeBots = (await host.bots()).filter((entry) => !entry.archived);
+    const botById = new Map(activeBots.map((entry) => [entry.id, entry]));
+
+    return groups
+      .map((group) => {
+        const leadBot = group.leadId ? botById.get(group.leadId) : null;
+        const leadText = leadBot ? `${leadBot.name} (${leadBot.id})` : group.leadId ?? "none";
+        const memberNames = group.memberIds
+          .map((id) => botById.get(id))
+          .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry))
+          .map((entry) => `${entry.name} (${entry.id})`);
+        const wfList = (group.workflows ?? []).map((w) => `${w.name} (${w.id})`);
+        const cwdText = group.cwd?.trim() || "managed";
+        const lines = [
+          `- ${group.name} (id: ${group.id})`,
+          `  cwd: ${cwdText}`,
+          `  lead: ${leadText}`,
+          `  members: ${memberNames.length > 0 ? memberNames.join(", ") : "none"}`,
+        ];
+        if (wfList.length > 0) {
+          lines.push(`  workflows: ${wfList.join(", ")}`);
+        }
+        return lines.join("\n");
       })
       .join("\n");
   },
@@ -105,6 +142,24 @@ async function readChat(paseo: PaseoApi, chatId: string, callerBotId?: string): 
   };
 }
 
+export function extractInsulatedReply(rawReply: string, maxChars = REPLY_MAX): string {
+  const match = rawReply.match(/<worker_handoff>[\s\S]*?<\/worker_handoff>/i);
+  if (match) {
+    const handoffBlock = match[0].trim();
+    const before = rawReply.slice(0, match.index).trim();
+    let lead = "";
+    if (before) {
+      const firstLine = before.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+      if (firstLine) {
+        lead = firstLine.length > 200 ? `${firstLine.slice(0, 200)}...` : firstLine;
+      }
+    }
+    const result = lead ? `${lead}\n\n${handoffBlock}` : handoffBlock;
+    return result.length > maxChars ? `${result.slice(0, maxChars)}\n[cut at ${maxChars} characters]` : result;
+  }
+  return rawReply.length > maxChars ? `${rawReply.slice(0, maxChars)}\n[cut at ${maxChars} characters]` : rawReply;
+}
+
 function describeChat(chat: ChatState, who: string, chatId: string): string {
   switch (chat.state) {
     case "archived":
@@ -115,16 +170,24 @@ function describeChat(chat: ChatState, who: string, chatId: string): string {
       return `${who} is waiting for the user to approve something in chat ${chatId}. Tell the user, and use check_chat with that id later.`;
     case "error":
       return `${who}'s chat ${chatId} stopped with an error: ${chat.error ?? "unknown error"}`;
-    case "idle":
-      return chat.reply.trim() ? `${who} answered (chat ${chatId}):\n\n${chat.reply.length > REPLY_MAX ? `${chat.reply.slice(0, REPLY_MAX)}\n[cut at ${REPLY_MAX} characters]` : chat.reply}` : `${who} finished in chat ${chatId} without a reply.`;
+    case "idle": {
+      const trimmed = chat.reply.trim();
+      if (!trimmed) return `${who} finished in chat ${chatId} without a reply.`;
+      const reply = extractInsulatedReply(trimmed, REPLY_MAX);
+      return `${who} answered (chat ${chatId}):\n\n${reply}`;
+    }
   }
 }
 
-/** Bots answering another bot don't ask further, so requests can't loop. */
+/** Bots answering another bot don't ask further unless they are L2 Squad Leads, so requests can't loop beyond MAX_TIER_DEPTH. */
 async function mayAsk({ bot, agentId, host }: ToolCaller): Promise<boolean> {
   if (bot.contactBots === "off") return false;
   const chat = await host.chatOf(agentId);
-  return !chat?.labels[ASKED_BY_LABEL];
+  const labels = chat?.labels ?? {};
+  if (labels[TIER_DEPTH_LABEL] === "2") return true;
+  if (labels[TIER_DEPTH_LABEL] === "3") return false;
+  if (labels[ASKED_BY_LABEL]) return false;
+  return true;
 }
 
 export const askBot = defineTool({
@@ -138,9 +201,10 @@ export const askBot = defineTool({
     wait: z.boolean().optional().describe("Wait up to about 50 seconds for the answer (the default). With false, return at once and use check_chat later."),
     notify: z.boolean().optional().describe("Send a completion update to this chat when the other bot finishes (default true), including after the wait times out. Set false to check manually."),
     task_id: z.string().trim().min(1).max(200).optional().describe("Optional task line this request belongs to. It is stored with the request and echoed back, so later steps can find it."),
+    team_id: z.string().trim().min(1).max(100).optional().describe("Optional target team/project id (from list_teams) to run the specialist in that team's project folder and context."),
   }),
   available: mayAsk,
-  async run({ bot: wanted, message, chat_id: existingChatId, task_id: existingTaskId, wait = true, notify = true }, caller) {
+  async run({ bot: wanted, message, chat_id: existingChatId, task_id: existingTaskId, team_id: teamId, wait = true, notify = true }, caller) {
     const { bot, host, relay } = caller;
     const others = (await host.bots()).filter((entry) => entry.id !== bot.id && !entry.archived);
     const key = wanted.trim().toLowerCase();
@@ -170,7 +234,57 @@ export const askBot = defineTool({
           : `Task ${taskId} already has ${slot.inFlight} partner(s) in flight (fanout ${slot.cap}). Settle or retire one before adding another.`;
       }
     }
-    const chatId = existingChatId?.trim() ?? await startChat(host, relay, target, { prompt: askPrompt(bot.name, message), title: `${bot.name}: ${foldText(message, 60)}`, labels: { [ASKED_BY_LABEL]: bot.id, [ASKED_IN_LABEL]: caller.agentId, [ASK_NOTIFY_LABEL]: String(notify) }, askedByBotId: bot.id, ...(reservedAgentId ? { agentId: reservedAgentId } : {}) })
+    const callerChat = await host.chatOf(caller.agentId).catch(() => null);
+    const callerLabels = callerChat?.labels ?? {};
+    const values = await host.values().catch(() => null);
+    const groups = values?.groups ?? [];
+
+    let targetGroup: BotGroup | undefined;
+    let isolatedTeamSessionId: string | undefined;
+    if (teamId) {
+      const found = groups.find((g) => g.id === teamId);
+      if (!found) {
+        const availableTeams = groups.map((g) => `"${g.id}" (${g.name})`).join(", ");
+        throw new Error(availableTeams ? `Unknown team "${teamId}". Available teams: ${availableTeams}.` : `Unknown team "${teamId}". No teams are configured.`);
+      }
+      const callerOnTeam = found.leadId === bot.id || found.memberIds.includes(bot.id);
+      const targetOnTeam = found.leadId === target.id || found.memberIds.includes(target.id);
+      if (!isGlobalAssistantBot(bot) && !callerOnTeam && !targetOnTeam) {
+        throw new Error(`Bot "${bot.id}" cannot dispatch across to unrelated team "${teamId}".`);
+      }
+      targetGroup = found;
+      if (!callerOnTeam) {
+        isolatedTeamSessionId = reservedAgentId ?? newUuid();
+      }
+    }
+
+    let childTierDepth: "2" | "3" | undefined;
+    if (callerLabels[TIER_DEPTH_LABEL] === "2") {
+      childTierDepth = "3";
+    } else {
+      const isCallerLead =
+        isGlobalAssistantBot(bot) ||
+        bot.id === "bot-moadmin" ||
+        teamsOf(bot.id, groups).some((g) => g.leadId === bot.id);
+      if (isCallerLead) {
+        childTierDepth = "2";
+      }
+    }
+
+    const chatId = existingChatId?.trim() ?? await startChat(host, relay, target, {
+      prompt: askPrompt(bot.name, message),
+      title: `${bot.name}: ${foldText(message, 60)}`,
+      labels: {
+        [ASKED_BY_LABEL]: bot.id,
+        [ASKED_IN_LABEL]: caller.agentId,
+        [ASK_NOTIFY_LABEL]: String(notify),
+        ...(childTierDepth ? { [TIER_DEPTH_LABEL]: childTierDepth } : {}),
+      },
+      askedByBotId: bot.id,
+      ...(targetGroup ? { group: targetGroup } : {}),
+      ...(isolatedTeamSessionId ? { teamSessionId: isolatedTeamSessionId } : {}),
+      ...(reservedAgentId ? { agentId: reservedAgentId } : {}),
+    })
       .catch(async (error: unknown) => {
         if (taskId && reservedAgentId) await upsertMember(taskId, { engine: "paseo-bot", botId: target.id, handleId: reservedAgentId, status: "dead" }).catch(recordFailure);
         throw error;

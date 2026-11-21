@@ -11,7 +11,8 @@ import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { ProtocolSegment } from "../../../shared/protocol-cards";
 import { useT } from "../../i18n";
-import { nativeTokens, withAlpha } from "../../native";
+import { triggerLayoutAnimation, useReduceMotion } from "../../motion";
+import { nativeTokens, withAlpha, type NativeTokens } from "../../native";
 import { ui } from "../../typography";
 
 type Colors = PluginTheme["colors"];
@@ -40,7 +41,7 @@ export function MarkdownText({ colors, text }: { colors: Colors; text: string })
   );
 }
 
-function resolveToneColor(colors: Colors, segment: ProtocolBlock): string {
+function resolveToneColor(colors: Colors, tokens: NativeTokens, segment: ProtocolBlock): string {
   if (segment.tag === "worker_handoff") {
     const status = segment.handoff?.status ?? "UNKNOWN";
     if (status === "PASS") return colors.statusSuccess;
@@ -52,7 +53,7 @@ function resolveToneColor(colors: Colors, segment: ProtocolBlock): string {
   if (segment.tag === "worker_protocol" || (segment as any).kind === "worker_protocol" || segment.tag === "workspace_snapshot") {
     return colors.foregroundMuted;
   }
-  return segment.tag === "repair_brief" ? colors.statusWarning : colors.accent;
+  return segment.tag === "repair_brief" ? colors.statusWarning : tokens.brandClay;
 }
 
 function resolveTagIcon(segment: ProtocolBlock): string {
@@ -117,12 +118,18 @@ function CollapsibleSection({
 export function ProtocolCard({ colors, segment }: { colors: Colors; segment: ProtocolBlock }) {
   const { t } = useT();
   const tokens = nativeTokens(colors);
+  const reduceMotion = useReduceMotion();
   const [expanded, setExpanded] = useState(false);
+
+  const toggleExpanded = () => {
+    triggerLayoutAnimation(200, reduceMotion);
+    setExpanded((v) => !v);
+  };
 
   const isWorkerProtocol = segment.tag === "worker_protocol" || (segment as any).kind === "worker_protocol";
   const isHandoff = segment.tag === "worker_handoff";
 
-  const tone = resolveToneColor(colors, segment);
+  const tone = resolveToneColor(colors, tokens, segment);
   const icon = resolveTagIcon(segment);
 
   const title =
@@ -183,7 +190,7 @@ export function ProtocolCard({ colors, segment }: { colors: Colors; segment: Pro
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ expanded }}
-        onPress={() => setExpanded((v) => !v)}
+        onPress={toggleExpanded}
         style={{ flexDirection: "row", alignItems: "center", gap: 8, minHeight: 24 }}
       >
         <Icon name={icon as never} size={15} color={tone} />
@@ -198,7 +205,7 @@ export function ProtocolCard({ colors, segment }: { colors: Colors; segment: Pro
             backgroundColor: withAlpha(tone, tokens.dark ? 0.18 : 0.12),
           }}
         >
-          <Text style={{ fontSize: ui(11), fontWeight: "600", color: tone }}>{badgeLabel}</Text>
+          <Text style={{ fontSize: ui(11), fontWeight: "600", color: tone, fontVariant: ["tabular-nums"] }}>{badgeLabel}</Text>
         </View>
         <Icon name={expanded ? "ChevronUp" : "ChevronDown"} size={14} color={colors.foregroundMuted} />
       </Pressable>

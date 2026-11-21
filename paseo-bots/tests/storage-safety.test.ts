@@ -1,14 +1,17 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { EMPTY_LIBRARY, type Library } from "../shared/bot";
-import { botDataPath, pluginDataPath } from "../server/bot-home";
+import { botDataPath, pluginDataPath, portablePathEnv, resolveCurrentDir, resolveRepoRootPath } from "../server/bot-home";
 import { CommandAllowlist } from "../server/commands";
-import { deleteSkill, importSkills, librarySkillPath, readSkill, writeSkill } from "../server/library";
+import { deleteSkill, importSkills, librarySkillPath, readSkill, resolveSkillsDir, writeSkill } from "../server/library";
 import { MemoryJournal } from "../server/journal";
+import { resolveMcpServersDir, mcpServerPath } from "../server/mcp-servers";
 import { acceptProposal, createProposal, dismissProposal } from "../server/proposals";
 import { exportBot, importBot, importTeam } from "../server/share";
+import { resolveSoulsDir, botSoulPath } from "../server/souls";
 import { saveUpload } from "../server/uploads";
 import { fakeHost, makeBot, NOW } from "./helpers";
 
@@ -153,5 +156,131 @@ describe("durable user data", () => {
     await symlink(external, join(botDataPath("bot-1"), "MEMORY.md"));
     await expect(journal.write("bot-1", "MEMORY.md", "bad")).rejects.toThrow();
     expect(await readFile(external, "utf8")).toBe("original");
+  });
+});
+
+describe("ESM host compatibility & __dirname safety", () => {
+  it("resolves repo, souls, mcp-servers, library, and bot-home paths without __dirname defined", () => {
+    const originalGlobalDir = (globalThis as unknown as { __dirname?: unknown }).__dirname;
+    try {
+      delete (globalThis as unknown as { __dirname?: unknown }).__dirname;
+
+      // 1. resolveRepoRootPath
+      const repoRoot = resolveRepoRootPath();
+      expect(repoRoot).toBeDefined();
+      expect(typeof repoRoot).toBe("string");
+      expect(existsSync(join(repoRoot, "paseo-bots"))).toBe(true);
+
+      // 2. bot-home helpers
+      const env = portablePathEnv();
+      expect(env.repoRootPath).toBe(repoRoot);
+      expect(typeof pluginDataPath()).toBe("string");
+
+      // 3. souls helpers
+      const soulsDir = resolveSoulsDir();
+      expect(typeof soulsDir).toBe("string");
+      expect(soulsDir.length).toBeGreaterThan(0);
+      expect(botSoulPath("bot-test", soulsDir)).toContain("bot-test.md");
+
+      // 4. mcp-servers helpers
+      const mcpDir = resolveMcpServersDir();
+      expect(typeof mcpDir).toBe("string");
+      expect(mcpDir.length).toBeGreaterThan(0);
+      expect(mcpServerPath("server-test", mcpDir)).toContain("server-test.json");
+
+      // 5. library helpers
+      const skillsDir = resolveSkillsDir();
+      expect(typeof skillsDir).toBe("string");
+      expect(skillsDir.length).toBeGreaterThan(0);
+      expect(librarySkillPath("skill-test", skillsDir)).toContain("skill-test");
+
+      // 6. resolveCurrentDir helper without __dirname
+      const currentDirWithoutMeta = resolveCurrentDir(undefined);
+      expect(typeof currentDirWithoutMeta).toBe("string");
+      expect(currentDirWithoutMeta.length).toBeGreaterThan(0);
+      expect(existsSync(currentDirWithoutMeta)).toBe(true);
+    } finally {
+      if (originalGlobalDir !== undefined) {
+        (globalThis as unknown as { __dirname?: unknown }).__dirname = originalGlobalDir;
+      }
+    }
+  });
+
+  it("resolves current directory safely with undefined, empty, or valid metaUrl without throwing", () => {
+    const dirUndef = resolveCurrentDir(undefined);
+    expect(typeof dirUndef).toBe("string");
+    expect(dirUndef.length).toBeGreaterThan(0);
+    expect(existsSync(dirUndef)).toBe(true);
+
+    const dirEmpty = resolveCurrentDir("");
+    expect(typeof dirEmpty).toBe("string");
+    expect(dirEmpty.length).toBeGreaterThan(0);
+    expect(existsSync(dirEmpty)).toBe(true);
+
+    const dirValid = resolveCurrentDir(import.meta.url);
+    expect(typeof dirValid).toBe("string");
+    expect(dirValid.length).toBeGreaterThan(0);
+    expect(existsSync(dirValid)).toBe(true);
+  });
+
+  it("asserts no unguarded __dirname references exist in server/, shared/, or index.server.ts", () => {
+    const repoRoot = resolveRepoRootPath();
+    const paseoBotsDir = join(repoRoot, "paseo-bots");
+
+    const targetDirs = [
+      join(paseoBotsDir, "server"),
+      join(paseoBotsDir, "shared"),
+    ];
+    const targetFiles = [
+      join(paseoBotsDir, "index.server.ts"),
+    ];
+
+    function collectFiles(dir: string): string[] {
+      if (!existsSync(dir)) return [];
+      const entries = readdirSync(dir, { withFileTypes: true });
+      const results: string[] = [];
+      for (const entry of entries) {
+        const fullPath = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          results.push(...collectFiles(fullPath));
+        } else if (entry.isFile() && (entry.name.endsWith(".ts") || entry.name.endsWith(".tsx"))) {
+          results.push(fullPath);
+        }
+      }
+      return results;
+    }
+
+    const allFiles = [...targetFiles.filter((f) => existsSync(f)), ...targetDirs.flatMap(collectFiles)];
+    expect(allFiles.length).toBeGreaterThan(5);
+
+    const violations: { file: string; line: number; content: string }[] = [];
+
+    for (const filePath of allFiles) {
+      const content = readFileSync(filePath, "utf8");
+      const lines = content.split("\n");
+      for (let index = 0; index < lines.length; index++) {
+        const line = lines[index];
+        if (line.includes("__dirname")) {
+          if (!line.includes("typeof __dirname")) {
+            violations.push({
+              file: filePath.replace(paseoBotsDir + "/", ""),
+              line: index + 1,
+              content: line.trim(),
+            });
+          }
+        }
+        if (line.includes("__filename")) {
+          if (!line.includes("typeof __filename")) {
+            violations.push({
+              file: filePath.replace(paseoBotsDir + "/", ""),
+              line: index + 1,
+              content: line.trim(),
+            });
+          }
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
   });
 });

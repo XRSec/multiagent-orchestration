@@ -9,6 +9,7 @@ import { Icon, ScrollView } from "@getpaseo/plugin/client/react-native";
 import { Pressable, Text, TextInput, View } from "react-native";
 import type { AnalyticsSessionItem } from "../../shared/analytics";
 import { useT } from "../i18n";
+import { isImeComposing } from "../keyboard";
 import { ui } from "../typography";
 
 type Colors = PluginTheme["colors"];
@@ -57,7 +58,7 @@ export function SessionSelector({
           <Text style={{ fontSize: ui(11), fontWeight: "600", letterSpacing: 0.3, color: colors.foregroundMuted }}>
             {t("analytics.sessionsLabel")}
           </Text>
-          <Text style={{ fontSize: ui(11), color: selectedIds.length > 0 ? colors.accent : colors.foregroundMuted }}>
+          <Text style={{ fontSize: ui(11), color: selectedIds.length > 0 ? colors.accent : colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
             {selectedIds.length > 0 ? t("analytics.sessionsSelected", { count: selectedIds.length }) : t("analytics.sessionsHint")}
           </Text>
         </View>
@@ -71,8 +72,7 @@ export function SessionSelector({
               paddingVertical: 3,
               paddingHorizontal: 8,
               borderRadius: 6,
-              borderWidth: 1,
-              borderColor: includeArchived ? colors.accent : colors.border,
+              borderWidth: 0,
               backgroundColor: includeArchived ? colors.surface2 : colors.surface0,
             }}
           >
@@ -82,11 +82,11 @@ export function SessionSelector({
             </Text>
           </Pressable>
           {selectedIds.length > 0 ? (
-            <Pressable onPress={onClear} style={{ paddingVertical: 3, paddingHorizontal: 8, borderRadius: 6, backgroundColor: colors.surface0, borderWidth: 1, borderColor: colors.border }}>
+            <Pressable onPress={onClear} style={{ paddingVertical: 3, paddingHorizontal: 8, borderRadius: 6, backgroundColor: colors.surface0, borderWidth: 0 }}>
               <Text style={{ fontSize: ui(11), color: colors.foregroundMuted }}>{t("analytics.sessionsClear")}</Text>
             </Pressable>
           ) : null}
-          <Pressable onPress={onReload} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 6, backgroundColor: colors.surface0, borderWidth: 1, borderColor: colors.border }}>
+          <Pressable onPress={onReload} style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingVertical: 3, paddingHorizontal: 8, borderRadius: 6, backgroundColor: colors.surface0, borderWidth: 0 }}>
             <Icon name="RefreshCw" size={11} color={colors.foregroundMuted} />
             <Text style={{ fontSize: ui(11), color: colors.foregroundMuted }}>{t("analytics.sessionsReload")}</Text>
           </Pressable>
@@ -98,6 +98,9 @@ export function SessionSelector({
         onChangeText={onQueryChange}
         placeholder={t("analytics.sessionsSearchPlaceholder")}
         placeholderTextColor={colors.foregroundMuted}
+        onKeyPress={(e) => {
+          if (isImeComposing(e)) return;
+        }}
         style={{
           fontSize: ui(12),
           color: colors.foreground,
@@ -134,14 +137,14 @@ export function SessionSelector({
                 }}
               >
                 <Icon name={active ? "CheckSquare" : "Square"} size={14} color={active ? colors.accent : colors.foregroundMuted} />
-                <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, backgroundColor: colors.surface1, borderWidth: 1, borderColor: colors.border }}>
+                <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, backgroundColor: colors.surface1, borderWidth: 0 }}>
                   <Text style={{ fontSize: ui(10), fontWeight: "600", color: colors.foregroundMuted }}>{s.harness.toUpperCase()}</Text>
                 </View>
                 <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: ui(12), fontWeight: active ? "600" : "400", color: colors.foreground }}>
                   {s.title}
                 </Text>
                 {s.archived ? (
-                  <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, backgroundColor: colors.surface1, borderWidth: 1, borderColor: colors.border }}>
+                  <View style={{ paddingHorizontal: 6, paddingVertical: 1, borderRadius: 4, backgroundColor: colors.surface1, borderWidth: 0 }}>
                     <Text style={{ fontSize: ui(10), color: colors.foregroundMuted }}>{t("analytics.sessionsArchivedBadge")}</Text>
                   </View>
                 ) : null}

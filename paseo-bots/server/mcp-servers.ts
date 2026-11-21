@@ -10,6 +10,9 @@ import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { LibraryMcpServerSchema, type LibraryMcpServer } from "../shared/bot";
+import { resolveCurrentDir } from "./bot-home";
+
+const currentDir = resolveCurrentDir(typeof import.meta !== "undefined" ? import.meta.url : undefined);
 
 function assertValidMcpServerId(id: string): string {
   const trimmed = id.trim();
@@ -32,7 +35,7 @@ export function resolveMcpServersDir(customDir?: string): string {
   const defaultPath = join(paseoHome, "plugin-settings", "paseo-bots", "mcp-servers");
   if (process.env.PASEO_HOME || existsSync(defaultPath)) return defaultPath;
 
-  const repoCandidate = resolve(__dirname, "../../paseo-bots-plugin-settings/mcp-servers");
+  const repoCandidate = resolve(currentDir, "../../paseo-bots-plugin-settings/mcp-servers");
   if (existsSync(repoCandidate)) return repoCandidate;
 
   const cwdParentCandidate = resolve(process.cwd(), "..", "paseo-bots-plugin-settings", "mcp-servers");

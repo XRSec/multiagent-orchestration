@@ -44,6 +44,8 @@ export const TaskCardSchema = z.object({
   engines: z.array(z.enum(["native", "paseo-bot"])).max(2),
   settledAt: z.string().nullable(),
   version: z.number().int().positive(),
+  groupId: z.string().optional(),
+  sourceChatId: z.string().optional(),
   workflow: TaskCardWorkflowSchema.optional(),
 });
 export type TaskCard = z.infer<typeof TaskCardSchema>;
@@ -59,6 +61,9 @@ export interface TaskCardSource {
   status: TaskCard["status"];
   version: number;
   settledAt: string | null;
+  groupId?: string;
+  sourceChatId?: string;
+  cardAgentId?: string;
   acceptance?: string;
   members: { engine: "native" | "paseo-bot"; status: string }[];
   workflow?: {
@@ -108,6 +113,7 @@ export function taskCardSummary(source: TaskCardSource): string {
 export function taskCardOf(source: TaskCardSource): TaskCard {
   const stageEngines = source.workflow?.stages.map((s) => s.engine) ?? [];
   const engines = [...new Set([...source.members.map((member) => member.engine), ...stageEngines])];
+  const sourceChatId = source.sourceChatId ?? source.cardAgentId;
   return {
     taskId: source.taskId,
     title: source.title.slice(0, 200),
@@ -117,6 +123,8 @@ export function taskCardOf(source: TaskCardSource): TaskCard {
     engines,
     settledAt: source.settledAt,
     version: source.version,
+    ...(source.groupId ? { groupId: source.groupId } : {}),
+    ...(sourceChatId ? { sourceChatId } : {}),
     ...(source.workflow ? {
       workflow: {
         workflowId: source.workflow.workflowId,

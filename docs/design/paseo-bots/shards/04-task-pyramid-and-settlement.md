@@ -1,14 +1,14 @@
 ---
 doc_id: PASEO-BOTS-SHARD-04-TASK-PYRAMID-SETTLEMENT
 status: CURRENT
-version: 1.0.0
-last_verified: 2026-11-18
+version: 1.1.0
+last_verified: 2026-11-21
 language: en-US
 ---
 
 # Shard 04: Task Pyramid, File Leases & Idempotent Card Settlement
 
-Parent index: [../INDEX.md](../INDEX.md). Formalizes the 3-layer visibility noise-reduction pyramid, the 15-tool `bots` MCP surface (`BOT_TOOLS`), cross-process `O_EXCL` file leases, monotonic `TaskRecord` settlement, idempotent `TaskCard` outbox projection, and `agent.archive.after` / restart reconciliation.
+Parent index: [../INDEX.md](../INDEX.md). Formalizes the 3-layer visibility noise-reduction pyramid, `CompanionSessionManager` memory synchronization, the 17-tool `bots` MCP surface (`BOT_TOOLS`), cross-process `O_EXCL` file leases, monotonic `TaskRecord` settlement, idempotent `TaskCard` outbox projection, and `agent.archive.after` / restart reconciliation.
 
 ## 1. Three-Layer Visibility Pyramid
 
@@ -20,23 +20,26 @@ Isolate high-volume worker tool churn behind a host-enforced three-layer visibil
 | **L2 — Task Line** | `$PASEO_HOME/plugin-data/paseo-bots/tasks/<safeId>.json` (`TaskRecord`) | Host-owned state machine uniting mixed `"native"` and `"paseo-bot"` members under monotonic `version`, `budget.fanout`, and `settledAt`. Model prose claiming `"done"` settles nothing. |
 | **L3 — Worker Execution** | Child bot chat (`handleId = agentId`) or intra-turn `invoke_subagent` | Encapsulates full tool-call streams, retries, and scratch inspections; surfaces only distilled `<worker_handoff>` summaries or terminal member states upward to L2. |
 
-### Delegated Handoff & Reader Window Guarantees (`handoffs.ts`)
+### Delegated Handoff, Reader Window & Companion Memory Sync (`handoffs.ts`, `companion-session.ts`)
 - **Archived Chat Zero-Stale-Reply Guard**: `chatStateOf` (`paseo-bots/server/handoffs.ts`) evaluates `agent.archivedAt` prior to timeline text extraction so `check_chat` reports `"archived"` cleanly without returning stale pre-archive replies.
 - **Follow-Up Steering Under Lease**: Sending a follow-up `ask_bot` to an existing `chatId` acquires that chat's file lease (`acquireLease(chatId)`), steers the live conversation (`sendBotMessage`), and returns a delivery verdict without spawning duplicate worker chats.
+- **Companion Intent & Short-Turn `memoryPrefix` Retention**: `CompanionSessionManager` (`paseo-bots/server/companion-session.ts`, `globalAssistantOnly: true`) performs intent distillation and SHA-256 `MEMORY.md` synchronization on `LONG_SESSION_SYNC_METADATA`. Client dispatch in `Composer.tsx` and `BotLauncherCore.tsx` skips redundant intent gating on short/bypassed turns while unconditionally adopting non-empty server `res.outgoingText` so pre-pended `memoryPrefix` injections survive post-compaction short turns.
 
 ## 2. Built-In `bots` MCP Server Catalog (`BOT_TOOLS`)
 
-Expose 15 host tools to local bot sessions via `TOOLS_MCP_NAME = "bots"` (`BOT_TOOLS` in `paseo-bots/server/tools/index.ts`), narrowing the surface via `toolsForEngine` when a chat binds to `"native"`:
+Expose 17 host tools to local bot sessions via `TOOLS_MCP_NAME = "bots"` (`BOT_TOOLS` in `paseo-bots/server/tools/index.ts`), narrowing the surface via `toolsForEngine` when a chat binds to `"native"`:
 
 | Tool Name | Source Module | Domain & Engine Visibility Rule |
 | :--- | :--- | :--- |
 | `list_bots` | `server/tools/bots.ts` | Lists active bots, roles, team memberships, and `contactBots` policies |
+| `list_teams` | `server/tools/bots.ts` | Lists configured teams, lead bots, members, and team scopes for cross-team routing (`bot-chief`) |
 | `ask_bot` | `server/tools/bots.ts` | Dispatches or steers a Route 2 `"paseo-bot"` chat under file lease; **hidden** when `engine === "native"` (`DISPATCH_ONLY_TOOLS`) |
 | `check_chat` | `server/tools/bots.ts` | Reads status (`running`, `permission`, `archived`, `error`, `finished`) and latest reply of a delegated chat; **kept** on `"native"` |
 | `search_chats` | `server/tools/chats.ts` | Searches historical bot chat transcripts across turns; **kept** on `"native"` |
 | `open_task` | `server/tools/tasks.ts` | Opens or updates an L2 `TaskRecord` (`title`, `groupId`, `acceptance`, `budget.fanout`) |
 | `list_tasks` | `server/tools/tasks.ts` | Queries on-disk `TaskRecord` lines ordered by `updatedAt` descending |
 | `run_workflow` | `server/tools/workflows.ts` | Validates and launches a Route 3 declarative `WorkflowDefinition` DAG on a task line |
+| `resume_workflow` | `server/tools/workflows.ts` | Re-opens and resumes a failed or blocked Route 3 workflow task (`resumeWorkflow`) |
 | `get_setup` | `server/tools/setup.ts` | Inspects current bot, team, library skill, and MCP server setup |
 | `propose_skill` | `server/tools/skills.ts` | Proposes creating or updating a library `SKILL.md` (requires user review to stamp `reviewedSha`) |
 | `propose_routine` | `server/tools/routines.ts` | Proposes a scheduled or webhook `Routine` card for user confirmation |
@@ -80,7 +83,7 @@ Store one JSON file per task (`RECORD_LIMIT = 256 KB`), guarding every read-modi
 | `"failed"` | No | Worker turn terminated with `lastError` or handoff failure; frees slot |
 | `"blocked_dead"` / `"dead"` | No | Worker archived mid-flight or vanished (legacy `"blocked"` normalizes to `"blocked_dead"` on read); frees slot |
 
-- **Fact-Only Version Increments (`openTask`)**: Re-opening an existing `taskId` with identical `title`, `groupId`, `acceptance`, `budget`, and `workflow` returns the existing record without incrementing `version`.
+- **Fact-Only Version Increments (`openTask`)**: Re-opening an existing `taskId` with identical `title`, `groupId`, `sourceChatId`, `acceptance`, `budget`, and `workflow` returns the existing record without incrementing `version`; `TaskRecord.sourceChatId` persists the originating conversation coordinate alongside `groupId`.
 - **Atomic Fanout Gate (`reserveMemberSlot`, `rekeyMember`)**:
   - Rejects dispatches onto settled lines (`{ accepted: false, reason: "settled" }`).
   - Rejects new parallel members when active members other than `memberKey(member)` reach `budget.fanout` (`{ accepted: false, reason: "fanout", inFlight, cap }`), while always permitting follow-up refreshes to an existing `memberKey`.
@@ -92,7 +95,7 @@ Store one JSON file per task (`RECORD_LIMIT = 256 KB`), guarding every read-modi
 
 ## 5. Outbox Projection, `diedMidFlight` & Restart Recovery (`task-cards.ts`, `task-turns.ts`)
 
-Decouple terminal fact commits from timeline rendering across `paseo-bots/server/task-cards.ts` and `paseo-bots/server/task-turns.ts` (`TaskCardSchema` in `paseo-bots/shared/task-card.ts`, `TASK_MEMBER_CARD` in `paseo-bots/shared/task-member.ts`):
+Decouple terminal fact commits from timeline rendering across `paseo-bots/server/task-cards.ts` and `paseo-bots/server/task-turns.ts` (`TaskCardSchema` in `paseo-bots/shared/task-card.ts`, `TASK_MEMBER_CARD` in `paseo-bots/shared/task-member.ts`). `taskCardOf` projects optional `groupId` (`record.groupId`) and `sourceChatId` (`source.sourceChatId ?? source.cardAgentId`) onto every card so UI surfaces navigate straight back to the owning team feed or launching chat:
 
 - **Lead Card Routing (`groupAgentFor`)**: Routes team task cards to `leadId`'s newest unarchived chat (`latestChatOf`, falling back to `requesterAgentId`) and pins `cardAgentId` once via `setCardAgent` so subsequent flushes never split cards across chats.
 - **Outbox Persistence & Dual Deduplication (`settleAndPublish`, `flushTaskCards`)**:

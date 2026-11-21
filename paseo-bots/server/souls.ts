@@ -9,6 +9,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
+import { resolveCurrentDir } from "./bot-home";
+
+const currentDir = resolveCurrentDir(typeof import.meta !== "undefined" ? import.meta.url : undefined);
 
 function assertValidBotId(botId: string): string {
   const trimmed = botId.trim();
@@ -31,7 +34,7 @@ export function resolveSoulsDir(customDir?: string): string {
   const defaultPath = join(paseoHome, "plugin-settings", "paseo-bots", "souls");
   if (existsSync(defaultPath)) return defaultPath;
 
-  const repoCandidate = resolve(__dirname, "../../paseo-bots-plugin-settings/souls");
+  const repoCandidate = resolve(currentDir, "../../paseo-bots-plugin-settings/souls");
   if (existsSync(repoCandidate)) return repoCandidate;
 
   const cwdParentCandidate = resolve(process.cwd(), "..", "paseo-bots-plugin-settings", "souls");

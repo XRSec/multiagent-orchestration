@@ -6,6 +6,7 @@ import { MemoryJournal } from "./server/journal";
 import { deleteLogDay, listLogDays, listMemory, readLogDay, readMemory } from "./server/memory";
 import { MemoryCurator } from "./server/memory-curator";
 import { CompanionSessionManager } from "./server/companion-session";
+import { readMergedBotFeed } from "./server/feed-bridge";
 import { systemPrompt } from "./server/prompt";
 import { RoutineScheduler } from "./server/scheduler";
 import { exportBot, exportTeam, importBot, importTeam } from "./server/share";
@@ -16,6 +17,7 @@ import { probeMcpServer } from "./server/mcp-probe";
 import { mcpSources } from "./server/mcp-sources";
 import { McpOAuth } from "./server/mcp-oauth";
 import { McpOAuthProxy } from "./server/mcp-oauth-proxy";
+import { registerBotSessionLifecycle } from "./server/bot-lifecycle";
 import { registerMcpOAuthLifecycle } from "./server/mcp-oauth-lifecycle";
 import { mcpOAuthCancelRpc, mcpOAuthDisconnectRpc, mcpOAuthFinishRpc, mcpOAuthStartRpc, mcpOAuthStatusRpc } from "./shared/mcp-oauth";
 import { accounts, appTools, catalog, connect, disconnect, removeKey, renameAccount, startLogin, cancelLogin, status as appsStatus } from "./server/composio";
@@ -33,6 +35,7 @@ import { listAnalyticsSessions } from "./server/analytics/sessions";
 import { deleteAnalyticsRecord, listAnalyticsHistory, saveAnalyticsRecord } from "./server/analytics/history";
 import { BOT_TOOLS } from "./server/tools";
 import { listTasks } from "./server/tasks";
+import { startWorkflowFromRpc } from "./server/tools/workflows";
 import { archiveSettledWorkflowStageChats, reconcileOrphanWorkflows, resumeWorkflow } from "./server/workflow-runner";
 import { saveUpload } from "./server/uploads";
 import { botMcpServers, botSettings, botSkills, EMPTY_LIBRARY, mcpServersRecord, type BotSettingsValues } from "./shared/bot";
@@ -45,6 +48,7 @@ import {
   analyticsHistoryListRpc,
   analyticsRunRpc,
   analyticsSessionsListRpc,
+  botFeedReadRpc,
   commandAllowRpc,
   commandListRpc,
   commandRemoveRpc,
@@ -100,6 +104,7 @@ import {
   systemPromptRpc,
   uploadRpc,
   workflowResumeRpc,
+  workflowRunRpc,
   workflowRunsRpc,
 } from "./shared/rpc";
 
@@ -116,7 +121,7 @@ export default function contribute(server: PluginServerContext) {
     .catch((error: unknown) => console.error("paseo-bots: couldn't prepare the Bots folder", error));
   const settings = server.registerSettings(botSettings);
   const host = new BotsHost(settings);
-  const companionManager = new CompanionSessionManager(host);
+  const companionManager = new CompanionSessionManager(host, { globalAssistantOnly: true });
   let reconciledOnAttach = false;
   const detachOrphanReconcile = host.onAttach(() => {
     if (reconciledOnAttach) return;
@@ -187,7 +192,8 @@ export default function contribute(server: PluginServerContext) {
   const relay = new Relay(host, BOT_TOOLS);
   const oauth = new McpOAuth(host, () => relay.start());
   const oauthProxy = new McpOAuthProxy(host, relay, oauth);
-  registerMcpOAuthLifecycle(server, host, oauthProxy);
+  const stopBotLifecycle = registerBotSessionLifecycle(server, host, relay, oauthProxy);
+  registerMcpOAuthLifecycle(server, host, oauthProxy, { registerOpenHook: false });
   void relay.start().catch((error: unknown) => console.error("paseo-bots: couldn't start the relay", error));
   const scheduler = new RoutineScheduler(host, relay);
   const journal = new MemoryJournal();
@@ -366,6 +372,10 @@ export default function contribute(server: PluginServerContext) {
     const runs = tasks.filter((t) => !!t.workflow).slice(0, limit ?? 25).map((t) => taskCardOf(t));
     return { runs };
   });
+  server.handle(workflowRunRpc, async (input, context) => {
+    attach(context);
+    return startWorkflowFromRpc(host, input, { relay });
+  });
   server.handle(workflowResumeRpc, async ({ taskId }, context) => {
     host.attach(context.paseo);
     const res = await resumeWorkflow({ host, relay, taskId });
@@ -377,6 +387,10 @@ export default function contribute(server: PluginServerContext) {
   });
   server.handle(companionLedgerReadRpc, async ({ mainAgentId }) => {
     return { ledger: await companionManager.readLedger(mainAgentId) };
+  });
+  server.handle(botFeedReadRpc, async (input, context) => {
+    host.attach(context.paseo);
+    return readMergedBotFeed(host, input);
   });
   server.addHook("agent.turn.before", async (event, context) => {
     host.attach(context.paseo);
@@ -404,6 +418,7 @@ export default function contribute(server: PluginServerContext) {
   });
 
   return async () => {
+    stopBotLifecycle();
     detachOrphanReconcile();
     unsubscribeAgentSync();
     curator.stop();

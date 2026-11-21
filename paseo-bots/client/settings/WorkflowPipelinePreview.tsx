@@ -87,7 +87,7 @@ export function WorkflowPipelinePreview({
             {t("workflows.pipelinePreviewTitle")}
           </Text>
         </View>
-        <Text style={{ fontSize: ui(11), color: colors.foregroundMuted }}>
+        <Text style={{ fontSize: ui(11), color: colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
           {t("workflows.pipelineStats", { layers: layers.length, stages: stages.length })}
         </Text>
       </View>
@@ -125,15 +125,14 @@ export function WorkflowPipelinePreview({
                   gap: 8,
                   padding: isParallel ? 6 : 0,
                   borderRadius: isParallel ? 8 : 0,
-                  borderWidth: isParallel ? 1 : 0,
-                  borderColor: isParallel ? colors.border : "transparent",
+                  borderWidth: 0,
                   backgroundColor: isParallel ? colors.surface1 : "transparent",
                 }}
               >
                 {isParallel ? (
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 4 }}>
                     <Icon name="Shuffle" size={11} color={colors.foregroundMuted} />
-                    <Text style={{ fontSize: ui(10), fontWeight: "600", color: colors.foregroundMuted, textTransform: "uppercase" }}>
+                    <Text style={{ fontSize: ui(10), fontWeight: "600", color: colors.foregroundMuted, textTransform: "uppercase", fontVariant: ["tabular-nums"] }}>
                       {t("workflows.parallelWave", { count: layerStageIds.length })}
                     </Text>
                   </View>
@@ -189,7 +188,7 @@ export function WorkflowPipelinePreview({
                       {depsCount > 0 ? (
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                           <Icon name="CornerDownRight" size={10} color={colors.foregroundMuted} />
-                          <Text style={{ fontSize: ui(10), color: colors.foregroundMuted }}>
+                          <Text style={{ fontSize: ui(10), color: colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
                             {t("workflows.dependsCount", { count: depsCount })}
                           </Text>
                         </View>

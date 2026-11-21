@@ -35,7 +35,7 @@ export function Splash({ colors, background }: { colors: Colors; background?: st
       </View>
       <View style={{ alignItems: "center", gap: 2 }}>
         <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>paseo-bots</Text>
-        <Text style={{ fontSize: ui(11), color: colors.foregroundMuted, opacity: 0.7 }}>v{PLUGIN_VERSION}</Text>
+        <Text style={{ fontSize: ui(11), color: colors.foregroundMuted, opacity: 0.7, fontVariant: ["tabular-nums"] }}>v{PLUGIN_VERSION}</Text>
       </View>
       <View style={{ position: "absolute", left: 0, right: 0, bottom: 16, alignItems: "center" }}>
         <ExternalLink href={REPOSITORY_URL} accessibilityLabel={t("chat.githubAccessibility")}>

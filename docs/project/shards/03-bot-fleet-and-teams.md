@@ -1,14 +1,14 @@
 ---
 doc_id: PROJ-BOT-FLEET-TEAMS
 status: CURRENT
-version: 1.0.0
-last_verified: 2026-11-18
+version: 1.1.0
+last_verified: 2026-11-21
 language: en-US
 ---
 
-# 14-Bot Fleet Matrix, Teams & Closed-Loop Workflow
+# 15-Bot Fleet Matrix, Teams & Closed-Loop Workflow
 
-Authoritative runtime specification for the 14 production bots, cross-provider capability mounts, 6 active teams, and the 7-stage `wf-moadmin-closed-loop` DAG defined in [../../../paseo-bots-plugin-settings/bots.json](../../../paseo-bots-plugin-settings/bots.json) and `paseo-bots-plugin-settings/souls/*.md`. Parent router: [../INDEX.md](../INDEX.md).
+Authoritative runtime specification for the 15 production bots (1 Global L1 Assistant + 14 specialist/engineering bots), cross-provider capability mounts, 6 active teams, and the 7-stage `wf-moadmin-closed-loop` DAG defined in [../../../paseo-bots-plugin-settings/bots.json](../../../paseo-bots-plugin-settings/bots.json) and `paseo-bots-plugin-settings/souls/*.md`. Parent router: [../INDEX.md](../INDEX.md).
 
 ## 1. Roster & Capability Governance Invariants
 
@@ -19,7 +19,13 @@ Authoritative runtime specification for the 14 production bots, cross-provider c
 
 ---
 
-## 2. 14-Bot Production Fleet Matrix
+## 2. 15-Bot Production Fleet Matrix
+
+### 2.0 Global L1 Personal Assistant (1 Bot)
+
+| Bot ID | Display Name | Provider / Model (+ Fallback) | Tool, Lifecycle & Memory Bindings | Authorized Write Scope |
+| :--- | :--- | :--- | :--- | :--- |
+| `bot-chief` | **全局助理** | `agy` / `gemini-4-hydrogen` (`full-access`, fallback: `gemini-3.8-flash` `[high]`) | `isGlobalAssistant: true`, `pinned: true`, `baseTools: ["ask_question"]`, `contactBots: "allow"`; tagged with `GLOBAL_ASSISTANT_LABEL` and `LONG_SESSION_ENABLED_LABEL`; paired with `CompanionSessionManager` (`globalAssistantOnly: true`) and cross-team `list_teams` / `ask_bot` routing | **None** (Pure Global L1 Router; writes no repo files) |
 
 ### 2.1 Group A: Core Engineering & Orchestration (7 Bots)
 
@@ -30,7 +36,7 @@ Authoritative runtime specification for the 14 production bots, cross-provider c
 | `bot-modoc` | **moDoc** | `agy` / `gemini-4-hydrogen` (`full-access`) | `AGY_BASE_TOOLS` constrained by `souls/bot-modoc.md` to documentation inspection and authoring without business-code execution | `docs/`, repository `*.md` |
 | `bot-moci` | **MoCI** | `agy` / `gemini-4-hydrogen` (`full-access`) | `AGY_BASE_TOOLS` (`run_command`, `read_file` for zero-trust test, typecheck, and lint execution); `mcp: []`; `skills: []` | `.github/`, test suites & QA reports in `paseo-bots/` and `paseo-agy-acp/` (never implementation files under review) |
 | `bot-mogit` | **MoGit** | `agy` / `gemini-4-hydrogen` (`full-access`) | `AGY_BASE_TOOLS` (`run_command` for worktree hygiene, commit squashing, branch lifecycle, and hook verification) | `.git/`, `.githooks/`, `scripts/`, `CHANGELOG.md` |
-| `bot-modeep` | **MoDeep** | `agy` / `gemini-4-hydrogen` (`full-access`) | Constrained by `souls/bot-modeep.md` to read-only codebase inspection and external reconnaissance (`read_file`, `search_web`) | `docs/research/` (strictly read-only across all code directories) |
+| `bot-modeep` | **MoDeep** | `agy` / `gemini-4-hydrogen` (`full-access`) | Constrained by `souls/bot-modeep.md` to read-only codebase inspection and external reconnaissance (`read_file`, `search_web`); shares `x-research` skill (`paseo-bots-plugin-data/library/skills/x-research/`) when enabled | `docs/research/` (strictly read-only across all code directories) |
 | `bot-mo` | **Mo** | `agy` / `gemini-4-hydrogen` (`full-access`) | Meta-toolsmithing, agent definition scaffolding, and skill authoring tools | `paseo-bots-plugin-settings/`, `~/.gemini/config/agents/`, `~/.gemini/config/skills/` |
 
 ### 2.2 Group B: Domain Specialists (2 Bots)
@@ -133,7 +139,7 @@ When a bot switches providers or defines `providerConfigs` (such as `bot-moadmin
 Run from `<projectRoot>` after any edit to `paseo-bots-plugin-settings/bots.json` or `souls/*.md`:
 
 ```bash
-# Verify 14 active bots, canonical bot-* prefix, and 1:1 matching soul files
+# Verify 15 active bots, canonical bot-* prefix, and 1:1 matching soul files
 jq -r '.values.bots[].id' paseo-bots-plugin-settings/bots.json | while read -r id; do
   case "$id" in bot-*) ;; *) echo "BAD_PREFIX: $id" ;; esac
   [ -f "paseo-bots-plugin-settings/souls/${id}.md" ] || echo "MISSING_SOUL: $id"

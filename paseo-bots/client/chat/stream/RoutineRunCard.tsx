@@ -37,7 +37,7 @@ export function RoutineRunCard({ colors, card, onOpenChat }: { colors: Colors; c
         </Text>
         <StatusBadge colors={colors} label={status.label} variant={status.variant} />
       </View>
-      <Text style={{ color: colors.foregroundMuted, fontSize: ui(13) }}>{`${new Date(card.scheduledFor).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${TRIGGER[card.trigger]} · ${relativeTime(card.scheduledFor)}`}</Text>
+      <Text style={{ color: colors.foregroundMuted, fontSize: ui(13), fontVariant: ["tabular-nums"] }}>{`${new Date(card.scheduledFor).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })} · ${TRIGGER[card.trigger]} · ${relativeTime(card.scheduledFor)}`}</Text>
       {card.output || card.error ? (
         <Text numberOfLines={6} style={{ color: card.error ? colors.statusDanger : colors.foreground, fontSize: ui(14), lineHeight: 20 }}>
           {card.error ?? card.output}

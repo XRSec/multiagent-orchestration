@@ -8,8 +8,10 @@ import type { BotsHost } from "../server/host";
 import type { Relay } from "../server/relay";
 import {
   cancelAndDrainAgent,
+  classifyStageError,
   computeBackoffMs,
   injectWorkspaceSnapshotToPrompt,
+  isFailFastErrorCategory,
   isTransientApiError,
   waitForStageWithHeartbeat,
 } from "../server/workflow-runner";
@@ -714,11 +716,21 @@ describe("workflow-runner DAG execution", () => {
     expect(isTransientApiError("Invalid workflow DAG: cycle detected")).toBe(false);
     expect(isTransientApiError("FAILED: Tests failed with exit code 1")).toBe(false);
 
-    // computeBackoffMs unit tests
-    expect(computeBackoffMs(0, 100)).toBe(100);
-    expect(computeBackoffMs(1, 100)).toBe(200);
-    expect(computeBackoffMs(2, 100)).toBe(400);
-    expect(computeBackoffMs(10, 100, 1000)).toBe(1000);
+    // computeBackoffMs unit tests (deterministic / zero-jitter)
+    expect(computeBackoffMs(0, 100, undefined, 0)).toBe(100);
+    expect(computeBackoffMs(1, 100, undefined, 0)).toBe(200);
+    expect(computeBackoffMs(2, 100, undefined, 0)).toBe(400);
+    expect(computeBackoffMs(10, 100, 1000, 0)).toBe(1000);
+
+    // computeBackoffMs with controlled jitter & bounds
+    expect(computeBackoffMs(0, 100, 1000, 0.1, () => 0)).toBe(90);
+    expect(computeBackoffMs(0, 100, 1000, 0.1, () => 1)).toBe(110);
+    expect(computeBackoffMs(0, 100, 1000, 0.1, () => 0.5)).toBe(100);
+    expect(computeBackoffMs(10, 100, 1000, 0.1, () => 1)).toBe(1000); // capped at maxMs
+    expect(computeBackoffMs(0, -100, 1000, 0.1)).toBeGreaterThanOrEqual(0); // non-negative
+    const randomized = computeBackoffMs(1, 100);
+    expect(randomized).toBeGreaterThanOrEqual(180);
+    expect(randomized).toBeLessThanOrEqual(220);
 
     // 2. Integration test in runWorkflowDag
     const { openTask } = await import("../server/tasks");
@@ -1855,5 +1867,405 @@ describe("workflow-runner DAG execution", () => {
       pollIntervalMs: 15,
     });
     expect(missingResult.agentDisappeared).toBe(true);
+  });
+
+  describe("Workflow runtime optimizations (google-antigravity-sdk patterns)", () => {
+    it("classifyStageError correctly categorizes errors and identifies fail-fast categories", () => {
+      // 1. transient_api
+      expect(classifyStageError("429 Too Many Requests")).toBe("transient_api");
+      expect(classifyStageError("503 Service Unavailable")).toBe("transient_api");
+      expect(classifyStageError("Transport not connected")).toBe("transient_api");
+      expect(classifyStageError("Rate limit exceeded for model")).toBe("transient_api");
+      expect(classifyStageError("Provider 'antigravity' not configured")).toBe("transient_api");
+
+      // 2. validation
+      expect(classifyStageError("Stage output JSON is missing required key(s): 'summary'")).toBe("validation");
+      expect(classifyStageError("Failed to parse stage output as JSON")).toBe("validation");
+      expect(classifyStageError("Syntax error in module.ts: line 4")).toBe("validation");
+      expect(classifyStageError("FAILED: Test runner exited with code 1")).toBe("validation");
+      expect(classifyStageError("BLOCKED: Missing required database credentials")).toBe("validation");
+
+      // 3. policy_denied
+      expect(classifyStageError("Policy denied: tool execution not permitted")).toBe("policy_denied");
+      expect(classifyStageError("Permission denied: access forbidden")).toBe("policy_denied");
+      expect(classifyStageError("403 Forbidden")).toBe("policy_denied");
+      expect(classifyStageError("Stage is waiting for user approval in chat 'c-1'")).toBe("policy_denied");
+
+      // 4. dag_invalid
+      expect(classifyStageError("Invalid workflow DAG: cycle detected")).toBe("dag_invalid");
+      expect(classifyStageError("Cyclic dependency detected in workflow stages")).toBe("dag_invalid");
+
+      // 5. cancelled
+      expect(classifyStageError("Stage 'build' was aborted.")).toBe("cancelled");
+      expect(classifyStageError("Interrupted by workflow runner.")).toBe("cancelled");
+      expect(classifyStageError("Workflow cancelled by operator")).toBe("cancelled");
+
+      // 6. timeout & stall_timeout
+      expect(classifyStageError("Stage 'build' timed out after 300s in chat 'c-1'")).toBe("timeout");
+      expect(classifyStageError("Stage 'build' stalled with no activity for 120s in chat 'c-1'")).toBe("stall_timeout");
+
+      // 7. budget_exceeded
+      expect(classifyStageError("Stage 'build' budget exceeded: maxTotalTokens limit reached")).toBe("budget_exceeded");
+      expect(classifyStageError("Exceeded maxModelCalls budget limit: 12 > 10")).toBe("budget_exceeded");
+      expect(classifyStageError("Workflow 'pipeline' budget exceeded: total tokens 50000 > 40000")).toBe("budget_exceeded");
+
+      // 8. unknown
+      expect(classifyStageError("Unrecognized internal kernel fault")).toBe("unknown");
+      expect(classifyStageError(null)).toBe("unknown");
+
+      // Fail-fast checks
+      expect(isFailFastErrorCategory("policy_denied")).toBe(true);
+      expect(isFailFastErrorCategory("budget_exceeded")).toBe(true);
+      expect(isFailFastErrorCategory("cancelled")).toBe(true);
+      expect(isFailFastErrorCategory("dag_invalid")).toBe(true);
+
+      expect(isFailFastErrorCategory("transient_api")).toBe(false);
+      expect(isFailFastErrorCategory("validation")).toBe(false);
+      expect(isFailFastErrorCategory("timeout")).toBe(false);
+      expect(isFailFastErrorCategory("stall_timeout")).toBe(false);
+      expect(isFailFastErrorCategory("unknown")).toBe(false);
+    });
+
+    it("fails fast on policy_denied, skipping retries and immediately failing workflow", async () => {
+      const { openTask, readTask } = await import("../server/tasks");
+      const { runWorkflowDag } = await import("../server/workflow-runner");
+
+      const bots = [makeBot({ id: "bot-policy", name: "PolicyBot" })];
+      const workflow = WorkflowDefinitionSchema.parse({
+        id: "wf-policy-fast",
+        name: "Policy Fail Fast",
+        stages: [
+          {
+            id: "s1",
+            name: "Secure Stage",
+            botId: "bot-policy",
+            prompt: "Execute secure action",
+            maxRetries: 3, // Would retry 3 times if not fail-fast
+          },
+        ],
+      });
+
+      await openTask({
+        taskId: "task-policy-fast",
+        title: "Workflow: Policy Fail Fast",
+        acceptance: "Done",
+        workflow: initWorkflowRunState(workflow),
+      });
+
+      const { host, relay } = makeFakeHost(bots, []);
+      let dispatchCount = 0;
+
+      const result = await runWorkflowDag({
+        host,
+        relay,
+        taskId: "task-policy-fast",
+        workflow,
+        dispatchStage: async () => {
+          dispatchCount++;
+          return {
+            ok: false,
+            error: "Policy denied: tool execution not permitted by administrator.",
+          };
+        },
+      });
+
+      // Fail-fast: only 1 attempt executed despite maxRetries: 3
+      expect(dispatchCount).toBe(1);
+      expect(result.status).toBe("failed");
+      expect(result.stopReason).toBe("policy_denied");
+      expect(typeof result.durationMs).toBe("number");
+
+      const task = await readTask("task-policy-fast");
+      const stage = task?.workflow?.stages[0];
+      expect(stage?.status).toBe("failed");
+      expect(stage?.retries).toBe(0); // Did not consume retries
+      expect(stage?.errorCategory).toBe("policy_denied");
+      expect(stage?.stopReason).toBe("policy_denied");
+      expect(typeof stage?.durationMs).toBe("number");
+    });
+
+    it("validates outputContract JSON + requiredKeys and successfully heals via <repair_guidance> retry", async () => {
+      const { openTask, readTask } = await import("../server/tasks");
+      const { runWorkflowDag } = await import("../server/workflow-runner");
+
+      const bots = [makeBot({ id: "bot-schema", name: "SchemaBot" })];
+      const workflow = WorkflowDefinitionSchema.parse({
+        id: "wf-contract-test",
+        name: "Output Contract Flow",
+        stages: [
+          {
+            id: "stage-json",
+            name: "JSON Producer",
+            botId: "bot-schema",
+            prompt: "Produce analysis JSON",
+            maxRetries: 2,
+            outputContract: {
+              format: "json",
+              requiredKeys: ["status", "findings"],
+            },
+          },
+        ],
+      });
+
+      await openTask({
+        taskId: "task-contract-test",
+        title: "Workflow: Output Contract",
+        acceptance: "Done",
+        workflow: initWorkflowRunState(workflow),
+      });
+
+      const { host, relay } = makeFakeHost(bots, []);
+      let attempts = 0;
+      const observedPrompts: string[] = [];
+
+      const result = await runWorkflowDag({
+        host,
+        relay,
+        taskId: "task-contract-test",
+        workflow,
+        dispatchStage: async (ctx) => {
+          attempts++;
+          observedPrompts.push(ctx.prompt);
+          if (attempts === 1) {
+            // First attempt: returns invalid JSON (missing 'findings' key)
+            return {
+              ok: true,
+              output: JSON.stringify({ status: "PASS" }), // Missing "findings"
+            };
+          }
+          // Second attempt: returns valid JSON in a markdown code fence with all required keys
+          return {
+            ok: true,
+            output: [
+              "Here is the final output:",
+              "```json",
+              JSON.stringify({ status: "PASS", findings: ["Everything verified successfully"] }),
+              "```",
+            ].join("\n"),
+            usage: {
+              promptTokens: 80,
+              candidatesTokens: 40,
+              totalTokens: 120,
+              modelCalls: 1,
+              toolCalls: 2,
+            },
+          };
+        },
+      });
+
+      expect(attempts).toBe(2);
+      expect(result.status).toBe("done");
+      expect(result.stopReason).toBe("completed");
+      expect(typeof result.durationMs).toBe("number");
+
+      // Verify <repair_guidance> was injected into attempt 2's prompt
+      expect(observedPrompts[0]).not.toContain("<repair_guidance>");
+      expect(observedPrompts[1]).toContain("<repair_brief>");
+      expect(observedPrompts[1]).toContain("<repair_guidance>");
+      expect(observedPrompts[1]).toContain("findings");
+
+      const task = await readTask("task-contract-test");
+      const stage = task?.workflow?.stages[0];
+      expect(stage?.status).toBe("done");
+      expect(stage?.stopReason).toBe("completed");
+      expect(stage?.error).toBeNull();
+      expect(stage?.retries).toBe(1);
+      expect(stage?.usage?.totalTokens).toBe(120);
+      expect(typeof stage?.durationMs).toBe("number");
+    });
+
+    it("persists durationMs, stopReason, errorCategory, and usage on stage and workflow states", async () => {
+      const { openTask, readTask } = await import("../server/tasks");
+      const { runWorkflowDag } = await import("../server/workflow-runner");
+
+      const bots = [makeBot({ id: "bot-obs", name: "ObsBot" })];
+      const workflow = WorkflowDefinitionSchema.parse({
+        id: "wf-obs-test",
+        name: "Observability Flow",
+        stages: [
+          {
+            id: "s1",
+            name: "Observed Stage",
+            botId: "bot-obs",
+            prompt: "Measure usage",
+            maxRetries: 1,
+          },
+        ],
+      });
+
+      await openTask({
+        taskId: "task-obs-test",
+        title: "Workflow: Obs",
+        acceptance: "Done",
+        workflow: initWorkflowRunState(workflow),
+      });
+
+      const { host, relay } = makeFakeHost(bots, []);
+
+      const result = await runWorkflowDag({
+        host,
+        relay,
+        taskId: "task-obs-test",
+        workflow,
+        dispatchStage: async () => {
+          return {
+            ok: true,
+            output: "Stage complete",
+            usage: {
+              promptTokens: 200,
+              candidatesTokens: 100,
+              thoughtsTokens: 25,
+              totalTokens: 325,
+              modelCalls: 2,
+              toolCalls: 5,
+            },
+          };
+        },
+      });
+
+      expect(result.status).toBe("done");
+      expect(result.stopReason).toBe("completed");
+      expect(result.durationMs).toBeGreaterThanOrEqual(0);
+      expect(result.usage?.totalTokens).toBe(325);
+      expect(result.usage?.modelCalls).toBe(2);
+      expect(result.usage?.toolCalls).toBe(5);
+
+      const task = await readTask("task-obs-test");
+      const stage = task?.workflow?.stages[0];
+      expect(stage?.status).toBe("done");
+      expect(stage?.stopReason).toBe("completed");
+      expect(stage?.durationMs).toBeGreaterThanOrEqual(0);
+      expect(stage?.usage?.totalTokens).toBe(325);
+      expect(stage?.usage?.thoughtsTokens).toBe(25);
+    });
+
+    it("enforces stage-level and workflow-level budgets triggering budget_exceeded fail-fast", async () => {
+      const { openTask, readTask } = await import("../server/tasks");
+      const { runWorkflowDag } = await import("../server/workflow-runner");
+
+      const bots = [makeBot({ id: "bot-budget", name: "BudgetBot" })];
+
+      // 1. Stage-level budget enforcement
+      const stageBudgetWf = WorkflowDefinitionSchema.parse({
+        id: "wf-stage-budget",
+        name: "Stage Budget Flow",
+        stages: [
+          {
+            id: "stage-budget-test",
+            name: "Token Bound Stage",
+            botId: "bot-budget",
+            prompt: "Run within token limit",
+            maxRetries: 3,
+            budget: {
+              maxTotalTokens: 1000,
+            },
+          },
+        ],
+      });
+
+      await openTask({
+        taskId: "task-stage-budget",
+        title: "Workflow: Stage Budget",
+        acceptance: "Done",
+        workflow: initWorkflowRunState(stageBudgetWf),
+      });
+
+      const { host, relay } = makeFakeHost(bots, []);
+      let calls = 0;
+
+      const stageBudgetResult = await runWorkflowDag({
+        host,
+        relay,
+        taskId: "task-stage-budget",
+        workflow: stageBudgetWf,
+        dispatchStage: async () => {
+          calls++;
+          return {
+            ok: true,
+            output: "Generated large output",
+            usage: {
+              totalTokens: 1500, // Exceeds maxTotalTokens: 1000
+            },
+          };
+        },
+      });
+
+      // Fail-fast: retries NOT consumed
+      expect(calls).toBe(1);
+      expect(stageBudgetResult.status).toBe("failed");
+      expect(stageBudgetResult.stopReason).toBe("budget_exceeded");
+
+      const stageTask = await readTask("task-stage-budget");
+      const stage = stageTask?.workflow?.stages[0];
+      expect(stage?.status).toBe("failed");
+      expect(stage?.stopReason).toBe("budget_exceeded");
+      expect(stage?.errorCategory).toBe("budget_exceeded");
+      expect(stage?.error).toContain("Exceeded maxTotalTokens budget limit: 1500 > 1000");
+
+      // 2. Workflow-level budget enforcement across cumulative stages
+      const wfBudgetWf = WorkflowDefinitionSchema.parse({
+        id: "wf-global-budget",
+        name: "Global Budget Flow",
+        budget: {
+          maxModelCalls: 2,
+        },
+        stages: [
+          {
+            id: "s1",
+            name: "Stage 1",
+            botId: "bot-budget",
+            prompt: "First stage",
+            maxRetries: 1,
+          },
+          {
+            id: "s2",
+            name: "Stage 2",
+            botId: "bot-budget",
+            prompt: "Second stage",
+            dependsOn: ["s1"],
+            maxRetries: 1,
+          },
+        ],
+      });
+
+      await openTask({
+        taskId: "task-global-budget",
+        title: "Workflow: Global Budget",
+        acceptance: "Done",
+        workflow: initWorkflowRunState(wfBudgetWf),
+      });
+
+      const globalBudgetResult = await runWorkflowDag({
+        host,
+        relay,
+        taskId: "task-global-budget",
+        workflow: wfBudgetWf,
+        dispatchStage: async (ctx) => {
+          if (ctx.stage.id === "s1") {
+            return {
+              ok: true,
+              output: "Stage 1 done",
+              usage: { modelCalls: 2 }, // Hits global limit of 2
+            };
+          }
+          return {
+            ok: true,
+            output: "Stage 2 done",
+            usage: { modelCalls: 1 }, // Cumulative = 3 > 2 -> Exceeded!
+          };
+        },
+      });
+
+      expect(globalBudgetResult.status).toBe("failed");
+      expect(globalBudgetResult.stopReason).toBe("budget_exceeded");
+
+      const globalTask = await readTask("task-global-budget");
+      const s1State = globalTask?.workflow?.stages.find((s) => s.id === "s1");
+      const s2State = globalTask?.workflow?.stages.find((s) => s.id === "s2");
+      expect(s1State?.status).toBe("done");
+      expect(s2State?.status).toBe("failed");
+      expect(s2State?.stopReason).toBe("budget_exceeded");
+      expect(s2State?.error).toContain("Workflow \"Global Budget Flow\" budget exceeded");
+    });
   });
 });

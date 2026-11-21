@@ -1,0 +1,8 @@
+{
+  "id": "paseo-feed",
+  "name": "Feed (助理)",
+  "description": "Pinned partner & team virtual continuous conversation feeds with distilled history and direct task deep-links.",
+  "requirements": {
+    "paseo": ">=0.16.0"
+  }
+}

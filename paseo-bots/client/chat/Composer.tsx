@@ -7,7 +7,6 @@ import { ActivityIndicator, Platform, Pressable, Text, View, useWindowDimensions
 import { newAttachmentId, normalizeMimeType, preflightFile, toWire, type ComposerAttachment } from "../../shared/attachments";
 import type { Bot } from "../../shared/bot";
 import { uploadRpc, companionCompileRpc } from "../../shared/rpc";
-import { shouldBypassCompanionIntent } from "../../shared/companion-intent";
 import { expandLearn, LEARN_COMMAND } from "../../shared/skills";
 import { AttachmentPill, PendingAttachmentPill } from "../AttachmentPill";
 import type { BotHost } from "../data";
@@ -317,14 +316,15 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
     // /learn only works where the plugin's tools are mounted (bots on this host).
     let outgoing = (agentId && host.isLocal ? expandLearn(typed) : null) ?? (typed || "See the attached files.");
 
-    if (agentId && host.isLocal && companionIntentEnabled && !shouldBypassCompanionIntent(outgoing)) {
+    if (agentId && host.isLocal && companionIntentEnabled) {
       try {
         const res = await compileCompanion({
           mainAgentId: agentId,
           botId: bot.id,
           rawText: outgoing,
         });
-        if (res?.outgoingText && !res.bypassed) {
+        // Bypassed turns may still prepend a post-compaction MEMORY.md sync prefix.
+        if (res?.outgoingText && res.outgoingText !== outgoing) {
           outgoing = res.outgoingText;
         }
       } catch {
@@ -624,15 +624,14 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
                         paddingHorizontal: 8,
                         paddingVertical: 4,
                         borderRadius: 14,
-                        borderWidth: 1,
-                        borderColor: companionIntentEnabled ? colors.accent : colors.border,
-                        backgroundColor: companionIntentEnabled ? colors.surface2 : pressed || hovered ? colors.surface2 : "transparent",
+                        borderWidth: 0,
+                        backgroundColor: companionIntentEnabled ? tokens.brandClaySoft : pressed || hovered ? colors.surface2 : "transparent",
                       },
                     ]}
                   >
-                    <Icon name="Sparkles" size={13} color={companionIntentEnabled ? colors.accent : colors.foregroundMuted} />
+                    <Icon name="Sparkles" size={13} color={companionIntentEnabled ? tokens.brandClay : colors.foregroundMuted} />
                     {!layout.compact ? (
-                      <Text style={{ fontSize: ui(11), color: companionIntentEnabled ? colors.foreground : colors.foregroundMuted, fontWeight: "500" }}>
+                      <Text style={{ fontSize: ui(11), color: companionIntentEnabled ? tokens.brandClay : colors.foregroundMuted, fontWeight: "500" }}>
                         {t("companion.intentDistillPill")}
                       </Text>
                     ) : null}

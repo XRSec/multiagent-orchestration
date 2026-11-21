@@ -144,11 +144,13 @@ const RETRYABLE_TOKENS = [
   'try again',
 ];
 const RETRYABLE_MATCHER = new RegExp(RETRYABLE_TOKENS.join('|'), 'i');
-// Narrow capacity-only signals derived from the shared vocabulary: bare `UNAVAILABLE`
-// and bare `capacity` are deliberately excluded so benign text cannot rotate the keychain.
+// Narrow capacity-only signals derived from the shared vocabulary: bare `UNAVAILABLE`,
+// bare `capacity`, and bare `503` are deliberately excluded so benign text or step/line
+// numbers (e.g. `step 503`) cannot rotate the keychain.
 // 429/RESOURCE_EXHAUSTED stays owned by QUOTA_EXHAUSTED, which is evaluated first.
 const CAPACITY_SIGNAL_TOKENS = [
-  '\\b503\\b',
+  '\\b(?:code|status|http(?:\\s+(?:code|status))?|error)\\s*[:=]?\\s*503\\b',
+  '\\b503\\s+(?:Service\\s+Unavailable|UNAVAILABLE)\\b',
   'high traffic',
   'No capacity available',
   'Service Unavailable',
@@ -191,11 +193,18 @@ function inspectLogLine(line, state) {
     state.modelLabel = acpSwitchMatch[1].trim();
   }
 
-  // 忽略后台非致命的 FetchConfig / aicode scope warning
+  // 忽略后台非致命的 FetchConfig / aicode scope warning 与遥测/常规步骤日志
   if (line.includes('code_assist_client.go') && line.includes('FetchConfig failed')) {
     return;
   }
   if (line.includes('You are not logged into Antigravity') && !line.includes('silent auth failed')) {
+    return;
+  }
+  if (
+    line.includes('Clearcut responded with HTTP code:') ||
+    /server\.go:\d+\]\s*Tool confirmation for conversation\b/.test(line) ||
+    /\b(?:runner\.go|llm_monitor\.go):\d+\]/.test(line)
+  ) {
     return;
   }
 

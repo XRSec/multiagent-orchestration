@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { PaseoApi } from "@getpaseo/client";
 
 // Mock React Native for UI testing
 vi.mock("react-native", () => ({
@@ -52,15 +53,20 @@ vi.mock("../client/typography", () => ({
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 import {
+  applyClosedWorldGuard,
+  applyConstraintOps,
+  classifyCompanionBypass,
   formatCompanionIntentEnvelope,
   parseCompanionIntentEnvelope,
   SHADOW_FOR_LABEL,
   SHADOW_SESSION_LABEL,
   shouldBypassCompanionIntent,
 } from "../shared/companion-intent";
-import { turnVisibleAssistantBody } from "../shared/activity";
+import { extractToolFootprintDigest, turnVisibleAssistantBody, type TimelineItemLike } from "../shared/activity";
 import {
+  CompanionCircuitBreaker,
   CompanionSessionManager,
+  createEmptyLedger,
   parseIntentAnalysis,
   parseReplySummary,
   readShadowSession,
@@ -295,6 +301,7 @@ COMPILED_PROMPT:
         mainAgentId,
         botId: "bot-mocode",
         rawText: "我想加一个用户登录功能",
+        skipBypass: true,
       });
 
       expect(turn1Result.bypassed).toBe(false);
@@ -311,7 +318,7 @@ COMPILED_PROMPT:
       expect(createCall.labels[SHADOW_SESSION_LABEL]).toBe("true");
       expect(createCall.labels[SHADOW_FOR_LABEL]).toBe(mainAgentId);
       expect(createCall.config.provider).toBe("agy/gemini-3.8-flash");
-      expect(createCall.config.thinkingOptionId).toBe("low");
+      expect(createCall.config.thinkingOptionId).toBe("medium");
       expect(createCall.config.mcpServers).toEqual({});
 
       // Check ledger file after Turn 1 compile
@@ -352,6 +359,118 @@ COMPILED_PROMPT:
       expect(ledgerT2?.turns.length).toBe(2);
       expect(ledgerT2?.turns[1]!.turnIndex).toBe(2);
       expect(ledgerT2?.turns[1]!.distilledIntent).toBe("用户确认采用方案B(JWT)实现登录");
+    });
+
+    it("configures companion session thinkingOptionId via manager options", async () => {
+      const mainAgentId = "main-agent-thinking-test";
+      const companionAgentId = "companion-agent-thinking-test";
+      const createdAgents: any[] = [];
+
+      const fakePaseo = {
+        agents: {
+          create: vi.fn(async (params: any) => {
+            createdAgents.push(params);
+            return { id: companionAgentId };
+          }),
+          ref: () => ({
+            refresh: async () => ({
+              agent: { id: companionAgentId, status: "idle", archivedAt: null },
+            }),
+            run: async () => {},
+            timeline: {
+              refetch: async () => ({
+                entries: [
+                  {
+                    item: {
+                      id: "item-1",
+                      type: "message",
+                      source: "assistant",
+                      content:
+                        "<intent_analysis>\nDISTILLED_INTENT: 测试思考等级\nCOMPILED_PROMPT:\n测试思考等级指令\n</intent_analysis>",
+                    },
+                  },
+                ],
+              }),
+            },
+          }),
+        },
+      };
+
+      const host: BotsHost = {
+        bot: async () => ({ id: "bot-mocode", name: "moCode", provider: "agy", model: "gemini-4-hydrogen" }),
+        paseo: fakePaseo as unknown as PaseoApi,
+      } as unknown as BotsHost;
+
+      const manager = new CompanionSessionManager(host, {
+        thinkingOptionId: "medium",
+      });
+
+      await manager.compileUserTurn({
+        mainAgentId,
+        botId: "bot-mocode",
+        rawText: "请测试下思考等级为medium的模式",
+        skipBypass: true,
+      });
+
+      expect(fakePaseo.agents.create).toHaveBeenCalledTimes(1);
+      expect(createdAgents[0].config.thinkingOptionId).toBe("medium");
+    });
+
+    it("configures companion session thinkingOptionId via PASEO_BOTS_COMPANION_THINKING env var", async () => {
+      const mainAgentId = "main-agent-thinking-env-test";
+      const companionAgentId = "companion-agent-thinking-env-test";
+      const createdAgents: any[] = [];
+
+      const fakePaseo = {
+        agents: {
+          create: vi.fn(async (params: any) => {
+            createdAgents.push(params);
+            return { id: companionAgentId };
+          }),
+          ref: () => ({
+            refresh: async () => ({
+              agent: { id: companionAgentId, status: "idle", archivedAt: null },
+            }),
+            run: async () => {},
+            timeline: {
+              refetch: async () => ({
+                entries: [
+                  {
+                    item: {
+                      id: "item-1",
+                      type: "message",
+                      source: "assistant",
+                      content:
+                        "<intent_analysis>\nDISTILLED_INTENT: 测试环境变量思考等级\nCOMPILED_PROMPT:\n测试指令\n</intent_analysis>",
+                    },
+                  },
+                ],
+              }),
+            },
+          }),
+        },
+      };
+
+      const host: BotsHost = {
+        bot: async () => ({ id: "bot-mocode", name: "moCode", provider: "agy", model: "gemini-4-hydrogen" }),
+        paseo: fakePaseo as unknown as PaseoApi,
+      } as unknown as BotsHost;
+
+      process.env.PASEO_BOTS_COMPANION_THINKING = "high";
+      try {
+        const manager = new CompanionSessionManager(host);
+        await manager.compileUserTurn({
+          mainAgentId,
+          botId: "bot-mocode",
+          rawText: "请测试下环境变量思考等级",
+          skipBypass: true,
+        });
+
+        expect(fakePaseo.agents.create).toHaveBeenCalledTimes(1);
+        expect(createdAgents[0].config.thinkingOptionId).toBe("high");
+      } finally {
+        delete process.env.PASEO_BOTS_COMPANION_THINKING;
+      }
     });
   });
 
@@ -423,6 +542,7 @@ Turn Prompt
         mainAgentId,
         botId: "bot-mocode",
         rawText: "Turn 1 message",
+        skipBypass: true,
       });
 
       // Start Turn 1 distillation (in-flight, blocked on distillationInFlight)
@@ -625,6 +745,7 @@ Turn Prompt
         mainAgentId: "main-fail-agent",
         botId: "bot-mocode",
         rawText: "Normal user text",
+        skipBypass: true,
       });
 
       expect(result.outgoingText).toBe("Normal user text");
@@ -701,6 +822,673 @@ Turn Prompt
       const spansAfter = root.findAllByType("span");
       const compiledAfter = spansAfter.find((s) => s.props.children === compiledPrompt);
       expect(compiledAfter).toBeDefined();
+    });
+  });
+
+  describe("8. Deterministic G0–G4 0ms Bypass Gate & Async Backfill", () => {
+    it("G0: cold start triggers 0ms bypass to main agent and async backfills rootGoal", async () => {
+      const mainAgentId = "main-g0-test";
+      const fakePaseo = {
+        agents: {
+          create: vi.fn(),
+          ref: () => ({ refresh: async () => null, run: vi.fn() }),
+        },
+      } as any;
+      const fakeHost = {
+        paseo: fakePaseo,
+        bot: async () => ({ id: "bot-mocode", provider: "agy" }),
+      } as unknown as BotsHost;
+
+      const manager = new CompanionSessionManager(fakeHost);
+
+      // Turn 1 (turnsCount === 0): should bypass with G0_COLD_START
+      const res = await manager.compileUserTurn({
+        mainAgentId,
+        botId: "bot-mocode",
+        rawText: "实现双通道伴生意图编译",
+      });
+
+      expect(res.bypassed).toBe(true);
+      expect(res.fallbackReason).toBe("G0_COLD_START");
+      expect(res.outgoingText).toBe("实现双通道伴生意图编译");
+
+      // Give async backfill a short tick to complete disk write
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      const ledger = await readShadowSession(mainAgentId);
+      expect(ledger).not.toBeNull();
+      expect(ledger?.rootGoal?.summary).toContain("实现双通道伴生意图编译");
+      expect(ledger?.rootGoal?.verbatimAnchor).toContain("实现双通道伴生意图编译");
+      expect(ledger?.rootGoal?.turnSeq).toBe(1);
+      expect(ledger?.turns.length).toBe(1);
+      expect(ledger?.turns[0]!.turnIndex).toBe(1);
+    });
+
+    it("G1: slash commands are 0ms bypassed", () => {
+      expect(classifyCompanionBypass({ rawText: "/compact", turnsCount: 2 })).toEqual({
+        bypassed: true,
+        gate: "G1_SLASH_COMMAND",
+      });
+      expect(classifyCompanionBypass({ rawText: "/learn custom skill", turnsCount: 1 })).toEqual({
+        bypassed: true,
+        gate: "G1_SLASH_COMMAND",
+      });
+      expect(classifyCompanionBypass({ rawText: "/clear", turnsCount: 3 })).toEqual({
+        bypassed: true,
+        gate: "G1_SLASH_COMMAND",
+      });
+    });
+
+    it("G2: pure short confirmations bypass with async backfill, but pivots/negations do NOT bypass", () => {
+      const picks = ["好", "好的", "1", "2", "3", "方案1", "第二个", "lgtm", "yes", "继续", "行", "确定"];
+      for (const pick of picks) {
+        const res = classifyCompanionBypass({ rawText: pick, turnsCount: 2 });
+        expect(res.bypassed).toBe(true);
+        expect(res.gate).toBe("G2_SHORT_CONFIRMATION");
+        expect(res.needsBackfill).toBe(true);
+      }
+
+      // Pivots/negations should NOT bypass G2!
+      expect(classifyCompanionBypass({ rawText: "不好", turnsCount: 2 }).bypassed).toBe(false);
+      expect(classifyCompanionBypass({ rawText: "别改这个", turnsCount: 2 }).bypassed).toBe(false);
+      expect(classifyCompanionBypass({ rawText: "但还是选A吧", turnsCount: 2 }).bypassed).toBe(false);
+      expect(classifyCompanionBypass({ rawText: "除了第一个", turnsCount: 2 }).bypassed).toBe(false);
+    });
+
+    it("G3: deictic-free short atomic dev commands bypass with async backfill, while deictic commands do NOT", () => {
+      const devCmds = ["全部提交", "push", "git status", "npm test", "npm run typecheck", "build 看看", "修一下 lint"];
+      for (const cmd of devCmds) {
+        const res = classifyCompanionBypass({ rawText: cmd, turnsCount: 2 });
+        expect(res.bypassed).toBe(true);
+        expect(res.gate).toBe("G3_DEICTIC_FREE_ATOMIC_COMMAND");
+        expect(res.needsBackfill).toBe(true);
+      }
+
+      // Commands with deictic pronouns must NOT bypass!
+      expect(classifyCompanionBypass({ rawText: "把刚才那个全部提交", turnsCount: 2 }).bypassed).toBe(false);
+      expect(classifyCompanionBypass({ rawText: "把它 push 一下", turnsCount: 2 }).bypassed).toBe(false);
+      expect(classifyCompanionBypass({ rawText: "同样跑一下测试", turnsCount: 2 }).bypassed).toBe(false);
+      expect(classifyCompanionBypass({ rawText: "测试那个接口", turnsCount: 2 }).bypassed).toBe(false);
+    });
+
+    it("G4: large error stack/diff (>1200 chars with signatures) bypasses with async backfill", () => {
+      const stack = "Traceback (most recent call last):\n" +
+        '  File "main.py", line 42, in <module>\n' +
+        "    app.run()\n".repeat(100) +
+        "ValueError: Invalid configuration value provided";
+
+      expect(stack.length).toBeGreaterThan(1200);
+      const res = classifyCompanionBypass({ rawText: stack, turnsCount: 2 });
+      expect(res.bypassed).toBe(true);
+      expect(res.gate).toBe("G4_LARGE_STACK_OR_DIFF");
+      expect(res.needsBackfill).toBe(true);
+
+      // Short stack trace (<1200 chars) does not bypass G4
+      const shortStack = "Error: Invalid token\n at line 1";
+      expect(classifyCompanionBypass({ rawText: shortStack, turnsCount: 2 }).bypassed).toBe(false);
+    });
+  });
+
+  describe("9. Patch-Only Constraint Lifecycle & 3-Turn Revocation Pruning", () => {
+    it("preserves untouched constraints byte-for-byte and prunes revoked constraints after 3 turns", () => {
+      let state = {
+        activeConstraints: [] as any[],
+        recentlyRevokedConstraints: [] as any[],
+      };
+
+      // Turn 1: Add C1
+      state = applyConstraintOps(
+        state,
+        [{ op: "ADD", rule: "SQLite lock wait at 3000ms", strength: "MUST", verbatim_quote: "等待时间改成 3000ms" }],
+        1
+      );
+      expect(state.activeConstraints.length).toBe(1);
+      expect(state.activeConstraints[0]!.id).toBe("C1");
+      expect(state.activeConstraints[0]!.rule).toBe("SQLite lock wait at 3000ms");
+      const c1Snapshot = state.activeConstraints[0]!;
+
+      // Turn 2: Add C2 (MUST_NOT)
+      state = applyConstraintOps(
+        state,
+        [{ op: "ADD", rule: "严禁阻塞握手阶段", strength: "MUST_NOT", verbatim_quote: "千万别影响握手阶段" }],
+        2
+      );
+      expect(state.activeConstraints.length).toBe(2);
+      expect(state.activeConstraints[1]!.id).toBe("C2");
+      // C1 must be preserved byte-for-byte!
+      expect(state.activeConstraints[0]).toBe(c1Snapshot);
+
+      // Turn 3: SUPERSEDE C1 -> C3
+      state = applyConstraintOps(
+        state,
+        [{ op: "SUPERSEDE", target_id: "C1", rule: "SQLite lock wait at 5000ms", strength: "MUST", reason: "增加重试宽容度" }],
+        3
+      );
+      expect(state.activeConstraints.map((c) => c.id)).toEqual(["C3", "C2"]);
+      expect(state.recentlyRevokedConstraints.length).toBe(1);
+      expect(state.recentlyRevokedConstraints[0]!.id).toBe("C1");
+      expect(state.recentlyRevokedConstraints[0]!.revokedAtTurn).toBe(3);
+
+      // Turn 4 (Turn 4 - 3 = 1 < 3): C1 is retained
+      state = applyConstraintOps(state, [], 4);
+      expect(state.recentlyRevokedConstraints.some((r) => r.id === "C1")).toBe(true);
+
+      // Turn 5 (Turn 5 - 3 = 2 < 3): C1 is retained
+      state = applyConstraintOps(state, [], 5);
+      expect(state.recentlyRevokedConstraints.some((r) => r.id === "C1")).toBe(true);
+
+      // Turn 6 (Turn 6 - 3 = 3 >= 3): C1 is pruned!
+      state = applyConstraintOps(state, [], 6);
+      expect(state.recentlyRevokedConstraints.some((r) => r.id === "C1")).toBe(false);
+      expect(state.recentlyRevokedConstraints.length).toBe(0);
+
+      // Turn 7: REVOKE C2
+      state = applyConstraintOps(state, [{ op: "REVOKE", target_id: "C2", reason: "用户已完成阶段握手" }], 7);
+      expect(state.activeConstraints.map((c) => c.id)).toEqual(["C3"]);
+      expect(state.recentlyRevokedConstraints.length).toBe(1);
+      expect(state.recentlyRevokedConstraints[0]!.id).toBe("C2");
+      expect(state.recentlyRevokedConstraints[0]!.revokedAtTurn).toBe(7);
+    });
+  });
+
+  describe("10. ToolFootprintDigest Extraction from Timeline", () => {
+    it("extracts mutatedFiles, inspectedFiles, commandOutcomes, and errorHeadlines deterministically", () => {
+      const items = [
+        { type: "user_message", text: "Run some checks" },
+        { type: "tool_call", name: "write_file", input: { path: "src/auth.ts" } },
+        { type: "tool_call", name: "edit_file", input: { Path: "src/server.ts" } },
+        { type: "tool_call", name: "read_file", input: { path: "src/config.ts" } },
+        { type: "tool_call", name: "read_file", input: { path: "src/auth.ts" } }, // already mutated -> not in inspected
+        { type: "tool_call", name: "run_command", input: { CommandLine: "npm test" }, exitCode: 0 },
+        {
+          type: "tool_call",
+          name: "run_command",
+          input: { CommandLine: "npm run lint" },
+          exitCode: 1,
+          text: "Command exited with code 1\nESLint: 2 errors found in src/auth.ts",
+        },
+      ];
+
+      const digest = extractToolFootprintDigest(items);
+      expect(digest.mutatedFiles).toEqual(["src/auth.ts", "src/server.ts"]);
+      expect(digest.inspectedFiles).toEqual(["src/config.ts"]);
+      expect(digest.commandOutcomes).toEqual([
+        { command: "npm test", exitCode: 0 },
+        { command: "npm run lint", exitCode: 1 },
+      ]);
+      expect(digest.errorHeadlines.length).toBeGreaterThanOrEqual(1);
+      expect(digest.errorHeadlines[0]).toContain("ESLint: 2 errors found");
+    });
+
+    it("extracts footprint for Paseo 0.16 tool_call detail.input with TargetFile, file_path, and locations schemas", () => {
+      const items: TimelineItemLike[] = [
+        { type: "user_message", text: "Paseo 0.16 turn" },
+        {
+          type: "tool_call",
+          name: "write_file",
+          detail: {
+            name: "write_file",
+            input: { TargetFile: "report.md" },
+          },
+        },
+        {
+          type: "tool_call",
+          name: "edit_file",
+          detail: {
+            input: { file_path: "src/index.ts" },
+          },
+        },
+        {
+          type: "tool_call",
+          name: "read_file",
+          detail: {
+            input: { AbsolutePath: "/etc/hosts" },
+          },
+        },
+        {
+          type: "tool_call",
+          name: "read_file",
+          detail: {
+            locations: [{ path: "docs/readme.md" }],
+          },
+        },
+        {
+          type: "tool_call",
+          name: "run_command",
+          detail: {
+            input: { CommandLine: "vitest run" },
+            exitCode: 0,
+          },
+        },
+        {
+          type: "tool_call",
+          name: "bash",
+          detail: {
+            input: { command: "git status" },
+            output: { exitCode: 1 },
+          },
+          text: "exit code 1\nfatal: not a git repo",
+        },
+      ];
+
+      const digest = extractToolFootprintDigest(items);
+      expect(digest.mutatedFiles).toEqual(["report.md", "src/index.ts"]);
+      expect(digest.inspectedFiles).toEqual(["/etc/hosts", "docs/readme.md"]);
+      expect(digest.commandOutcomes).toEqual([
+        { command: "vitest run", exitCode: 0 },
+        { command: "git status", exitCode: 1 },
+      ]);
+      expect(digest.errorHeadlines.length).toBeGreaterThanOrEqual(1);
+      expect(digest.errorHeadlines[0]).toContain("fatal: not a git repo");
+    });
+  });
+
+  describe("11. Closed-World Identifier Guard & Dangerous Command Blocking", () => {
+    it("strips hallucinated paths absent from allowedSources and blocks unrequested destructive commands", () => {
+      const allowedSources = [
+        "src/auth.ts",
+        "src/server.ts",
+        "vitest.config.ts",
+      ];
+
+      const compiledPrompt =
+        "Please update `src/auth.ts` and also check `src/phantom/hallucinated.ts`. Run git reset --hard and rm -rf dist/ before testing.";
+      const rawUserText = "请帮我修改一下鉴权模块";
+
+      const guard = applyClosedWorldGuard(compiledPrompt, allowedSources, rawUserText);
+
+      expect(guard.modified).toBe(true);
+      expect(guard.droppedPaths).toContain("src/phantom/hallucinated.ts");
+      expect(guard.blockedCommands).toContain("reset --hard");
+      expect(guard.blockedCommands).toContain("rm -rf");
+
+      expect(guard.cleanedPrompt).toContain("src/auth.ts");
+      expect(guard.cleanedPrompt).not.toContain("src/phantom/hallucinated.ts");
+      expect(guard.cleanedPrompt).not.toContain("reset --hard");
+      expect(guard.cleanedPrompt).not.toContain("rm -rf");
+    });
+
+    it("allows destructive commands when explicitly requested in rawUserText", () => {
+      const allowedSources = ["src/auth.ts"];
+      const compiledPrompt = "Execute git reset --hard HEAD~1 to revert the bad commit.";
+      const rawUserText = "请执行 git reset --hard 撤销提交";
+
+      const guard = applyClosedWorldGuard(compiledPrompt, allowedSources, rawUserText);
+      expect(guard.blockedCommands.length).toBe(0);
+      expect(guard.cleanedPrompt).toContain("git reset --hard");
+    });
+  });
+
+  describe("12. 9s Hard Timeout, 60s Circuit Breaker, and 150ms Fast-Follow Race", () => {
+    it("trips circuit breaker after 3 failures and fails open for 60s cooldown", () => {
+      const breaker = new CompanionCircuitBreaker({ cooldownMs: 60_000 });
+
+      expect(breaker.isOpen("agy")).toBe(false);
+      breaker.recordFailure("agy");
+      expect(breaker.isOpen("agy")).toBe(false);
+      breaker.recordFailure("agy");
+      expect(breaker.isOpen("agy")).toBe(false);
+
+      // 3rd failure trips the breaker!
+      breaker.recordFailure("agy");
+      expect(breaker.isOpen("agy")).toBe(true);
+
+      // Success resets the breaker
+      breaker.recordSuccess("agy");
+      expect(breaker.isOpen("agy")).toBe(false);
+    });
+
+    it("150ms Fast-Follow Race: uses PendingPostTurnSnapshot when distillation takes longer than 150ms", async () => {
+      const mainAgentId = "main-fast-follow-race";
+      const companionAgentId = "companion-agent-race";
+
+      let resolveDistill: (() => void) | null = null;
+      const slowDistillPromise = new Promise<void>((resolve) => {
+        resolveDistill = resolve;
+      });
+
+      const promptsReceived: string[] = [];
+
+      const fakePaseo = {
+        agents: {
+          create: vi.fn(async () => ({ id: companionAgentId })),
+          ref: () => ({
+            refresh: async () => ({
+              agent: {
+                id: companionAgentId,
+                status: "idle",
+                archivedAt: null,
+                labels: { [SHADOW_SESSION_LABEL]: "true", [SHADOW_FOR_LABEL]: mainAgentId },
+              },
+            }),
+            run: vi.fn(async (prompt: string) => {
+              promptsReceived.push(prompt);
+              if (prompt.includes("<distill_assistant_reply")) {
+                await slowDistillPromise;
+              }
+            }),
+            timeline: {
+              refetch: async () => ({
+                entries: [
+                  {
+                    item: {
+                      type: "assistant_message",
+                      text: `<intent_analysis>
+DISTILLED_INTENT: Turn 2 fast-follow intent
+COMPILED_PROMPT:
+Turn 2 compiled prompt
+</intent_analysis>`,
+                    },
+                  },
+                ],
+              }),
+            },
+          }),
+        },
+      } as any;
+
+      const fakeHost = {
+        paseo: fakePaseo,
+        bot: async () => ({ id: "bot-mocode", provider: "agy" }),
+      } as unknown as BotsHost;
+
+      const manager = new CompanionSessionManager(fakeHost);
+
+      // Turn 1 compiles
+      await manager.compileUserTurn({
+        mainAgentId,
+        botId: "bot-mocode",
+        rawText: "Turn 1 start",
+        skipBypass: true,
+      });
+
+      // Synchronously record pending post-turn snapshot before slow distillation
+      manager.recordPendingPostTurnSnapshot(mainAgentId, {
+        turnSeq: 1,
+        rawUserText: "Turn 1 start",
+        assistantVisibleBody: "Turn 1 in-flight assistant outcome proposing Option A and Option B",
+        footprintDigest: {
+          mutatedFiles: ["src/client.ts"],
+          inspectedFiles: [],
+          commandOutcomes: [{ command: "npm test", exitCode: 0 }],
+          errorHeadlines: [],
+        },
+        timestamp: Date.now(),
+      });
+
+      // Start slow distillation (>150ms in flight)
+      const distillPromise = manager.distillTurnReply({
+        mainAgentId,
+        botId: "bot-mocode",
+        assistantBody: "Turn 1 reply",
+      });
+
+      // Turn 2 arrives while Turn 1 distillation is still in-flight
+      const startT2 = Date.now();
+      const turn2Promise = manager.compileUserTurn({
+        mainAgentId,
+        botId: "bot-mocode",
+        rawText: "选 Option A",
+        skipBypass: true,
+      });
+
+      // Resolve slow distillation after 300ms (>150ms)
+      setTimeout(() => {
+        resolveDistill?.();
+      }, 300);
+
+      const turn2Res = await turn2Promise;
+      const durationT2 = Date.now() - startT2;
+
+      // Turn 2 must NOT have waited 300ms for distillation! It races and unblocks after ~150ms
+      expect(durationT2).toBeLessThan(280);
+      expect(turn2Res.bypassed).toBe(false);
+
+      // Turn 2 compile prompt must include the pending snapshot (<pending_prior_turn>)
+      const turn2Prompt = promptsReceived.find((p) => p.includes('<analyze_user_turn turn="2">'));
+      expect(turn2Prompt).toBeDefined();
+      expect(turn2Prompt).toContain("<pending_prior_turn>");
+      expect(turn2Prompt).toContain("Option A and Option B");
+      expect(turn2Prompt).toContain("src/client.ts");
+
+      await distillPromise;
+    });
+
+    it("uses 9000ms default compile timeout for companion run", async () => {
+      const mainAgentId = "main-agent-timeout-default";
+      let capturedTimeout: number | undefined;
+
+      const fakePaseo = {
+        agents: {
+          create: vi.fn(async () => ({ id: "companion-timeout-agent" })),
+          ref: () => ({
+            refresh: async () => ({
+              agent: { id: "companion-timeout-agent", status: "idle", archivedAt: null },
+            }),
+            run: vi.fn(async (_prompt: string, opts?: { timeoutMs?: number }) => {
+              capturedTimeout = opts?.timeoutMs;
+            }),
+            timeline: {
+              refetch: async () => ({
+                entries: [
+                  {
+                    item: {
+                      type: "assistant_message",
+                      text: `<intent_analysis>\nDISTILLED_INTENT: Timeout Test\nCOMPILED_PROMPT:\nPrompt\n</intent_analysis>`,
+                    },
+                  },
+                ],
+              }),
+            },
+          }),
+        },
+      } as any;
+
+      const host: BotsHost = {
+        bot: async () => ({ id: "bot-mocode", provider: "agy" }),
+        paseo: fakePaseo,
+      } as unknown as BotsHost;
+
+      const manager = new CompanionSessionManager(host);
+      await manager.compileUserTurn({
+        mainAgentId,
+        botId: "bot-mocode",
+        rawText: "测试超时默认值",
+        skipBypass: true,
+      });
+
+      expect(capturedTimeout).toBe(9000);
+    });
+
+    it("auto-rotates wedged companionAgentId when run rejects with cancellation error and injects prior_distilled_history", async () => {
+      const mainAgentId = "main-agent-wedged-test";
+      const createdAgents: any[] = [];
+      const archivedAgents: string[] = [];
+      let agentCounter = 0;
+
+      const fakePaseo = {
+        agents: {
+          create: vi.fn(async (params: any) => {
+            agentCounter++;
+            const id = `companion-agent-${agentCounter}`;
+            createdAgents.push({ id, ...params });
+            return { id };
+          }),
+          ref: (id: string) => ({
+            refresh: async () => ({
+              agent: {
+                id,
+                status: "idle",
+                archivedAt: archivedAgents.includes(id) ? new Date().toISOString() : null,
+                labels: { [SHADOW_SESSION_LABEL]: "true", [SHADOW_FOR_LABEL]: mainAgentId },
+              },
+            }),
+            archive: vi.fn(async () => {
+              archivedAgents.push(id);
+            }),
+            run: vi.fn(async (prompt: string) => {
+              if (id === "companion-agent-1" && prompt.includes('<analyze_user_turn turn="1">')) {
+                return;
+              }
+              if (id === "companion-agent-1" && prompt.includes('<analyze_user_turn turn="2">')) {
+                throw new Error("Cannot replace agent companion-agent-1 because its active run cancellation was not acknowledged");
+              }
+              return;
+            }),
+            timeline: {
+              refetch: async () => ({
+                entries: [
+                  {
+                    item: {
+                      type: "assistant_message",
+                      text: `<intent_analysis>\nDISTILLED_INTENT: Successful Turn Intent\nCOMPILED_PROMPT:\nSuccessful Turn Prompt\n</intent_analysis>`,
+                    },
+                  },
+                ],
+              }),
+            },
+          }),
+        },
+      } as any;
+
+      const fakeHost = {
+        paseo: fakePaseo,
+        bot: async () => ({ id: "bot-mocode", name: "moCode", provider: "agy" }),
+      } as unknown as BotsHost;
+
+      const manager = new CompanionSessionManager(fakeHost);
+
+      // --- Turn 1: Successfully compiles and sets up companion-agent-1 ---
+      const turn1Result = await manager.compileUserTurn({
+        mainAgentId,
+        botId: "bot-mocode",
+        rawText: "Turn 1: 请实现用户认证",
+        skipBypass: true,
+      });
+
+      expect(turn1Result.bypassed).toBe(false);
+      expect(turn1Result.turnIndex).toBe(1);
+      expect(fakePaseo.agents.create).toHaveBeenCalledTimes(1);
+      expect(createdAgents[0].id).toBe("companion-agent-1");
+
+      let ledger = await readShadowSession(mainAgentId);
+      expect(ledger?.companionAgentId).toBe("companion-agent-1");
+      expect(ledger?.turns.length).toBe(1);
+
+      // Distill Turn 1 reply
+      await manager.distillTurnReply({
+        mainAgentId,
+        botId: "bot-mocode",
+        assistantBody: "Turn 1 已完成认证实现",
+      });
+
+      // --- Turn 2: run() rejects with wedged cancellation error ---
+      const turn2Result = await manager.compileUserTurn({
+        mainAgentId,
+        botId: "bot-mocode",
+        rawText: "Turn 2: 继续添加单元测试",
+        skipBypass: true,
+      });
+
+      // Fails open cleanly
+      expect(turn2Result.bypassed).toBe(true);
+      expect(turn2Result.fallbackReason).toContain("Cannot replace agent");
+
+      // Archived the wedged agent
+      expect(archivedAgents).toContain("companion-agent-1");
+
+      // Ledger companionAgentId must be reset to null!
+      ledger = await readShadowSession(mainAgentId);
+      expect(ledger?.companionAgentId).toBeNull();
+
+      // --- Turn 3: Next turn automatically creates a fresh companion session with <prior_distilled_history> ---
+      const turn3Result = await manager.compileUserTurn({
+        mainAgentId,
+        botId: "bot-mocode",
+        rawText: "Turn 3: 检查覆盖率报告",
+        skipBypass: true,
+      });
+
+      expect(turn3Result.bypassed).toBe(false);
+      expect(fakePaseo.agents.create).toHaveBeenCalledTimes(2);
+      expect(createdAgents[1].id).toBe("companion-agent-2");
+
+      // Verify createdAgents[1].config.systemPrompt contains <prior_distilled_history>
+      const newCompanionConfig = createdAgents[1].config;
+      expect(newCompanionConfig.systemPrompt).toContain("<prior_distilled_history>");
+      expect(newCompanionConfig.systemPrompt).toContain("Turn 1: 请实现用户认证");
+
+      // Ledger now points to companion-agent-2
+      ledger = await readShadowSession(mainAgentId);
+      expect(ledger?.companionAgentId).toBe("companion-agent-2");
+    });
+
+    it("auto-rotates wedged companionAgentId on timeout in distillTurnReply", async () => {
+      const mainAgentId = "main-agent-distill-timeout";
+      const archivedAgents: string[] = [];
+
+      const fakePaseo = {
+        agents: {
+          create: vi.fn(async () => ({ id: "companion-distill-timeout-1" })),
+          ref: (id: string) => ({
+            refresh: async () => ({
+              agent: {
+                id,
+                status: "idle",
+                archivedAt: archivedAgents.includes(id) ? new Date().toISOString() : null,
+                labels: { [SHADOW_SESSION_LABEL]: "true", [SHADOW_FOR_LABEL]: mainAgentId },
+              },
+            }),
+            archive: vi.fn(async () => {
+              archivedAgents.push(id);
+            }),
+            run: vi.fn(async (prompt: string) => {
+              if (prompt.includes("<distill_assistant_reply")) {
+                throw new Error("timed out after 15000ms");
+              }
+            }),
+            timeline: {
+              refetch: async () => ({
+                entries: [
+                  {
+                    item: {
+                      type: "assistant_message",
+                      text: `<intent_analysis>\nDISTILLED_INTENT: Turn 1 Intent\nCOMPILED_PROMPT:\nTurn 1 Prompt\n</intent_analysis>`,
+                    },
+                  },
+                ],
+              }),
+            },
+          }),
+        },
+      } as any;
+
+      const fakeHost = {
+        paseo: fakePaseo,
+        bot: async () => ({ id: "bot-mocode", name: "moCode", provider: "agy" }),
+      } as unknown as BotsHost;
+
+      const manager = new CompanionSessionManager(fakeHost);
+
+      await manager.compileUserTurn({
+        mainAgentId,
+        botId: "bot-mocode",
+        rawText: "Turn 1 message",
+        skipBypass: true,
+      });
+
+      let ledger = await readShadowSession(mainAgentId);
+      expect(ledger?.companionAgentId).toBe("companion-distill-timeout-1");
+
+      await manager.distillTurnReply({
+        mainAgentId,
+        botId: "bot-mocode",
+        assistantBody: "Turn 1 assistant reply",
+      });
+
+      expect(archivedAgents).toContain("companion-distill-timeout-1");
+      ledger = await readShadowSession(mainAgentId);
+      expect(ledger?.companionAgentId).toBeNull();
     });
   });
 });

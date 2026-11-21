@@ -145,6 +145,7 @@ export const launcherStyles = StyleSheet.create({
     fontSize: ui(10),
     fontWeight: "600",
     lineHeight: 12,
+    fontVariant: ["tabular-nums"],
   },
   inputWrapper: {
     borderRadius: 8,
@@ -237,6 +238,7 @@ export const launcherStyles = StyleSheet.create({
   attachBadgeText: {
     fontSize: ui(10),
     fontWeight: "700",
+    fontVariant: ["tabular-nums"],
   },
   errorRow: {
     flexDirection: "row",

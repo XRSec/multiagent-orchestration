@@ -326,6 +326,18 @@ describe("public Paseo launch and permission hooks", () => {
     expect((await open({ request }, { paseo: {} }))!.mcpServers).not.toHaveProperty("fixture");
   });
 
+  it("skips agent.open.before registration when registerOpenHook is false while preserving agent.permission.before", () => {
+    const hooks = new Map<string, (...args: never[]) => Promise<unknown>>();
+    registerMcpOAuthLifecycle(
+      { addHook: (name: string, handler: (...args: never[]) => Promise<unknown>) => { hooks.set(name, handler); } } as never,
+      host,
+      proxy,
+      { registerOpenHook: false },
+    );
+    expect(hooks.has("agent.open.before")).toBe(false);
+    expect(hooks.has("agent.permission.before")).toBe(true);
+  });
+
   it("honors only exact Claude grants for currently enabled assigned OAuth servers", async () => {
     const values = (await host.values())!; const bot = values.bots[0]!; bot.alwaysAllow = ["fixture/echo"];
     const request = { provider: "claude", kind: "tool", name: "mcp__fixture__echo" } as PluginHookEvents["agent.permission.before"]["request"];

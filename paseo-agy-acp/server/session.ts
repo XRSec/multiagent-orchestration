@@ -3,7 +3,12 @@ import type { AgyUsageSource } from './usage.ts'
 import { z } from 'zod'
 import { randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
-import { watch, type FSWatcher } from 'node:fs'
+import {
+  readFileSync,
+  statSync,
+  watch,
+  type FSWatcher,
+} from 'node:fs'
 import { join } from 'node:path'
 import {
   PROTOCOL_VERSION,
@@ -231,6 +236,41 @@ const TURN_PROGRESS_UPDATES = new Set<SessionUpdate['sessionUpdate']>([
   'session_message_chunk',
 ])
 
+const MAX_BOT_PROMPT_FILE_BYTES = 256 * 1024
+const LEADING_YAML_FRONTMATTER = /^(---\r?\n[\s\S]*?\r?\n---)(?:\r?\n|$)/
+
+export function resolveRawAgent(
+  config?: ProviderSessionConfig,
+): string | undefined {
+  const rawAgent = config?.providerOptions?.agent
+  return typeof rawAgent === 'string' && rawAgent.trim()
+    ? rawAgent.trim()
+    : undefined
+}
+
+export function resolveEffectiveSystemPrompt(
+  config?: ProviderSessionConfig,
+): string | undefined {
+  if (config?.systemPrompt?.trim()) {
+    return config.systemPrompt
+  }
+  const rawPromptFile = config?.env?.PASEO_AGY_BOT_PROMPT_FILE
+  const promptFile =
+    typeof rawPromptFile === 'string' ? rawPromptFile.trim() : ''
+  if (!promptFile) return undefined
+  try {
+    const info = statSync(promptFile)
+    if (!info.isFile() || info.size > MAX_BOT_PROMPT_FILE_BYTES) {
+      return undefined
+    }
+    const raw = readFileSync(promptFile, 'utf8')
+    const stripped = raw.replace(LEADING_YAML_FRONTMATTER, '').trim()
+    return stripped.length > 0 ? stripped : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function effectiveLaunch(
   launch: ProviderLaunch | undefined,
   skipPermissions?: boolean,
@@ -278,10 +318,11 @@ export function sessionParams(cwd: string, config?: ProviderSessionConfig) {
     workspaceRoots?: string[]
   } = {}
 
-  if (config?.systemPrompt?.trim()) {
+  const effectivePrompt = resolveEffectiveSystemPrompt(config)
+  if (effectivePrompt) {
     antigravityMeta.systemPrompt = isReplace
-      ? { replace: config.systemPrompt }
-      : { append: config.systemPrompt }
+      ? { replace: effectivePrompt }
+      : { append: effectivePrompt }
   }
 
   if (additionalDirectories.length > 0) {
@@ -626,8 +667,112 @@ export class SessionManager {
 
 /** Bound on the settled-turn background probe so a local SQLite read cannot eat the cancel budget. */
 const SETTLED_BACKGROUND_PROBE_MS = 300
-const CONTEXT_WARN_THRESHOLD_TOKENS = 280_000
-const CONTEXT_AUTO_COMPACT_THRESHOLD_TOKENS = 300_000
+export const DEFAULT_CONTEXT_WARN_THRESHOLD_TOKENS = 230_000
+export const DEFAULT_CONTEXT_AUTO_COMPACT_THRESHOLD_TOKENS = 250_000
+
+export interface CompactionThresholds {
+  autoCompactEnabled: boolean
+  warnThresholdTokens: number
+  autoCompactThresholdTokens: number
+  warnTokens?: number
+  compactTokens?: number
+  warnThreshold?: number
+  autoCompactThreshold?: number
+  autoCompactWarnThresholdTokens?: number
+}
+
+function parsePositiveInteger(value: unknown): number | undefined {
+  if (typeof value === 'boolean' || value === null || value === undefined)
+    return undefined
+  if (typeof value === 'string' && value.trim() === '') return undefined
+  const num = Number(value)
+  if (!Number.isFinite(num) || num <= 0) return undefined
+  return Math.floor(num)
+}
+
+function parseOptionalBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase()
+    if (normalized === 'true' || normalized === '1') return true
+    if (normalized === 'false' || normalized === '0') return false
+  }
+  return undefined
+}
+
+export function resolveCompactionThresholds(
+  config?: ProviderSessionConfig,
+): CompactionThresholds {
+  const compactRaw =
+    config?.providerOptions?.autoCompactThresholdTokens ??
+    config?.settings?.autoCompactThresholdTokens ??
+    config?.env?.PASEO_AGY_COMPACT_THRESHOLD_TOKENS ??
+    process.env.PASEO_AGY_COMPACT_THRESHOLD_TOKENS
+  const parsedCompact = parsePositiveInteger(compactRaw)
+  const autoCompactThresholdTokens =
+    parsedCompact !== undefined
+      ? parsedCompact
+      : DEFAULT_CONTEXT_AUTO_COMPACT_THRESHOLD_TOKENS
+
+  const warnRaw =
+    config?.providerOptions?.autoCompactWarnThresholdTokens ??
+    config?.settings?.autoCompactWarnThresholdTokens ??
+    config?.env?.PASEO_AGY_COMPACT_WARN_THRESHOLD_TOKENS ??
+    process.env.PASEO_AGY_COMPACT_WARN_THRESHOLD_TOKENS
+  const parsedWarn = parsePositiveInteger(warnRaw)
+  const warnThresholdTokens =
+    parsedWarn !== undefined
+      ? parsedWarn
+      : Math.max(0, autoCompactThresholdTokens - 20_000)
+
+  const enabledRaw =
+    config?.providerOptions?.autoCompactEnabled ??
+    config?.settings?.autoCompactEnabled ??
+    config?.env?.PASEO_AGY_AUTO_COMPACT ??
+    process.env.PASEO_AGY_AUTO_COMPACT
+  const parsedEnabled = parseOptionalBoolean(enabledRaw)
+  const autoCompactEnabled =
+    parsedEnabled !== undefined ? parsedEnabled : parsedCompact !== undefined
+
+  const result: CompactionThresholds = {
+    autoCompactEnabled,
+    warnThresholdTokens,
+    autoCompactThresholdTokens,
+  }
+  Object.defineProperties(result, {
+    warnTokens: {
+      get() {
+        return warnThresholdTokens
+      },
+      enumerable: false,
+    },
+    compactTokens: {
+      get() {
+        return autoCompactThresholdTokens
+      },
+      enumerable: false,
+    },
+    warnThreshold: {
+      get() {
+        return warnThresholdTokens
+      },
+      enumerable: false,
+    },
+    autoCompactThreshold: {
+      get() {
+        return autoCompactThresholdTokens
+      },
+      enumerable: false,
+    },
+    autoCompactWarnThresholdTokens: {
+      get() {
+        return warnThresholdTokens
+      },
+      enumerable: false,
+    },
+  })
+  return result
+}
 
 /** Resolve `probe` within `timeoutMs`; a timeout means "work may exist", never a silent skip. */
 async function backgroundWorkWithin(
@@ -848,12 +993,20 @@ async function createSession(
     })
     const used = usage.contextWindowUsedTokens
     if (used !== undefined) {
-      if (used < CONTEXT_WARN_THRESHOLD_TOKENS) {
+      const thresholds = resolveCompactionThresholds(config)
+      if (!thresholds.autoCompactEnabled) {
+        state.contextWarned = false
+        state.contextAutoCompactTried = false
+      } else if (used < thresholds.warnThresholdTokens) {
         state.contextWarned = false
         state.contextAutoCompactTried = false
       } else if (!state.contextWarned && !state.loading) {
         state.contextWarned = true
         const usedK = Math.round(used / 1000)
+        const warnK = Math.round(thresholds.warnThresholdTokens / 1000)
+        const compactK = Math.round(
+          thresholds.autoCompactThresholdTokens / 1000,
+        )
         emit({
           type: 'timeline.item',
           sessionId: id,
@@ -861,7 +1014,7 @@ async function createSession(
             id: `${id}:context-warn:${++state.contextNoticeSeq}`,
             type: 'notification',
             level: 'warning',
-            message: `Context usage reached ${usedK}K tokens (>= 280K). At 300K, /compact will run automatically before the next message.`,
+            message: `Context usage reached ${usedK}K tokens (>= ${warnK}K). At ${compactK}K, /compact will run automatically before the next message.`,
           },
         })
       }
@@ -1647,11 +1800,7 @@ async function createSession(
     if (event.ok !== true) return
     credentialsEpoch += 1
   }
-  const rawAgent = config?.providerOptions?.agent
-  const agent =
-    typeof rawAgent === 'string' && rawAgent.trim()
-      ? rawAgent.trim()
-      : undefined
+  const agent = resolveRawAgent(config)
   /** Start an owned ACP runtime; it leaves the connection's transports once it exits and stops. */
   function startRuntime(skipPermissions: boolean) {
     const transport = connectAcp(
@@ -1909,7 +2058,15 @@ async function createSession(
     return {
       id,
       cwd,
-      config,
+      get config() {
+        return config
+      },
+      set config(value: ProviderSessionConfig | undefined) {
+        config = value
+      },
+      get compactionThresholds() {
+        return resolveCompactionThresholds(config)
+      },
       appDataDir,
       brainRoot,
       supportsRevertAny,
@@ -2578,6 +2735,9 @@ export const KNOWN_SETTINGS = new Set([
   'childIdleTimeoutMs',
   'childToolExecTimeoutMs',
   'childMaxWaitMs',
+  'autoCompactEnabled',
+  'autoCompactThresholdTokens',
+  'autoCompactWarnThresholdTokens',
 ])
 
 async function configureSession(
@@ -2611,6 +2771,21 @@ async function configureSession(
   if (changes.settings?.childMaxWaitMs != null) {
     session.childMaxWaitMs =
       Number(changes.settings.childMaxWaitMs) || session.childMaxWaitMs
+  }
+  if (
+    changes.settings?.autoCompactEnabled != null ||
+    changes.settings?.autoCompactThresholdTokens != null ||
+    changes.settings?.autoCompactWarnThresholdTokens != null
+  ) {
+    if (session.config) {
+      session.config = {
+        ...session.config,
+        settings: {
+          ...session.config.settings,
+          ...changes.settings,
+        },
+      }
+    }
   }
   const strictThinking = options?.strictThinking ?? true
   // Switching `model` dynamically adds or removes `thought_level` in `metadata.configOptions`
@@ -3366,14 +3541,17 @@ async function promptSession(
     })
     armWatchdog()
     const usedTokensBeforeTurn = session.contextWindowUsedTokens
+    const thresholds = resolveCompactionThresholds(session.config)
     if (
+      thresholds.autoCompactEnabled &&
       !isCompactCommand &&
       usedTokensBeforeTurn !== undefined &&
-      usedTokensBeforeTurn >= CONTEXT_AUTO_COMPACT_THRESHOLD_TOKENS &&
+      usedTokensBeforeTurn >= thresholds.autoCompactThresholdTokens &&
       !session.state.contextAutoCompactTried
     ) {
       session.state.contextAutoCompactTried = true
       const usedK = Math.round(usedTokensBeforeTurn / 1000)
+      const compactK = Math.round(thresholds.autoCompactThresholdTokens / 1000)
       emit({
         type: 'timeline.item',
         sessionId: session.id,
@@ -3381,7 +3559,7 @@ async function promptSession(
           id: `${session.id}:context-autocompact:${++session.state.contextNoticeSeq}`,
           type: 'notification',
           level: 'info',
-          message: `Context usage reached ${usedK}K tokens (>= 300K). Running /compact before sending your message...`,
+          message: `Context usage reached ${usedK}K tokens (>= ${compactK}K). Running /compact before sending your message...`,
         },
       })
       try {
@@ -3394,6 +3572,16 @@ async function promptSession(
         await session.drain()
         if (!isCurrent() && !turnAbort.signal.aborted)
           throw new Error('ACP runtime replaced during turn')
+        emit({
+          type: 'timeline.item',
+          sessionId: session.id,
+          item: {
+            id: `${session.id}:context-autocompact-done:${++session.state.contextNoticeSeq}`,
+            type: 'notification',
+            level: 'info',
+            message: 'Automatic /compact completed.',
+          },
+        })
       } catch (error) {
         if (
           turnAbort.signal.aborted ||

@@ -14,6 +14,7 @@ import {
   composeSystemPrompt,
   isAgyProvider,
   isClaudeProvider,
+  isGlobalAssistantBot,
   mcpServersRecord,
   primaryGroupForBot,
   promptSections,
@@ -135,6 +136,8 @@ export interface ChatStart {
   teamMemory?: { path: string; content: string } | null;
   seatDir?: string;
   allowedRootOverride?: string;
+  tierDepth?: 1 | 2 | 3;
+  isGlobalAssistant?: boolean;
 }
 
 /**
@@ -147,7 +150,7 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
   const startGroups = start.team?.groups ?? (start.team?.group ? [start.team.group] : []);
   const activeGroup = start.team?.group ?? primaryGroupForBot(bot.id, startGroups);
 
-  const resolvedRole = start.sessionRole ?? (start.team || start.sessionBoardPath || start.teamRootPath ? resolveSessionRole({ botId: bot.id, group: activeGroup }) : undefined);
+  const resolvedRole = start.sessionRole ?? (start.team || start.sessionBoardPath || start.teamRootPath || start.isGlobalAssistant ? resolveSessionRole({ botId: bot.id, group: activeGroup, isGlobalAssistant: start.isGlobalAssistant }) : undefined);
 
   let teamMemory = start.teamMemory;
   if (teamMemory === undefined && start.teamRootPath) {
@@ -162,7 +165,14 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
     }
   }
 
-  const team = startGroups.length && start.team ? teamsPrompt(startGroups, bot, start.team.bots, start.team.globalWorkflows, resolvedRole, teamMemory) : null;
+  const team = startGroups.length && start.team
+    ? teamsPrompt(startGroups, bot, start.team.bots, {
+        globalWorkflows: start.team.globalWorkflows,
+        role: resolvedRole,
+        teamMemory,
+        isGlobalAssistant: start.isGlobalAssistant,
+      })
+    : null;
   const rawMounts = activeGroup ? activeGroup.mounts : bot.mounts;
   const effectiveMounts = (rawMounts ?? []).map((m) => expandServerPath(m) ?? m);
   const rawCwd = activeGroup?.cwd ?? bot.cwd;
@@ -194,6 +204,8 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
       sessionBoardPath: start.sessionBoardPath,
       teamMemory,
       targetProjects,
+      tierDepth: start.tierDepth,
+      isGlobalAssistant: start.isGlobalAssistant,
     };
   }
 
@@ -239,6 +251,8 @@ export async function promptContext(bot: Bot, local: boolean, library: Library, 
     sessionBoardPath: start.sessionBoardPath,
     teamMemory,
     targetProjects,
+    tierDepth: start.tierDepth,
+    isGlobalAssistant: start.isGlobalAssistant,
   };
 }
 
@@ -282,6 +296,8 @@ export async function systemPrompt(
     allowedRootOverride,
     isWorkflowStage,
     askedByBotId,
+    tierDepth,
+    isGlobalAssistant,
   }: {
     bot: Bot;
     local: boolean;
@@ -309,6 +325,8 @@ export async function systemPrompt(
     allowedRootOverride?: string;
     isWorkflowStage?: boolean;
     askedByBotId?: string | null;
+    tierDepth?: 1 | 2 | 3;
+    isGlobalAssistant?: boolean;
   },
   library: Library,
   paseo: PaseoApi | null,
@@ -316,19 +334,29 @@ export async function systemPrompt(
 ) {
   const soul = await readBotSoul(bot.id, bot.soul, soulsDir);
   const effectiveBot = { ...bot, soul };
+  const resolvedGlobalAssistant =
+    isGlobalAssistant ?? (isGlobalAssistantBot(effectiveBot) && !askedByBotId && !isWorkflowStage);
   const groups = teamsOf(effectiveBot.id, settings?.groups ?? []);
   const activeGroup = group ?? primaryGroupForBot(effectiveBot.id, groups);
-  const effectiveSessionRole = sessionRole ?? (isWorkflowStage || askedByBotId || activeGroup
-    ? resolveSessionRole({ botId: effectiveBot.id, group: activeGroup, askedByBotId, isWorkflowStage })
+  const effectiveSessionRole = sessionRole ?? (isWorkflowStage || askedByBotId || activeGroup || resolvedGlobalAssistant
+    ? resolveSessionRole({ botId: effectiveBot.id, group: activeGroup, askedByBotId, isWorkflowStage, isGlobalAssistant: resolvedGlobalAssistant })
     : undefined);
+  const teamGroups =
+    resolvedGlobalAssistant && (settings?.groups?.length ?? 0) > 0
+      ? (settings?.groups ?? [])
+      : groups.length
+        ? groups
+        : activeGroup
+          ? [activeGroup]
+          : [];
 
   const start: ChatStart = {
     ...(message !== undefined ? { message } : {}),
-    ...((groups.length && settings) || activeGroup
+    ...(teamGroups.length > 0 && ((groups.length && settings) || activeGroup || resolvedGlobalAssistant)
       ? {
           team: {
             ...(activeGroup ? { group: activeGroup } : {}),
-            groups: groups.length ? groups : (activeGroup ? [activeGroup] : []),
+            groups: teamGroups,
             bots: settings?.bots ?? [effectiveBot],
             ...(settings?.workflows ? { globalWorkflows: settings.workflows } : {}),
           },
@@ -343,6 +371,8 @@ export async function systemPrompt(
     teamMemory,
     seatDir,
     allowedRootOverride,
+    tierDepth,
+    isGlobalAssistant: resolvedGlobalAssistant,
   };
 
   // Another host's config isn't readable from here; Paseo gives agents its tools by default.

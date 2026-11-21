@@ -3,6 +3,7 @@ import { Icon, TextInput } from "@getpaseo/plugin/client/ui";
 import { useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, Platform, Pressable, Text, View, useWindowDimensions, type LayoutRectangle, type StyleProp, type TextInputProps, type ViewStyle } from "react-native";
 import { useT } from "../i18n";
+import { isImeComposing } from "../keyboard";
 import { MONO_FONT, MONO_PROPS, nativeTokens, useHover, withAlpha } from "../native";
 import { fieldStateStyle, multilineStyle } from "../theme";
 import { code, ui } from "../typography";
@@ -132,6 +133,10 @@ export function FormTextArea({ colors, minHeight = 96, monospace, onFocus, onBlu
           setFocused(false);
           onBlur?.(event);
         }}
+        onKeyPress={(event) => {
+          if (isImeComposing(event)) return;
+          props.onKeyPress?.(event);
+        }}
         style={[multilineStyle(colors, minHeight, monospace), fieldStateStyle(colors, { hovered, focused, disabled: editable === false })]}
       />
     </Pressable>
@@ -198,6 +203,14 @@ export function InputField({ colors, label, hint, error, initialValue, monospace
           onBlur={(event) => {
             setFocused(false);
             onBlur?.(event);
+          }}
+          onKeyPress={(event) => {
+            if (isImeComposing(event)) return;
+            props.onKeyPress?.(event);
+          }}
+          onSubmitEditing={(event) => {
+            if (isImeComposing(event)) return;
+            props.onSubmitEditing?.(event);
           }}
           style={[
             {
@@ -514,5 +527,5 @@ export function SectionLink({ colors, label, icon = "Plus", onPress }: { colors:
 /** Muted 12pt text for a section header's trailing slot (counters, totals). */
 export function SectionMeta({ colors, text, tone }: { colors: Colors; text: string; tone?: "warning" | "danger" }) {
   const color = tone === "danger" ? colors.statusDanger : tone === "warning" ? colors.statusWarning : colors.foregroundMuted;
-  return <Text style={{ fontSize: ui(12), color }}>{text}</Text>;
+  return <Text style={{ fontSize: ui(12), color, fontVariant: ["tabular-nums"] }}>{text}</Text>;
 }

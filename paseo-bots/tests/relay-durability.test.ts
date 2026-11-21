@@ -113,7 +113,10 @@ describe("Relay Durability & First-Hop Resilience", () => {
       expect(isLive).toBe(true);
 
       // Unused port should fast-fail without hanging
-      const deadPort = port === 65530 ? 65529 : port + 1;
+      const tempServer = createServer();
+      await new Promise<void>((r) => tempServer.listen(0, r));
+      const deadPort = (tempServer.address() as { port: number }).port;
+      await new Promise<void>((r) => tempServer.close(() => r()));
       const isDead = await probeRelayHealth(deadPort, 200);
       expect(isDead).toBe(false);
 

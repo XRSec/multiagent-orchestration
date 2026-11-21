@@ -35,7 +35,7 @@ export function BotsSurface(props: BotsSurfaceProps) {
   );
 }
 
-function BotsSurfaceContent(props: PluginSurfaceProps & Partial<PluginScreenProps>) {
+function BotsSurfaceContent(props: BotsSurfaceProps) {
   const { colors } = props.theme;
   const { t } = useT();
   const { settings, latest, commit } = useBotSettings();

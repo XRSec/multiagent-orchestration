@@ -7,6 +7,7 @@ import { EMPTY_LIBRARY, pushHistory, type Bot } from "../shared/bot";
 import { mergeRoutineEdits } from "../shared/routine-edit";
 import { routineStatusRpc } from "../shared/rpc";
 import { AvatarTheme } from "./Avatar";
+import { isImeComposing } from "./keyboard";
 import { errorText, nativeTokens } from "./native";
 import { RoutinesSection } from "./panel/RoutinesSection";
 import { MenuProvider } from "./ui/Menu";

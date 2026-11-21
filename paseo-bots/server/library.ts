@@ -4,9 +4,11 @@ import { lstat, mkdir, readFile, readdir, readlink, rename, rm, stat, symlink, u
 import { dirname, join, posix, relative, resolve, sep } from "node:path";
 import { LibrarySkillSchema, type LibrarySkill } from "../shared/bot";
 import { parseSkillFrontmatter, parseSkillSource, sanitizeSkillName } from "../shared/skills";
-import { botDataPath, botsHomePath, pluginDataPath } from "./bot-home";
+import { botDataPath, botsHomePath, pluginDataPath, resolveCurrentDir } from "./bot-home";
 import { assertInsideManagedDataDir, isInsideManagedDataDir } from "./claude-agents";
 import { atomicWrite, ensureRealDirectory, missingFile, readRegularText, safeFileParts } from "./files";
+
+const currentDir = resolveCurrentDir(typeof import.meta !== "undefined" ? import.meta.url : undefined);
 
 export { assertInsideManagedDataDir, isInsideManagedDataDir };
 
@@ -27,7 +29,7 @@ export function resolveSkillsDir(customDir?: string): string {
   if (process.env.PASEO_BOTS_DATA_DIR) return join(process.env.PASEO_BOTS_DATA_DIR, "library", "skills");
   if (process.env.PASEO_HOME) return join(pluginDataPath(), "library", "skills");
 
-  const repoCandidate = resolve(__dirname, "../../paseo-bots-plugin-data/library/skills");
+  const repoCandidate = resolve(currentDir, "../../paseo-bots-plugin-data/library/skills");
   if (existsSync(repoCandidate)) return repoCandidate;
 
   const cwdParentCandidate = resolve(process.cwd(), "..", "paseo-bots-plugin-data", "library", "skills");

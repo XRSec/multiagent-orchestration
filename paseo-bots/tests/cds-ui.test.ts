@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("react-native", () => ({
@@ -6,7 +8,7 @@ vi.mock("react-native", () => ({
   AccessibilityInfo: { isReduceMotionEnabled: async () => false, addEventListener: () => ({ remove: () => {} }) },
   Dimensions: { get: () => ({ width: 1024, height: 768 }) },
   Keyboard: { addListener: () => ({ remove: () => {} }) },
-  LayoutAnimation: { create: () => ({}), configureNext: () => {}, Types: {}, Properties: {} },
+  LayoutAnimation: { create: vi.fn(), configureNext: vi.fn(), Types: { easeInEaseOut: 1 }, Properties: { opacity: 1 }, Presets: { easeInEaseOut: {} } },
   TurboModuleRegistry: { get: () => null },
   NativeModules: {},
   Animated: { Value: class { setValue() {} }, View: "AnimatedView", timing: () => ({ start: () => {}, stop: () => {} }) },
@@ -28,6 +30,7 @@ import {
   SPRING_GENTLE,
   SPRING_HEAVY_SNAP,
   SPRING_SNAPPY,
+  triggerLayoutAnimation,
 } from "../client/motion";
 import { nativeTokens } from "../client/native";
 
@@ -107,5 +110,116 @@ describe("CDS UI foundations", () => {
     expect(canPinScrollToEnd(1000, 1149)).toBe(false);
     expect(canPinScrollToEnd(1000, 1150)).toBe(true);
     expect(canPinScrollToEnd(1000, 1300)).toBe(true);
+  });
+
+  it("enforces zero hardcoded #000000 / #ffffff / #fff / #000 color literals in client/** source code", () => {
+    const clientDir = join(__dirname, "../client");
+    const getFiles = (dir: string): string[] => {
+      const results: string[] = [];
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        const stat = statSync(full);
+        if (stat.isDirectory()) {
+          results.push(...getFiles(full));
+        } else if (full.endsWith(".ts") || full.endsWith(".tsx")) {
+          results.push(full);
+        }
+      }
+      return results;
+    };
+
+    const files = getFiles(clientDir);
+    expect(files.length).toBeGreaterThan(15);
+
+    const violations: { file: string; line: number; match: string }[] = [];
+    const hexRegex = /#(?:ffffff|000000|fff|000)\b/i;
+
+    for (const file of files) {
+      const content = readFileSync(file, "utf8");
+      // Strip multiline comments first, then check line by line ignoring single-line comments
+      const strippedComments = content.replace(/\/\*[\s\S]*?\*\//g, (m) => "\n".repeat(m.split("\n").length - 1));
+      const lines = strippedComments.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const codeOnly = lines[i].replace(/\/\/.*/, "");
+        const m = hexRegex.exec(codeOnly);
+        if (m) {
+          violations.push({ file, line: i + 1, match: m[0] });
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  it("verifies single-stroke border discipline across audited nested pills, chips, and secondary cards", () => {
+    const clientDir = join(__dirname, "../client");
+    const checkFileContains = (relPath: string, expectedPattern: RegExp | string) => {
+      const fullPath = join(clientDir, relPath);
+      const content = readFileSync(fullPath, "utf8");
+      if (typeof expectedPattern === "string") {
+        expect(content).toContain(expectedPattern);
+      } else {
+        expect(content).toMatch(expectedPattern);
+      }
+    };
+
+    // Composer ✨ 意图精简 toggle pill uses single-stroke border discipline (borderWidth: 0)
+    checkFileContains("chat/Composer.tsx", /borderWidth:\s*0/);
+
+    // TaskStageModal upstream stage cards strip nested 1px borders
+    checkFileContains("chat/stream/TaskStageModal.tsx", /borderWidth:\s*0/);
+
+    // WorkflowsScreen scope pills strip double borders
+    checkFileContains("WorkflowsScreen.tsx", /borderWidth:\s*0/);
+
+    // WorkflowEditor dependency selection chips strip double borders
+    checkFileContains("settings/WorkflowEditor.tsx", /borderWidth:\s*0/);
+
+    // PartnerSettingsModal target selector pills strip double borders
+    checkFileContains("settings/PartnerSettingsModal.tsx", /borderWidth:\s*0/);
+
+    // SessionSelector badges strip double borders
+    checkFileContains("analytics/SessionSelector.tsx", /borderWidth:\s*0/);
+  });
+
+  it("verifies tabular-nums typography invariant across metrics, counts, and duration readouts", () => {
+    const clientDir = join(__dirname, "../client");
+    const checkFileContainsTabularNums = (relPath: string) => {
+      const fullPath = join(clientDir, relPath);
+      const content = readFileSync(fullPath, "utf8");
+      expect(content).toContain('"tabular-nums"');
+    };
+
+    const auditedComponents = [
+      "panel/controls.tsx",
+      "chat/stream/TaskCard.tsx",
+      "chat/stream/TaskStageModal.tsx",
+      "chat/stream/CompanionIntentBadge.tsx",
+      "chat/stream/RoutineRunCard.tsx",
+      "settings/WorkflowPipelinePreview.tsx",
+      "settings/WorkflowEditor.tsx",
+      "analytics/SessionSelector.tsx",
+      "teams/TeamMap.tsx",
+      "launcher/BotLauncherStyles.ts",
+      "AgyOrphanBanner.tsx",
+      "Splash.tsx",
+    ];
+
+    for (const relPath of auditedComponents) {
+      checkFileContainsTabularNums(relPath);
+    }
+  });
+
+  it("safely handles LayoutAnimation with reduceMotion gating and partial test mocks", async () => {
+    const { LayoutAnimation } = (await import("react-native")) as unknown as { LayoutAnimation: any };
+    LayoutAnimation.configureNext = vi.fn();
+
+    // When reduceMotion is true, LayoutAnimation must NOT be triggered
+    triggerLayoutAnimation(200, true);
+    expect(LayoutAnimation.configureNext).not.toHaveBeenCalled();
+
+    // When reduceMotion is false, LayoutAnimation configureNext is triggered safely
+    triggerLayoutAnimation(200, false);
+    expect(LayoutAnimation.configureNext).toHaveBeenCalled();
   });
 });

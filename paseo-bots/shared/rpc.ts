@@ -11,6 +11,7 @@ import {
 import { ProposalSchema, ProposalSkillSchema } from "./proposals";
 import { TaskCardSchema } from "./task-card";
 import { ShadowSessionRecordSchema } from "./companion-intent";
+import { BotFeedChannelKindSchema, BotFeedEntrySchema } from "./feed-view";
 
 const BotId = z.string().regex(/^[a-z0-9-]+$/);
 const GroupId = z.string().regex(/^[a-zA-Z0-9_-]+$/);
@@ -519,6 +520,26 @@ export const workflowRunsRpc = defineRpc({
   output: z.object({ runs: z.array(TaskCardSchema) }),
 });
 
+export const workflowRunRpc = defineRpc({
+  name: "bots.workflows.run",
+  input: z.object({
+    workflowId: z.string().min(1),
+    goal: z.string().min(1),
+    groupId: z.string().optional(),
+    params: z.record(z.string(), z.unknown()).optional(),
+    idempotencyKey: z.string().optional(),
+  }),
+  output: z.object({
+    ok: z.boolean(),
+    taskId: z.string().optional(),
+    chatId: z.string().optional(),
+    status: z.string().optional(),
+    reused: z.boolean().optional(),
+    card: TaskCardSchema.optional(),
+    error: z.string().optional(),
+  }),
+});
+
 export const workflowResumeRpc = defineRpc({
   name: "bots.workflows.resume",
   input: z.object({ taskId: z.string().min(1) }),
@@ -552,5 +573,24 @@ export const companionLedgerReadRpc = defineRpc({
   }),
   output: z.object({
     ledger: ShadowSessionRecordSchema.nullable(),
+  }),
+});
+
+// ---------------------------------------------------------------- continuous feed
+
+export const botFeedReadRpc = defineRpc({
+  name: "bot-feed.read",
+  input: z.object({
+    channelKind: BotFeedChannelKindSchema,
+    channelId: z.string(),
+    limit: z.number().optional(),
+    beforeCursor: z.string().optional(),
+    humanOnly: z.boolean().optional(),
+  }),
+  output: z.object({
+    entries: z.array(BotFeedEntrySchema),
+    hasOlder: z.boolean(),
+    nextCursor: z.string().nullable(),
+    totalPointers: z.number(),
   }),
 });

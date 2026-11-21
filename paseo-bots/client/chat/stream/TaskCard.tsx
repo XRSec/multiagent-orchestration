@@ -55,14 +55,17 @@ export interface TaskCardViewProps {
   card: TaskCardData;
   onOpenChat?(chatId: string, botId?: string): void;
   onResume?(taskId: string): void | Promise<void>;
+  onOpenTeamFeed?(groupId: string): void;
+  onOpenSourceChat?(chatId: string): void;
 }
 
 /**
  * Renders a Task Pyramid group card and, when backed by a Route 3 Workflow DAG,
  * displays real-time stage status, bot assignment, resolved engine badge, dependencies, and retries.
  */
-export function TaskCardView({ colors, card, onOpenChat, onResume }: TaskCardViewProps) {
+export function TaskCardView({ colors, card, onOpenChat, onResume, onOpenTeamFeed, onOpenSourceChat }: TaskCardViewProps) {
   const { t } = useT();
+  const tokens = nativeTokens(colors);
   const settings = useSettings(botSettings);
   const resumeRpc = useRpc(workflowResumeRpc);
   const toast = useToast();
@@ -141,6 +144,13 @@ export function TaskCardView({ colors, card, onOpenChat, onResume }: TaskCardVie
         <Text style={{ color: colors.foregroundMuted, fontSize: ui(13), lineHeight: 18 }}>
           {activeCard.summary}
         </Text>
+        <CardQuickLinks
+          colors={colors}
+          groupId={activeCard.groupId}
+          sourceChatId={activeCard.sourceChatId}
+          onOpenTeamFeed={onOpenTeamFeed}
+          onOpenSourceChat={onOpenSourceChat}
+        />
       </View>
     );
   }
@@ -161,7 +171,7 @@ export function TaskCardView({ colors, card, onOpenChat, onResume }: TaskCardVie
         {totalDuration ? (
           <View style={{ flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 12, backgroundColor: colors.surface2 }}>
             <Icon name="Clock" size={11} color={colors.foregroundMuted} />
-            <Text style={{ fontSize: ui(11), color: colors.foregroundMuted }}>
+            <Text style={{ fontSize: ui(11), color: colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
               {totalDuration}
             </Text>
           </View>
@@ -186,21 +196,20 @@ export function TaskCardView({ colors, card, onOpenChat, onResume }: TaskCardVie
             accessibilityLabel={t("workflows.resumeWorkflow")}
             disabled={resuming}
             onPress={() => void handleResume()}
-            style={{
+            style={({ pressed }) => ({
               flexDirection: "row",
               alignItems: "center",
               gap: 4,
               paddingHorizontal: 8,
               paddingVertical: 4,
               borderRadius: 6,
-              borderWidth: 1,
-              borderColor: colors.accent,
-              backgroundColor: colors.surface2,
+              borderWidth: 0,
+              backgroundColor: pressed ? tokens.brandClayPressed : tokens.brandClaySoft,
               opacity: resuming ? 0.6 : 1,
-            }}
+            })}
           >
-            <Icon name="RotateCcw" size={12} color={colors.accent} />
-            <Text style={{ fontSize: ui(11), fontWeight: "600", color: colors.accent }}>
+            <Icon name="RotateCcw" size={12} color={tokens.brandClay} />
+            <Text style={{ fontSize: ui(11), fontWeight: "600", color: tokens.brandClay }}>
               {resuming ? t("workflows.resumingWorkflow") : t("workflows.resumeWorkflow")}
             </Text>
           </Pressable>
@@ -336,6 +345,82 @@ export function TaskCardView({ colors, card, onOpenChat, onResume }: TaskCardVie
           onResume={canResume ? () => handleResume() : undefined}
           resuming={resuming}
         />
+      ) : null}
+
+      <CardQuickLinks
+        colors={colors}
+        groupId={activeCard.groupId}
+        sourceChatId={activeCard.sourceChatId}
+        onOpenTeamFeed={onOpenTeamFeed}
+        onOpenSourceChat={onOpenSourceChat}
+      />
+    </View>
+  );
+}
+
+function CardQuickLinks({
+  colors,
+  groupId,
+  sourceChatId,
+  onOpenTeamFeed,
+  onOpenSourceChat,
+}: {
+  colors: Colors;
+  groupId?: string;
+  sourceChatId?: string;
+  onOpenTeamFeed?(groupId: string): void;
+  onOpenSourceChat?(chatId: string): void;
+}) {
+  const { t } = useT();
+  const showFeed = Boolean(groupId && onOpenTeamFeed);
+  const showSource = Boolean(sourceChatId && onOpenSourceChat);
+  if (!showFeed && !showSource) return null;
+
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      {showFeed ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("workflows.openTeamFeed")}
+          onPress={() => onOpenTeamFeed?.(groupId!)}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            paddingHorizontal: 8,
+            paddingVertical: 4,
+            borderRadius: 6,
+            borderWidth: 0,
+            backgroundColor: pressed ? colors.surface2 : colors.surface0,
+          })}
+        >
+          <Icon name="MessageSquareText" size={12} color={colors.foregroundMuted} />
+          <Text style={{ fontSize: ui(11), fontWeight: "500", color: colors.foregroundMuted }}>
+            {t("workflows.teamFeedChip")}
+          </Text>
+        </Pressable>
+      ) : null}
+      {showSource ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t("workflows.openSourceChat")}
+          onPress={() => onOpenSourceChat?.(sourceChatId!)}
+          style={({ pressed }) => ({
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            paddingHorizontal: 8,
+            paddingVertical: 4,
+            borderRadius: 6,
+            borderWidth: 0,
+            backgroundColor: pressed ? colors.surface2 : colors.surface0,
+          })}
+        >
+          <Icon name="ArrowUpRight" size={12} color={colors.foregroundMuted} />
+          <Text style={{ fontSize: ui(11), fontWeight: "500", color: colors.foregroundMuted }}>
+            {t("workflows.sourceChatChip")}
+          </Text>
+        </Pressable>
       ) : null}
     </View>
   );

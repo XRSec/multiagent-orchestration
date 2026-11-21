@@ -1,4 +1,4 @@
-import { askBot, checkChat, listBots } from "./bots";
+import { askBot, checkChat, listBots, listTeams } from "./bots";
 import { searchChats } from "./chats";
 import type { BotToolName } from "../../shared/bot-tools";
 import type { SubagentEngine } from "../../shared/chat";
@@ -11,7 +11,7 @@ import { proposeSkill } from "./skills";
 import { showCard } from "./interactions";
 
 /** Every tool the "bots" MCP server offers, in the order agents see them. */
-export const BOT_TOOLS: readonly BotTool[] = [listBots, askBot, checkChat, searchChats, openTaskTool, listTasksTool, runWorkflowTool, resumeWorkflowTool, getSetup, proposeSkill, proposeRoutine, listRoutines, runRoutine, cancelRoutineRun, proposeChanges, showCard];
+export const BOT_TOOLS: readonly BotTool[] = [listBots, listTeams, askBot, checkChat, searchChats, openTaskTool, listTasksTool, runWorkflowTool, resumeWorkflowTool, getSetup, proposeSkill, proposeRoutine, listRoutines, runRoutine, cancelRoutineRun, proposeChanges, showCard];
 
 /**
  * Tools that only exist to hand work to another bot, so the native engine hides

@@ -29,6 +29,7 @@ export type TaskMemberInput = Omit<TaskMember, "updatedAt">;
 export interface TaskRecord {
   taskId: string;
   groupId?: string;
+  sourceChatId?: string;
   title: string;
   status: TaskStatus;
   acceptance?: string;
@@ -50,6 +51,7 @@ export interface OpenTaskInput {
   taskId: string;
   title: string;
   groupId?: string;
+  sourceChatId?: string;
   acceptance?: string;
   budget?: { steps?: number; fanout?: number };
   workflow?: WorkflowRunState;
@@ -147,6 +149,7 @@ export async function openTask(input: OpenTaskInput): Promise<TaskRecord> {
       return writeRecord({
         taskId: input.taskId,
         ...(input.groupId ? { groupId: input.groupId } : {}),
+        ...(input.sourceChatId ? { sourceChatId: input.sourceChatId } : {}),
         title: input.title,
         status: input.workflow ? "running" : "issued",
         ...(input.acceptance ? { acceptance: input.acceptance } : {}),
@@ -162,6 +165,7 @@ export async function openTask(input: OpenTaskInput): Promise<TaskRecord> {
     const merged: TaskRecord = {
       ...existing,
       ...(input.groupId ? { groupId: input.groupId } : {}),
+      ...(input.sourceChatId ? { sourceChatId: input.sourceChatId } : {}),
       ...(input.title ? { title: input.title } : {}),
       ...(input.acceptance ? { acceptance: input.acceptance } : {}),
       ...(input.budget ? { budget: input.budget } : {}),
@@ -172,6 +176,7 @@ export async function openTask(input: OpenTaskInput): Promise<TaskRecord> {
     // Re-opening an unchanged line must not burn a version: a version is a fact change.
     const unchanged = merged.title === existing.title
       && merged.groupId === existing.groupId
+      && merged.sourceChatId === existing.sourceChatId
       && merged.acceptance === existing.acceptance
       && JSON.stringify(merged.budget ?? null) === JSON.stringify(existing.budget ?? null)
       && JSON.stringify(merged.workflow ?? null) === JSON.stringify(existing.workflow ?? null);

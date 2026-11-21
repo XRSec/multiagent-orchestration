@@ -9,7 +9,12 @@ import { AgyUsageSource } from '../server/usage.ts'
 import { record } from '../server/common.ts'
 import { dataDirectory } from '../server/preflight.ts'
 import { createProvider } from '../server/provider.ts'
-import { effectiveLaunch, sessionParams } from '../server/session.ts'
+import {
+  effectiveLaunch,
+  resolveEffectiveSystemPrompt,
+  resolveRawAgent,
+  sessionParams,
+} from '../server/session.ts'
 import { collectProviderEvents } from './helpers.ts'
 import { removeDir } from './helpers/cleanup.ts'
 
@@ -2110,6 +2115,221 @@ test('effectiveLaunch omits --agent when agent is absent and appends --agent whe
   )
   assert.ok(withAgentLaunch)
   assert.deepEqual(withAgentLaunch.args, ['acp', '--agent', 'bot-specialist'])
+})
+
+test('resolveRawAgent ignores PASEO_AGY_BOT_AGENT and honors explicit providerOptions.agent', () => {
+  assert.equal(
+    resolveRawAgent({
+      cwd: '/tmp',
+      env: { PASEO_AGY_BOT_AGENT: 'bot-chief' },
+      mcpServers: {},
+      settings: {},
+      persist: true,
+    }),
+    undefined,
+  )
+  assert.equal(
+    resolveRawAgent({
+      cwd: '/tmp',
+      env: { PASEO_AGY_BOT_AGENT: 'bot-chief' },
+      systemPrompt: 'Custom explicit system prompt',
+      mcpServers: {},
+      settings: {},
+      persist: true,
+    }),
+    undefined,
+  )
+  assert.equal(
+    resolveRawAgent({
+      cwd: '/tmp',
+      env: { PASEO_AGY_BOT_AGENT: 'bot-chief' },
+      providerOptions: { agent: '  explicit-agent  ' },
+      mcpServers: {},
+      settings: {},
+      persist: true,
+    }),
+    'explicit-agent',
+  )
+  assert.equal(
+    resolveRawAgent({
+      cwd: '/tmp',
+      env: {},
+      providerOptions: { agent: '   ' },
+      mcpServers: {},
+      settings: {},
+      persist: true,
+    }),
+    undefined,
+  )
+})
+
+test('resolveEffectiveSystemPrompt and sessionParams load PASEO_AGY_BOT_PROMPT_FILE, strip YAML frontmatter, preserve explicit systemPrompt, and fail soft', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'agy-bot-prompt-'))
+  try {
+    const baseConfig = {
+      cwd: dir,
+      mcpServers: {},
+      settings: {},
+      persist: true,
+    }
+
+    const lfPromptPath = join(dir, 'lf-bot.md')
+    await writeFile(
+      lfPromptPath,
+      '---\nname: bot-chief\ndescription: Global assistant\n---\n\n  You are bot-chief.\n\n---\nKeep following sections.\n  ',
+      'utf8',
+    )
+    assert.equal(
+      resolveEffectiveSystemPrompt({
+        ...baseConfig,
+        env: { PASEO_AGY_BOT_PROMPT_FILE: `  ${lfPromptPath}  ` },
+      }),
+      'You are bot-chief.\n\n---\nKeep following sections.',
+    )
+
+    const appendParams = sessionParams(dir, {
+      ...baseConfig,
+      env: { PASEO_AGY_BOT_PROMPT_FILE: lfPromptPath },
+    })
+    assert.deepEqual(appendParams._meta?.antigravity, {
+      systemPrompt: {
+        append: 'You are bot-chief.\n\n---\nKeep following sections.',
+      },
+    })
+
+    const replaceParams = sessionParams(dir, {
+      ...baseConfig,
+      env: { PASEO_AGY_BOT_PROMPT_FILE: lfPromptPath },
+      providerOptions: { systemPromptMode: 'replace' },
+    })
+    assert.deepEqual(replaceParams._meta?.antigravity, {
+      systemPrompt: {
+        replace: 'You are bot-chief.\n\n---\nKeep following sections.',
+      },
+    })
+
+    const crlfPromptPath = join(dir, 'crlf-bot.md')
+    await writeFile(
+      crlfPromptPath,
+      '---\r\nname: bot-mocode\r\n---\r\nLine 1\r\nLine 2\r\n',
+      'utf8',
+    )
+    assert.equal(
+      resolveEffectiveSystemPrompt({
+        ...baseConfig,
+        env: { PASEO_AGY_BOT_PROMPT_FILE: crlfPromptPath },
+      }),
+      'Line 1\r\nLine 2',
+    )
+
+    const plainPromptPath = join(dir, 'plain-bot.md')
+    await writeFile(plainPromptPath, '\nPlain bot prompt.\n', 'utf8')
+    assert.equal(
+      resolveEffectiveSystemPrompt({
+        ...baseConfig,
+        env: { PASEO_AGY_BOT_PROMPT_FILE: plainPromptPath },
+      }),
+      'Plain bot prompt.',
+    )
+
+    assert.equal(
+      resolveEffectiveSystemPrompt({
+        ...baseConfig,
+        systemPrompt: 'Explicit prompt wins.',
+        env: { PASEO_AGY_BOT_PROMPT_FILE: lfPromptPath },
+      }),
+      'Explicit prompt wins.',
+    )
+    const explicitParams = sessionParams(dir, {
+      ...baseConfig,
+      systemPrompt: 'Explicit prompt wins.',
+      env: { PASEO_AGY_BOT_PROMPT_FILE: lfPromptPath },
+    })
+    assert.deepEqual(explicitParams._meta?.antigravity, {
+      systemPrompt: {
+        append: 'Explicit prompt wins.',
+      },
+    })
+
+    const missingParams = sessionParams(dir, {
+      ...baseConfig,
+      env: { PASEO_AGY_BOT_PROMPT_FILE: join(dir, 'does-not-exist.md') },
+    })
+    assert.equal('_meta' in missingParams, false)
+
+    const oversizedPath = join(dir, 'oversized.md')
+    await writeFile(oversizedPath, 'a'.repeat(256 * 1024 + 1), 'utf8')
+    assert.equal(
+      resolveEffectiveSystemPrompt({
+        ...baseConfig,
+        env: { PASEO_AGY_BOT_PROMPT_FILE: oversizedPath },
+      }),
+      undefined,
+    )
+    assert.equal(
+      '_meta' in
+        sessionParams(dir, {
+          ...baseConfig,
+          env: { PASEO_AGY_BOT_PROMPT_FILE: oversizedPath },
+        }),
+      false,
+    )
+
+    const frontmatterOnlyPath = join(dir, 'empty-body.md')
+    await writeFile(frontmatterOnlyPath, '---\nname: empty\n---\n   \n', 'utf8')
+    assert.equal(
+      resolveEffectiveSystemPrompt({
+        ...baseConfig,
+        env: { PASEO_AGY_BOT_PROMPT_FILE: frontmatterOnlyPath },
+      }),
+      undefined,
+    )
+
+    assert.equal(
+      resolveEffectiveSystemPrompt({
+        ...baseConfig,
+        env: { PASEO_AGY_BOT_PROMPT_FILE: dir },
+      }),
+      undefined,
+    )
+  } finally {
+    await removeDir(dir)
+  }
+})
+
+test('session.open forwards PASEO_AGY_BOT_PROMPT_FILE via _meta.antigravity.systemPrompt.append', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'agy-bot-prompt-open-'))
+  const log = join(home, 'calls')
+  const promptPath = join(home, 'bot-chief.md')
+  await writeFile(
+    promptPath,
+    '---\nname: bot-chief\n---\nFollow bot-chief standing rules.\n',
+    'utf8',
+  )
+  const h = await harness({ HOME: home, AGY_TEST_LOG: log })
+  try {
+    await h.provider.send({
+      type: 'session.open',
+      requestId: 'open-bot-prompt',
+      sessionId: 'bot-s1',
+      config: {
+        ...h.config,
+        env: {
+          PASEO_AGY_BOT_AGENT: 'bot-chief',
+          PASEO_AGY_BOT_PROMPT_FILE: promptPath,
+        },
+      },
+      history: 'skip',
+    })
+    await h.wait((e) => e.type === 'session.ready' && e.sessionId === 'bot-s1')
+    assert.equal(
+      await readFile(log, 'utf8'),
+      'new:Follow bot-chief standing rules.\n',
+    )
+  } finally {
+    await h.provider.close()
+    await removeDir(home)
+  }
 })
 
 test('sessionParams forwards systemPrompt and workspaceRoots under _meta.antigravity without --agent', () => {

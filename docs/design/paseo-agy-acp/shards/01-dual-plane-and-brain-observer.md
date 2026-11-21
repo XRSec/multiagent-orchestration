@@ -1,8 +1,8 @@
 ---
 doc_id: DESIGN-PASEO-AGY-ACP-SHARD-01
 status: CURRENT
-version: 1.0.0
-last_verified: 2026-11-18
+version: 1.1.0
+last_verified: 2026-11-21
 language: en-US
 ---
 
@@ -23,10 +23,11 @@ Relying on ACP stdio alone drops post-RPC Reactive Wakeups, child subagents, and
 
 ### 1.1 `_meta.antigravity` Injection & Stdio Interception
 
-1. **Additive System Prompt Default (`sessionParams`)**:
+1. **Additive System Prompt Default (`sessionParams`, `resolveEffectiveSystemPrompt`)**:
    - Emit `_meta.antigravity.systemPrompt` in `paseo-agy-acp/server/session.ts` as `{ append: systemPrompt }` by default.
    - Switch to `{ replace: systemPrompt }` strictly when `systemPromptMode === 'replace'` is explicitly configured.
-   - Rationale: Preserving native Antigravity tool and safety instructions prevents silent capability regressions.
+   - When `config.systemPrompt` is empty and `env.PASEO_AGY_BOT_PROMPT_FILE` points to an existing readable file, `resolveEffectiveSystemPrompt` loads prompt content from disk and injects it via `_meta.antigravity.systemPrompt`, replacing legacy `PASEO_AGY_BOT_AGENT` so adapter sessions never collide with saved Antigravity agent names.
+   - Rationale: Preserving native Antigravity tool and safety instructions prevents silent capability regressions and agent-name collisions.
 2. **Multi-Root Workspace Forwarding (`workspaceRoots`)**:
    - Forward validated non-empty `additionalDirectories` strings into `_meta.antigravity.workspaceRoots` inside `sessionParams`.
    - Rationale: Grants `agy` native multi-root file and search scope without workspace symlinks.
@@ -110,8 +111,9 @@ Keep `settleBrainTurn` (`BrainTurnObservation` polling at `200` ms) active and b
    - Rationale: Conversations driven directly inside the native Antigravity IDE append to `transcript_full.jsonl` with zero ACP events; `syncExternalTranscript(false)` projects those steps via `projectReplayHistory` and `attachReplayRevertTokens`, deduplicating against `emittedItemSignatures` and terminal `emittedItemStatuses`.
 2. **Cache-Busting Disk Hydration (`session.refresh` / `session.sync`)**:
    - Route explicit `session.refresh` and `session.sync` requests to `syncExternalTranscript(true)`, bypassing cached `lastTranscriptMtimeMs` and `lastTranscriptSize` guards to force full disk re-hydration instead of returning stale daemon memory.
-3. **Per-Step Context Window Occupancy (`ModelUsageObserver`)**:
+3. **Per-Step Context Window Occupancy (`ModelUsageObserver`, `resolveCompactionThresholds`)**:
    - Compute context occupancy from the latest valid `PLANNER_RESPONSE` step snapshot (`input_tokens + cache_read_tokens + cache_write_tokens + output_tokens` via `extractStepUsage` and `readLatestStepUsage`, scanning `64` KiB blocks backwards up to `8` MiB with `131,072` fallback capacity for `gpt-oss*` and `256,000` otherwise).
+   - Expose threshold resolution via `resolveCompactionThresholds` (`DEFAULT_CONTEXT_WARN_THRESHOLD_TOKENS = 230_000`, `DEFAULT_CONTEXT_AUTO_COMPACT_THRESHOLD_TOKENS = 250_000` in `paseo-agy-acp/server/session.ts`).
    - Redline: NEVER mix cumulative ACP prompt token counters into context window occupancy.
 
 ---

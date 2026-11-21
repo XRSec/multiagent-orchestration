@@ -6,7 +6,7 @@ Prerequisites: source .env before invoking credentials or protected gateways.
 
 IMPORTANT: Think and respond in Chinese. Bootstrap environment with `source .env` before invoking credentials or protected gateways.
 
-Top-level layout: `paseo-bots/` (Paseo bots plugin, active core), `paseo-agy-acp/` (Antigravity ACP adapter, active core), `paseo-bots-plugin-settings/` (bot roster SSOT `bots.json`, decoupled `souls/` & `mcp-servers/`), `paseo-bots-plugin-data/` (shareable bot skills & managed seats), `docs/` (project & design shards), `scripts/`, `tools/`, `.githooks/`, `.github/`. (`paseo-sidecar/` is paused/experimental—ignore unless explicitly targeted.)
+Top-level layout: `paseo-bots/` (Paseo bots plugin, active core), `paseo-agy-acp/` (Antigravity ACP adapter, active core), `paseo-feed/` (continuous virtual feed micro-plugin, active), `paseo-long-session/` (proactive compaction & memory sync micro-plugin, active), `paseo-bots-plugin-settings/` (bot roster SSOT `bots.json`, decoupled `souls/` & `mcp-servers/`), `paseo-bots-plugin-data/` (shareable bot skills incl. `x-research`, `read-twitter`, `prism` & managed seats), `docs/` (project & design shards), `scripts/`, `tools/`, `.githooks/`, `.github/`. (`paseo-sidecar/` is paused/experimental—ignore unless explicitly targeted.)
 
 ## 1. Core Operating Disciplines (Strict Mandate)
 
@@ -55,6 +55,7 @@ Authoritative SSOT: [paseo-bots-plugin-settings/bots.json](paseo-bots-plugin-set
 
 | Bot ID | Display Name | Provider / Model | CWD | Domain & Capabilities | Allowed Write Scope |
 |---|---|---|---|---|---|
+| `bot-chief` | **全局助理** | `agy` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | Global L1 personal assistant, Companion intent distillation, `paseo-long-session` auto-compact, cross-team routing (`ask_question` only) | None (Pure Global Router) |
 | `bot-moadmin` | **moAdmin** | `agy` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | Taskforce director; subagent orchestration (`invoke_subagent`, `send_message`, `manage_subagents`), `.t3/TASK_MANIFEST.md` | None (Pure Orchestrator; delegates all file writes to specialist bots) |
 | `bot-mocode` | **moCode** | `agy` / `gemini-4-hydrogen` | `.` | Fullstack developer & code architect; Antigravity native tools (`read_file`, `write_file`, `edit_file`, `run_command`) | `paseo-bots/`, `paseo-agy-acp/`, `scripts/`, `tools/`, `extensions/` |
 | `bot-modoc` | **moDoc** | `agy` / `gemini-4-hydrogen` | `.` | Architecture scribe & documentation steward; Antigravity native tools | `docs/`, `*.md` |
@@ -91,6 +92,6 @@ Authoritative SSOT: [paseo-bots-plugin-settings/bots.json](paseo-bots-plugin-set
 
 1. **Master Router & Catalogue**: Agent read-path starts at [docs/INDEX.md](docs/INDEX.md) (micro-kernel router); full status catalogue lives in [docs/README.md](docs/README.md).
 2. **Two-Pillar Topology**:
-   - **Project Docs** ([docs/project/INDEX.md](docs/project/INDEX.md)): Repository overview, 10 Agent engineering principles, 14-Bot & 6-Team matrix, delivery/verification gates, and authoring/script standards.
-   - **Design Docs** ([docs/design/INDEX.md](docs/design/INDEX.md)): Active production specs for [paseo-agy-acp](docs/design/paseo-agy-acp/INDEX.md) and [paseo-bots](docs/design/paseo-bots/INDEX.md), plus runtime-agnostic [Agent patterns](docs/design/patterns/INDEX.md).
+   - **Project Docs** ([docs/project/INDEX.md](docs/project/INDEX.md)): Repository overview, 10 Agent engineering principles, 15-Bot & 6-Team matrix, delivery/verification gates, and authoring/script standards.
+   - **Design Docs** ([docs/design/INDEX.md](docs/design/INDEX.md)): Active production specs for [paseo-agy-acp](docs/design/paseo-agy-acp/INDEX.md), [paseo-bots](docs/design/paseo-bots/INDEX.md), and [paseo-feed & paseo-long-session](docs/design/paseo-feed/INDEX.md), plus runtime-agnostic [Agent patterns](docs/design/patterns/INDEX.md).
 3. **Same-Commit Write-Back**: Any change that alters an architectural or configuration fact updates its owning shard in the same commit ([docs/project/shards/05-agent-first-docs-standard.md](docs/project/shards/05-agent-first-docs-standard.md)).

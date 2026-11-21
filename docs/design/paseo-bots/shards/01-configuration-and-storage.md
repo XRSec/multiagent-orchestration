@@ -2,7 +2,7 @@
 doc_id: PASEO-BOTS-SHARD-01-CONFIG-STORAGE
 status: CURRENT
 version: 1.1.0
-last_verified: 2026-11-19
+last_verified: 2026-11-21
 language: en-US
 ---
 
@@ -65,7 +65,7 @@ Preserve the outer `{ "version": 4, "values": { ... } }` JSON wrapper whenever w
 | `bookmarks` | `z.array(MessageBookmarkSchema).optional()` | Host-local message references (`MAX_MESSAGE_BOOKMARKS`; excluded from bot/team exports) |
 | `proposalDecisions` | `z.array(...).max(200).optional()` | Atomic acceptance/dismissal receipts paired with `proposalDecisionEpoch` |
 
-For the authoritative 14-Bot and 6-Team production roster configured in `paseo-bots-plugin-settings/bots.json`, load [../../../project/shards/03-bot-fleet-and-teams.md](../../../project/shards/03-bot-fleet-and-teams.md). Do not duplicate fleet roster tables inside plugin design shards.
+For the authoritative 15-Bot and 6-Team production roster configured in `paseo-bots-plugin-settings/bots.json`, load [../../../project/shards/03-bot-fleet-and-teams.md](../../../project/shards/03-bot-fleet-and-teams.md). Do not duplicate fleet roster tables inside plugin design shards.
 
 ## 3. Asset Decoupling & 75 KB Configuration Budget
 

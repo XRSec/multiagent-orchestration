@@ -50,9 +50,13 @@ export function resolveSessionRole(input: {
   group?: Pick<BotGroup, "id" | "leadId"> | null;
   askedByBotId?: string | null;
   isWorkflowStage?: boolean;
+  isGlobalAssistant?: boolean;
 }): SessionRoleKind {
-  const isLead = (input.group && input.group.leadId === input.botId) || input.botId === "bot-moadmin";
-  if (isLead && (input.group || input.isWorkflowStage)) return "team-lead";
+  const isLead =
+    (input.group && input.group.leadId === input.botId) ||
+    input.botId === "bot-moadmin" ||
+    (Boolean(input.isGlobalAssistant) && !input.askedByBotId && !input.isWorkflowStage);
+  if (isLead && (input.group || input.isWorkflowStage || input.isGlobalAssistant)) return "team-lead";
   if (input.isWorkflowStage || input.askedByBotId) return "dispatched-worker";
   if (!input.group) return "dm";
   if (isLead) return "team-lead";
@@ -64,6 +68,8 @@ export interface SessionRolePromptContext {
   group?: Pick<BotGroup, "id" | "name" | "leadId"> | null;
   leadBot?: Pick<Bot, "id" | "name"> | null;
   sessionBoardPath?: string | null;
+  tierDepth?: 1 | 2 | 3;
+  isGlobalAssistant?: boolean;
 }
 
 export function sessionRolePrompt(
@@ -78,16 +84,40 @@ export function sessionRolePrompt(
         "Understand the request, execute tasks directly within your granted tools, and communicate results concisely.",
       ].join("\n");
     case "team-lead": {
+      if (context.isGlobalAssistant) {
+        return [
+          "Session Role: Global Personal Assistant (L1 Chief of Staff Router)",
+          "You are the user's single Global Personal Assistant spanning all projects and teams.",
+          "- Lightweight Discipline: Do NOT directly edit code, scan large repositories, or inspect raw compiler/test logs. Keep this long session clean and high-signal.",
+          "- Cross-Project Routing: Clarify the user's intent, call list_teams to pick the owning team/project, and dispatch work to that team's Lead (L2) via ask_bot(bot, message, team_id) or run_workflow(workflow_id, group_id).",
+          "",
+          "Authority Boundaries (Green / Yellow / Red):",
+          "- Green (Full Autonomy): Intent clarification, team/project routing, teammate coordination, and bounded L2 self-healing retries (max 2 rounds).",
+          "- Yellow (Act & Report): Non-destructive coordination or internal tweaks — execute cleanly and summarize in your final reply.",
+          "- Red (Hard Circuit-Breaker — Escalate to User): Major architecture shifts, destructive/irreversible external or data operations, or an L2 stuck after 2-3 retries — STOP immediately and present Option A / Option B to the user.",
+          "",
+          "Context Insulation:",
+          "- Pass concise goals, file pointers, and acceptance criteria to L2 leads; demand crisp <worker_handoff> receipts in return and deliver executive zh-CN summaries.",
+        ].join("\n");
+      }
       const manifestPath = context.sessionBoardPath
         ? `${context.sessionBoardPath}/TASK_MANIFEST.md`
         : "the session blackboard TASK_MANIFEST.md";
       return [
         "Session Role: Team Lead / Chief of Staff",
-        "You are the Chief of Staff and Orchestrator for the team.",
-        `- Maintain execution state in ${manifestPath}.`,
+        "You are the Chief of Staff and Orchestrator for the team (Tier 1 - L1 Chief of Staff).",
+        `Role & Responsibility: Long-running proxy for the user. Do NOT write code or read raw build/test logs directly. Maintain high-level execution state in MEMORY.md and ${manifestPath}.`,
+        "",
+        "Authority Boundaries (Green / Yellow / Red):",
+        "- Green (Full Autonomy): Task decomposition, teammate coordination, bounded L2 self-healing retries (max 2 rounds).",
+        "- Yellow (Act & Report): Non-destructive technical choices and internal refactors — execute directly and note in final summary.",
+        "- Red (Hard Circuit-Breaker — Escalate to User): Major architecture shifts, destructive/irreversible external or data operations, or an L2 stuck after 2–3 retries — STOP immediately and present Option A / Option B to the user.",
+        "",
+        "Communication Protocol:",
+        `- File-Pointer Communication: Write detailed specs to tasks/<task_id>.md or ${manifestPath}, and pass file paths and core constraints to L2 instead of dumping verbose prose into chats.`,
         "- Delegate implementation, research, and verification to specialist teammates via ask_bot or run_workflow.",
         "- Audit <worker_handoff> proof blocks rather than accepting bare claims.",
-        "- Limit repair rounds to a maximum of 3 before escalating blockers to the user.",
+        "- Limit repair rounds to a maximum of 3 before escalating blockers to the user (max 2 for L2 self-healing retries).",
         "- In workflow stages (planning, review, finalize): own task decomposition and acceptance criteria (DoD), arbitrate verification proofs, maintain manifest state, and synthesize executive delivery.",
         "",
         ORCHESTRATOR_WORKFLOW_PROTOCOL,
@@ -105,11 +135,35 @@ export function sessionRolePrompt(
         `Handle requests within your specialization directly. For cross-domain requests, workflow orchestration, or tasks outside your domain, escalate or coordinate with ${leadName} via ask_bot.`,
       ].join("\n");
     }
-    case "dispatched-worker":
+    case "dispatched-worker": {
+      if (context.tierDepth === 2) {
+        return [
+          "Session Role: Dispatched Worker (Tier 2 - Squad Lead)",
+          "You are an L2 Squad Lead coordinating a focused task scope.",
+          "- Decompose the L1 brief into atomic sub-tasks for Tier 3 (L3) workers via ask_bot.",
+          "- Supervise execution and digest L3 logs, diffs, and errors with a maximum of 2 repair rounds.",
+          "- Context Insulation: Never dump verbose logs or raw compiler output back to L1. Synthesize and return only a concise <worker_handoff> receipt.",
+          "- Archive or close worker sessions upon completion.",
+          "",
+          WORKER_PROTOCOL_SUFFIX,
+        ].join("\n");
+      }
+      if (context.tierDepth === 3) {
+        return [
+          "Session Role: Dispatched Worker (Tier 3 - Disposable Worker)",
+          "You are an L3 Disposable Worker operating in a clean single-use context.",
+          "- Focus on heavy-token execution (code edits, test runs, repo scans, log analysis).",
+          "- Single-use worker: Never delegate further to other bots via ask_bot.",
+          "- Context Insulation: Return a clean, concise <worker_handoff> block with status and verification proof without dumping noisy raw logs.",
+          "",
+          WORKER_PROTOCOL_SUFFIX,
+        ].join("\n");
+      }
       return [
         "Session Role: Dispatched Worker",
         WORKER_PROTOCOL_SUFFIX,
       ].join("\n");
+    }
   }
 }
 
@@ -117,10 +171,35 @@ export interface TeamPromptOptions {
   globalWorkflows?: readonly WorkflowDefinition[];
   role?: SessionRoleKind;
   teamMemory?: { path: string; content: string } | null;
+  isGlobalAssistant?: boolean;
 }
 
 function isTeamPromptOptions(val: unknown): val is TeamPromptOptions {
   return typeof val === "object" && val !== null && !Array.isArray(val);
+}
+
+/** Concise directory of all configured teams for the Global Personal Assistant (L1). */
+export function globalTeamsDirectoryPrompt(
+  groups: readonly BotGroup[],
+  bots: readonly Bot[],
+): string {
+  if (groups.length === 0) return "";
+  const lines: string[] = [
+    "Global Teams Directory (dispatch via ask_bot(bot, message, team_id) or run_workflow(workflow_id, group_id)):",
+  ];
+  for (const group of groups) {
+    const { lead, members } = groupBots(group, bots);
+    const parts: string[] = [];
+    if (group.cwd?.trim()) parts.push(`cwd: ${group.cwd.trim()}`);
+    if (lead) parts.push(`lead: ${lead.name} (${lead.id})`);
+    if (members.length > 0) parts.push(`members: ${members.map((m) => `${m.name} (${m.id})`).join(", ")}`);
+    if ((group.workflows?.length ?? 0) > 0) {
+      parts.push(`workflows: ${group.workflows!.map((w) => `${w.name} (${w.id})`).join(", ")}`);
+    }
+    const detail = parts.length > 0 ? ` — ${parts.join(" | ")}` : "";
+    lines.push(`- ${group.name.trim() || "Untitled"} (id: ${group.id})${detail}`);
+  }
+  return lines.join("\n");
 }
 
 /** A team member's prompt section: its teammates, the shared instructions and, for the lead, how to lead. */
@@ -193,6 +272,9 @@ export function teamsPrompt(
   role?: SessionRoleKind,
   teamMemory?: { path: string; content: string } | null,
 ): string {
+  if (isTeamPromptOptions(globalWorkflowsOrOptions) && globalWorkflowsOrOptions.isGlobalAssistant) {
+    return globalTeamsDirectoryPrompt(groups, bots);
+  }
   return groups
     .map((group) => teamPrompt(group, bot, bots, globalWorkflowsOrOptions, role, teamMemory))
     .filter(Boolean)

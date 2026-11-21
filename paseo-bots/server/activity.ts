@@ -1,5 +1,5 @@
 import type { PluginHookEvents } from "@getpaseo/plugin/server";
-import { hasMemorySignal, lastTurn, lastUserText, logLine, turnVisibleAssistantBody } from "../shared/activity";
+import { extractToolFootprintDigest, hasMemorySignal, lastTurn, lastUserText, logLine, turnVisibleAssistantBody } from "../shared/activity";
 import { SESSION_ROLE_LABEL } from "../shared/chat";
 import { parseCompanionIntentEnvelope, SHADOW_SESSION_LABEL } from "../shared/companion-intent";
 import { ASKED_BY_LABEL } from "../shared/handoff";
@@ -70,12 +70,29 @@ export async function turnEnded(
     });
   }
 
-  // Post-turn visible prose distillation for companion session ledger
+  // Post-turn visible prose distillation for companion session ledger (gated cleanly for global assistant when enabled)
   if (outcome.kind === "completed" && isHumanTurn && companionManager) {
-    const visibleBody = turnVisibleAssistantBody(items);
+    const bot = typeof (companionManager as any).isEnabledForBot === "function"
+      ? await host.bot(botId).catch(() => null)
+      : null;
+    const companionEnabled =
+      typeof (companionManager as any).isEnabledForBot === "function"
+        ? (companionManager as any).isEnabledForBot(bot)
+        : true;
+    const visibleBody = companionEnabled ? turnVisibleAssistantBody(items) : "";
     if (visibleBody.trim()) {
+      const footprint = extractToolFootprintDigest(items);
+      if (typeof (companionManager as any).recordPendingPostTurnSnapshot === "function") {
+        (companionManager as any).recordPendingPostTurnSnapshot(agent.id, {
+          turnSeq: 0,
+          rawUserText: rawUser,
+          assistantVisibleBody: visibleBody,
+          footprintDigest: footprint,
+          timestamp: Date.now(),
+        });
+      }
       void companionManager
-        .distillTurnReply({ mainAgentId: agent.id, botId, assistantBody: visibleBody })
+        .distillTurnReply({ mainAgentId: agent.id, botId, assistantBody: visibleBody, footprint })
         .catch((error: unknown) => {
           console.error("paseo-bots: reply distillation failed", error);
         });

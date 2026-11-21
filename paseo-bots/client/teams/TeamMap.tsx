@@ -28,10 +28,15 @@ export function TeamMap({
   compact,
   hostHeader = false,
   bottomInset,
+  workflowCountsByGroup,
   onBack,
   onNewTeam,
   onTeamFile,
   onEditTeam,
+  onOpenTeamTab,
+  onOpenTeamFeed,
+  onOpenTeamWorkflows,
+  onStartTeamChat,
   onOpenBot,
 }: {
   colors: Colors;
@@ -42,10 +47,15 @@ export function TeamMap({
   hostHeader?: boolean;
   /** The home indicator on phones. */
   bottomInset: number;
+  workflowCountsByGroup?: ReadonlyMap<string, number>;
   onBack?: () => void;
   onNewTeam(): void;
   onTeamFile?(): void;
   onEditTeam(group: BotGroup): void;
+  onOpenTeamTab?(group: BotGroup): void;
+  onOpenTeamFeed?(group: BotGroup): void;
+  onOpenTeamWorkflows?(groupId: string): void;
+  onStartTeamChat?(group: BotGroup): void;
   onOpenBot(bot: Bot): void;
 }) {
   const { t } = useT();
@@ -83,8 +93,21 @@ export function TeamMap({
           ) : null}
           {groups.map((group) => {
             const { lead, members } = groupBots(group, live);
+            const workflowCount = workflowCountsByGroup?.get(group.id) ?? (group.workflows?.length ?? 0);
             return (
-              <Tile key={group.id} colors={colors} logo={<TeamLogo group={group} size={24} />} title={group.name || t("teams.untitledTeam")} meta={formatPluralCount(t, "bot", members.length + (lead ? 1 : 0))} onEdit={() => onEditTeam(group)}>
+              <Tile
+                key={group.id}
+                colors={colors}
+                logo={<TeamLogo group={group} size={24} />}
+                title={group.name || t("teams.untitledTeam")}
+                meta={formatPluralCount(t, "bot", members.length + (lead ? 1 : 0))}
+                workflowCount={workflowCount}
+                onOpenTab={onOpenTeamTab ? () => onOpenTeamTab(group) : undefined}
+                onOpenFeed={onOpenTeamFeed ? () => onOpenTeamFeed(group) : undefined}
+                onOpenWorkflows={onOpenTeamWorkflows ? () => onOpenTeamWorkflows(group.id) : undefined}
+                onStartChat={onStartTeamChat ? () => onStartTeamChat(group) : undefined}
+                onEdit={() => onEditTeam(group)}
+              >
                 <View style={compact ? { gap: 8 } : { flexDirection: "row", alignItems: "center", gap: 12 }}>
                   <View style={compact ? undefined : { width: 240 }}>
                     {lead ? card(lead, true) : <Placeholder colors={colors} text={t("teams.noChiefYet")} />}
@@ -108,17 +131,40 @@ export function TeamMap({
   );
 }
 
-function Tile({ colors, logo, title, meta, onEdit, children }: { colors: Colors; logo?: ReactNode; title: string; meta: string; onEdit?: () => void; children: ReactNode }) {
+function Tile({ colors, logo, title, meta, workflowCount, onOpenTab, onOpenFeed, onOpenWorkflows, onStartChat, onEdit, children }: { colors: Colors; logo?: ReactNode; title: string; meta: string; workflowCount?: number; onOpenTab?: () => void; onOpenFeed?: () => void; onOpenWorkflows?: () => void; onStartChat?: () => void; onEdit?: () => void; children: ReactNode }) {
   const { t } = useT();
   return (
     <View style={{ padding: 16, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface1, gap: 12 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         {logo}
         <Text numberOfLines={1} style={{ flexShrink: 1, fontSize: ui(14), color: colors.foreground }}>
           {title}
         </Text>
-        <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>{meta}</Text>
+        <Text style={{ fontSize: ui(12), color: colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>{meta}</Text>
+        {workflowCount && workflowCount > 0 ? (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
+              paddingHorizontal: 8,
+              paddingVertical: 2,
+              borderRadius: 999,
+              borderWidth: 0,
+              backgroundColor: colors.surface2,
+            }}
+          >
+            <Icon name="GitBranch" size={11} color={colors.accent} />
+            <Text style={{ fontSize: ui(11), fontWeight: "500", color: colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
+              {t("teams.workflowCountBadge", { count: workflowCount })}
+            </Text>
+          </View>
+        ) : null}
         <View style={{ flex: 1 }} />
+        {onStartChat ? <Button colors={colors} variant="ghost" label={t("teams.teamChat")} icon="MessageCircle" onPress={onStartChat} /> : null}
+        {onOpenWorkflows ? <Button colors={colors} variant="ghost" label={t("workflows.sidebarTitle")} icon="GitBranch" onPress={onOpenWorkflows} /> : null}
+        {onOpenTab ? <Button colors={colors} variant="ghost" label={t("teams.openTeamTab")} icon="ArrowUpRight" onPress={onOpenTab} /> : null}
+        {onOpenFeed ? <Button colors={colors} variant="ghost" label={t("surface.continuousFeed")} icon="MessageSquareText" onPress={onOpenFeed} /> : null}
         {onEdit ? <Button colors={colors} variant="ghost" label={t("common.edit")} icon="Pencil" onPress={onEdit} /> : null}
       </View>
       {children}
@@ -142,6 +188,7 @@ const STATUS: Partial<Record<ReturnType<typeof chatBucket>, { labelKey: "teams.s
 
 function BotCard({ colors, bot, lead, localHost, onPress }: { colors: Colors; bot: Bot; lead: boolean; localHost: LocalHost; onPress(): void }) {
   const { t } = useT();
+  const tokens = nativeTokens(colors);
   const host = useBotHost(bot.hostId, localHost);
   const chats = useBotChats(host, bot.id);
   const status = STATUS[aggregateBuckets((chats.data ?? []).map(chatBucket))];
@@ -159,9 +206,8 @@ function BotCard({ colors, bot, lead, localHost, onPress }: { colors: Colors; bo
         gap: 12,
         padding: 12,
         borderRadius: 8,
-        borderWidth: 1,
-        borderColor: colors.border,
-        backgroundColor: pressed ? colors.surface2 : hovered ? colors.surface2 : colors.surface0,
+        borderWidth: 0,
+        backgroundColor: pressed ? tokens.surface3 : hovered ? colors.surface2 : colors.surface0,
       })}
     >
       <Avatar avatar={bot.avatar} size={32} />

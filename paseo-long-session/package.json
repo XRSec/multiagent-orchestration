@@ -1,0 +1,18 @@
+{
+  "name": "@xrsec/paseo-long-session",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@getpaseo/plugin": "^0.16.2",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3"
+  }
+}

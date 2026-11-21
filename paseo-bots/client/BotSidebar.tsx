@@ -80,6 +80,7 @@ interface BotSidebarProps {
   onEditTeam(group: BotGroup): void;
   onDataAnalysis(): void;
   onTeamMap(): void;
+  onFeed?(): void;
   onNewChat?(): void;
   onPartnerSettings?(): void;
 }
@@ -89,7 +90,7 @@ const noSelect = { userSelect: "none" } as object;
 const CHEVRON_COLOR = "#9ca3af";
 
 export function BotSidebar(props: BotSidebarProps) {
-  const { colors, bots, openTab, ui: listUi, hiddenArchivedCount, bottomInset, onNewBot, onShowArchived, onDataAnalysis, onTeamMap, onEditTeam, onNewChat, onPartnerSettings } = props;
+  const { colors, bots, openTab, ui: listUi, hiddenArchivedCount, bottomInset, onNewBot, onShowArchived, onDataAnalysis, onTeamMap, onFeed, onEditTeam, onNewChat, onPartnerSettings } = props;
   const { t } = useT();
   const tokens = nativeTokens(colors);
   const [query, setQuery] = useState("");
@@ -128,7 +129,7 @@ export function BotSidebar(props: BotSidebarProps) {
     return (
       <View style={{ flex: 1, paddingBottom: bottomInset, backgroundColor: tokens.surfaceSidebar }}>
         <Splash colors={colors} background={tokens.surfaceSidebar} />
-        {!props.hideFooter ? <BotSidebarFooter colors={colors} onNewBot={onNewBot} onDataAnalysis={onDataAnalysis} onTeamMap={onTeamMap} onPartnerSettings={onPartnerSettings} /> : null}
+        {!props.hideFooter ? <BotSidebarFooter colors={colors} onNewBot={onNewBot} onDataAnalysis={onDataAnalysis} onTeamMap={onTeamMap} onFeed={onFeed} onPartnerSettings={onPartnerSettings} /> : null}
       </View>
     );
   }
@@ -142,7 +143,7 @@ export function BotSidebar(props: BotSidebarProps) {
         style={{
           borderRadius: 10,
           borderWidth: 1,
-          borderColor: isSelected ? colors.accent : colors.border,
+          borderColor: isSelected ? tokens.borderAccent : colors.border,
           backgroundColor: colors.surface0,
           overflow: "hidden",
         }}
@@ -215,7 +216,7 @@ export function BotSidebar(props: BotSidebarProps) {
           <EmptyState colors={colors} title={t("sidebar.noChatsTitle")} description={t("sidebar.noChatsDesc")} action={{ icon: "Plus", label: t("sidebar.newChat"), onPress: handleNewChat }} />
         )}
       </ScrollView>
-      {!props.hideFooter ? <BotSidebarFooter colors={colors} onNewBot={onNewBot} onDataAnalysis={onDataAnalysis} onTeamMap={onTeamMap} onPartnerSettings={onPartnerSettings} /> : null}
+      {!props.hideFooter ? <BotSidebarFooter colors={colors} onNewBot={onNewBot} onDataAnalysis={onDataAnalysis} onTeamMap={onTeamMap} onFeed={onFeed} onPartnerSettings={onPartnerSettings} /> : null}
     </View>
   );
 }
@@ -287,12 +288,14 @@ export function BotSidebarFooter({
   onNewBot,
   onDataAnalysis,
   onTeamMap,
+  onFeed,
   onPartnerSettings,
 }: {
   colors: Colors;
   onNewBot(): void;
   onDataAnalysis(): void;
   onTeamMap(): void;
+  onFeed?(): void;
   onPartnerSettings?(): void;
 }) {
   const { t } = useT();
@@ -327,6 +330,9 @@ export function BotSidebarFooter({
       </Pressable>
       <FooterIconButton colors={colors} icon="BarChart2" label={t("sidebar.dataAnalysis")} onPress={onDataAnalysis} />
       <FooterIconButton colors={colors} icon="Network" label={t("sidebar.teamMap")} onPress={onTeamMap} />
+      {onFeed ? (
+        <FooterIconButton colors={colors} icon="MessageSquareText" label={t("sidebar.continuousFeed")} onPress={onFeed} />
+      ) : null}
       <FooterIconButton colors={colors} icon="Blocks" label={t("sidebar.skillsTools")} onPress={() => openLibrary()} />
       {onPartnerSettings ? (
         <FooterIconButton colors={colors} icon="Settings" label={t("sidebar.partnerSettings")} onPress={onPartnerSettings} />
@@ -384,8 +390,7 @@ function GhostButton({ colors, icon, label, onPress }: { colors: Colors; icon: s
         minHeight: 32,
         paddingHorizontal: 12,
         borderRadius: 12,
-        borderWidth: 1,
-        borderColor: "transparent",
+        borderWidth: 0,
         opacity: pressed ? 0.85 : 1,
       })}
     >

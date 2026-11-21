@@ -19,6 +19,7 @@ import {
   type WorkflowStepEngine,
 } from "../../shared/workflows";
 import { useT } from "../i18n";
+import { isImeComposing } from "../keyboard";
 import { Button, InputField, StatusBadge, TextAreaField } from "../panel/controls";
 import { ui } from "../typography";
 import { WorkflowPipelinePreview } from "./WorkflowPipelinePreview";
@@ -32,6 +33,7 @@ export interface WorkflowListEditorProps {
   workflows: readonly WorkflowDefinition[];
   bots: readonly Bot[];
   onChange(workflows: WorkflowDefinition[]): void;
+  onRunWorkflow?(workflow: WorkflowDefinition): void;
 }
 
 function makeDefaultStage(bots: readonly Bot[], index: number): WorkflowStageDefinition {
@@ -66,6 +68,7 @@ export function WorkflowListEditor({
   workflows,
   bots,
   onChange,
+  onRunWorkflow,
 }: WorkflowListEditorProps) {
   const { t } = useT();
   const liveBots = useMemo(() => bots.filter((b) => !b.archived), [bots]);
@@ -274,6 +277,9 @@ export function WorkflowListEditor({
               hint={`${wf.id} · ${t("workflows.stagesCount", { count: wf.stages.length })}${wf.description ? ` · ${wf.description}` : ""}`}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                {onRunWorkflow ? (
+                  <Button colors={colors} size="xs" variant="default" icon="Play" label={t("workflows.runWorkflow")} onPress={() => onRunWorkflow(wf)} />
+                ) : null}
                 <Button colors={colors} size="xs" variant="outline" label={t("common.edit")} onPress={() => startEdit(wf)} />
                 <Button colors={colors} size="xs" variant="ghost" icon="Trash2" label={t("common.delete")} onPress={() => deleteWorkflow(wf.id)} />
               </View>
@@ -369,7 +375,7 @@ export function WorkflowListEditor({
             <Text style={{ fontSize: ui(13), fontWeight: "600", color: colors.foreground }}>
               {t("workflows.stagesHeader")}
             </Text>
-            <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>
+            <Text style={{ fontSize: ui(12), color: colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
               {t("workflows.stagesCount", { count: editing.stages.length })}
             </Text>
           </View>
@@ -392,7 +398,7 @@ export function WorkflowListEditor({
               >
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                   <Pressable onPress={() => setActiveStageId(stage.id)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <Text style={{ fontSize: ui(13), fontWeight: "600", color: isSelected ? colors.accent : colors.foreground }}>
+                    <Text style={{ fontSize: ui(13), fontWeight: "600", color: isSelected ? colors.accent : colors.foreground, fontVariant: ["tabular-nums"] }}>
                       #{idx + 1} · {stage.name || stage.id}
                     </Text>
                   </Pressable>
@@ -476,8 +482,7 @@ export function WorkflowListEditor({
                               paddingHorizontal: 8,
                               paddingVertical: 4,
                               borderRadius: 12,
-                              borderWidth: 1,
-                              borderColor: selected ? colors.accent : colors.border,
+                              borderWidth: 0,
                               backgroundColor: selected ? colors.surface2 : colors.surface1,
                             }}
                           >

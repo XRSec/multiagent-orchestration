@@ -16,6 +16,7 @@ import type { TaskCardWorkflowStage } from "../../../shared/task-card";
 import { formatElapsedDuration } from "../../../shared/workflows";
 import { Avatar } from "../../Avatar";
 import { useT } from "../../i18n";
+import { nativeTokens } from "../../native";
 import { Button, StatusBadge, type BadgeVariant } from "../../panel/controls";
 import { ui } from "../../typography";
 import { ProtocolCard } from "./ProtocolCard";
@@ -81,6 +82,7 @@ export function TaskStageModal({
   resuming = false,
 }: TaskStageModalProps) {
   const { t } = useT();
+  const tokens = nativeTokens(colors);
   const toast = useToast();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -163,7 +165,7 @@ export function TaskStageModal({
             {duration ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                 <Icon name="Clock" size={12} color={colors.foregroundMuted} />
-                <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>
+                <Text style={{ fontSize: ui(12), color: colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
                   {t("workflows.durationLabel", { duration })}
                 </Text>
               </View>
@@ -171,7 +173,7 @@ export function TaskStageModal({
 
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               <Icon name="RotateCcw" size={12} color={colors.foregroundMuted} />
-              <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>
+              <Text style={{ fontSize: ui(12), color: colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
                 {t("workflows.retryCount", { retries: stage.retries, max: stage.maxRetries })}
               </Text>
             </View>
@@ -179,7 +181,7 @@ export function TaskStageModal({
             {stage.chatId ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                 <Icon name="MessageSquare" size={12} color={colors.foregroundMuted} />
-                <Text style={{ fontSize: ui(12), color: colors.foregroundMuted }}>
+                <Text style={{ fontSize: ui(12), color: colors.foregroundMuted, fontVariant: ["tabular-nums"] }}>
                   {stage.chatId.slice(0, 8)}...
                 </Text>
               </View>
@@ -209,6 +211,7 @@ export function TaskStageModal({
             size="md"
             variant="default"
             icon="RotateCcw"
+            style={{ backgroundColor: tokens.brandClay, borderColor: tokens.brandClay }}
             label={resuming ? t("workflows.resumingWorkflow") : t("workflows.resumeWorkflow")}
             onPress={() => {
               void onResume();
@@ -262,9 +265,8 @@ export function TaskStageModal({
                   style={{
                     padding: 8,
                     borderRadius: 6,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                    backgroundColor: colors.surface0,
+                    borderWidth: 0,
+                    backgroundColor: colors.surface2,
                     gap: 4,
                   }}
                 >

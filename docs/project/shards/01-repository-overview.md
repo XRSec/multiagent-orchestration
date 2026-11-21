@@ -1,8 +1,8 @@
 ---
 doc_id: PROJ-REPO-OVERVIEW
 status: CURRENT
-version: 1.0.0
-last_verified: 2026-11-18
+version: 1.1.0
+last_verified: 2026-11-21
 language: en-US
 ---
 
@@ -10,18 +10,20 @@ language: en-US
 
 Physical module layout, configuration-data separation, `$PASEO_HOME` link invariants, and active-versus-paused subsystem boundaries for `<projectRoot>`. Parent router: [../INDEX.md](../INDEX.md).
 
-## 1. Dual-Core Production Architecture
+## 1. Dual-Core & Micro-Plugin Production Architecture
 
-Treat `paseo-bots/` and `paseo-agy-acp/` as the sole active production engines in `<projectRoot>`. Concentrating runtime changes on these two packages prevents architectural drift across experimental adapters.
+Treat `paseo-bots/` and `paseo-agy-acp/` as the dual active production cores, paired with decoupled micro-plugins `paseo-feed/` and `paseo-long-session/` communicating strictly via `@getpaseo/plugin` hooks and disk ledgers. Concentrating runtime changes on these four packages prevents architectural drift across experimental adapters.
 
 | Path | Classification | Primary Responsibility & Key Entrypoints | Status |
 | :--- | :--- | :--- | :--- |
-| `paseo-bots/` | Production Core | Paseo multi-agent orchestration plugin: bot roster (`shared/bot.ts`), Managed Seats (`server/bot-home.ts`), 3-tier task/workflow DAG engine (`server/workflow-runner.ts`, `server/tasks.ts`), L1–L3 Task Cards (`server/task-cards.ts`), Routines (`server/routine-service.ts`), Analytics (`server/analytics/`), and React Native surfaces | `CURRENT` |
-| `paseo-agy-acp/` | Production Core | Primary execution harness adapter (`index.server.ts`, `server/provider.ts`, `server/session.ts`): pairs `agy acp` stdio JSON-RPC (`server/transport.ts`) with `.system_generated` Brain observation (`server/brain-observer.ts`), dual-clock watchdogs, turn journals (`server/turn-journal.ts`), and SQLite error forensics (`server/error-inspection.ts`) | `CURRENT` |
+| `paseo-bots/` | Production Core | Paseo multi-agent orchestration plugin: 15-bot roster (`shared/bot.ts`), Managed Seats (`server/bot-home.ts`), 3-tier task/workflow DAG engine (`server/workflow-runner.ts`, `server/tasks.ts`), L1–L3 Task Cards (`server/task-cards.ts`), Continuous Feed bridge (`server/feed-bridge.ts`), Routines (`server/routine-service.ts`), Analytics (`server/analytics/`), and React Native surfaces | `CURRENT` |
+| `paseo-agy-acp/` | Production Core | Primary execution harness adapter (`index.server.ts`, `server/provider.ts`, `server/session.ts`): pairs `agy acp` stdio JSON-RPC (`server/transport.ts`) with `.system_generated` Brain observation (`server/brain-observer.ts`), `PASEO_AGY_BOT_PROMPT_FILE` injection, dual-clock watchdogs, turn journals (`server/turn-journal.ts`), and SQLite error forensics (`server/error-inspection.ts`) | `CURRENT` |
+| `paseo-feed/` | Micro-Plugin | Standalone Continuous Feed plugin (`index.server.ts`, `index.client.tsx`, `server/store.ts`, `server/hydrator.ts`, `server/sync.ts`): unified `index.jsonl` pointer ledger, idempotent legacy channel migration, `"workflow"` source distillation, cold-start chat creation (`reason: "created"`), and `openAgent` deep-links | `CURRENT` |
+| `paseo-long-session/` | Micro-Plugin | Standalone compaction & memory-sync micro-plugin (`index.server.ts`, `server/compaction.ts`, `shared/protocol.ts`): provider-agnostic 250K proactive `/compact` steering and SHA-256 `MEMORY.md` sync handshake (`LONG_SESSION_SYNC_METADATA`) | `CURRENT` |
 | `paseo-bots-plugin-settings/` | Config SSOT | Version-controlled plugin configuration root: `bots.json` (schema v4), decoupled bot personas (`souls/*.md`), and external MCP server specs (`mcp-servers/*.json`) | `CURRENT` |
 | `paseo-bots-plugin-data/` | Data SSOT | Version-controlled shareable workspace assets: curated library skills (`library/skills/`), bot homes (`shared/Bots/`), team homes (`shared/Teams/`), and shared presets (`shared/assets/`) | `CURRENT` |
 | `docs/` | Knowledge Tree | Progressive-disclosure agent documentation (`docs/INDEX.md`, `project/`, `design/`, `research/`, `references/`) | `CURRENT` |
-| `scripts/` & `.githooks/` | Repo Governance | Non-interactive maintenance utilities (`scripts/check-paseo-bots-link.mjs`) and Git lifecycle hooks (`.githooks/post-merge`, `.githooks/post-rewrite`, `.githooks/pre-push`) | `CURRENT` |
+| `scripts/` & `.githooks/` | Repo Governance | Non-interactive maintenance and dispatch utilities (`scripts/check-paseo-bots-link.mjs`, `scripts/paseo-chief-dispatch.mjs`) and Git lifecycle hooks (`.githooks/post-merge`, `.githooks/post-rewrite`, `.githooks/pre-push`) | `CURRENT` |
 | `tools/` | Auxiliary CLI | Standalone offline diagnostics and wrappers (`tools/agy-session-analyzer/`, `tools/agy-wrapper/`, `tools/gemini-exporter/`) decoupled from live plugin hot paths | `CURRENT` |
 | `claude-code-mod/` | Offline Research | Prompt extraction, catalog generation, and upstream harness analysis (`claude-code-mod/build_prompt_tree.py`); never imported by runtime servers | `REFERENCE` |
 | `paseo-sidecar/` | Paused Prototype | Standalone SidecarMCP cross-plugin control plane prototype; suspended due to multi-plugin lifecycle complexity | `EXPERIMENTAL` |
@@ -36,7 +38,7 @@ Decouple declarative bot metadata from heavy markdown prompts, MCP schemas, and 
   - Stores bot IDs, provider/model bindings, `fallbackModels`, `providerConfigs`, `baseTools` capability allowlists, `skillIds`, `mcpServerIds`, `routines`, and `groups` (including team-scoped `workflows`).
   - Strips inline `soul` bodies and inline `library` objects upon save so `bots.json` retains lightweight ID references only.
 - **`souls/<bot-id>.md`**:
-  - Loaded on demand by `paseo-bots/server/souls.ts` (`bot-moadmin.md` through `bot-xhs.md`, 14 files total).
+  - Loaded on demand by `paseo-bots/server/souls.ts` (`bot-chief.md` and `bot-moadmin.md` through `bot-xhs.md`, 15 files total).
 - **`mcp-servers/<mcp-id>.json`**:
   - Loaded by `paseo-bots/server/mcp-servers.ts` using `LibraryMcpServerSchema` (`mcp-mwjoz4yx3679.json` for `REA`, `mcp-mwjzbk2nd0jy.json` for `Prism`).
 
@@ -80,7 +82,7 @@ Enforce strict scope quarantine around non-core directories so agents never wast
 1. **`paseo-sidecar/` (`PAUSED / EXPERIMENTAL`)**:
    - `paseo-sidecar/` explored an external SidecarMCP bridge across heterogeneous third-party CLI/IDE harnesses.
    - Divergent external plugin lifecycles, brittle IPC state synchronization, and high tuning overhead led to pausing `paseo-sidecar/` in favor of the native `paseo-bots/` + `paseo-agy-acp/` dual-core stack.
-   - **Hard Quarantine**: Agents MUST ignore `paseo-sidecar/` during searches, refactors, test runs, and architecture audits unless the user prompt explicitly requests changes inside `paseo-sidecar/`. NEVER add runtime imports from `paseo-bots/` or `paseo-agy-acp/` to `paseo-sidecar/`.
+   - **Hard Quarantine**: Agents MUST ignore `paseo-sidecar/` during searches, refactors, test runs, and architecture audits unless the user prompt explicitly requests changes inside `paseo-sidecar/`. NEVER add runtime imports from `paseo-bots/`, `paseo-agy-acp/`, `paseo-feed/`, or `paseo-long-session/` to `paseo-sidecar/`.
 2. **`tools/`, `claude-code-mod/`, and `gemini-to-md/`**:
    - Keep `tools/*` (`agy-session-analyzer`, `agy-wrapper`, `gemini-exporter`) self-contained as operator CLI tools.
    - Keep `claude-code-mod/` and `gemini-to-md/` isolated as offline research and conversion workspaces without coupling production plugin bundles to them.
@@ -104,11 +106,11 @@ Enforce strict scope quarantine around non-core directories so agents never wast
 ### Read-Only Topology Audit (`<projectRoot>`)
 
 ```bash
-# Verify dual-core entrypoints and config/data SSOT roots exist
-ls -d paseo-bots paseo-agy-acp paseo-bots-plugin-settings paseo-bots-plugin-data
+# Verify production entrypoints, micro-plugins, and config/data SSOT roots exist
+ls -d paseo-bots paseo-agy-acp paseo-feed paseo-long-session paseo-bots-plugin-settings paseo-bots-plugin-data
 
-# Confirm zero forbidden runtime imports of paused paseo-sidecar inside active cores
-grep -rn 'paseo-sidecar' paseo-bots paseo-agy-acp || echo "QUARANTINE_OK"
+# Confirm zero forbidden runtime imports of paused paseo-sidecar inside active packages
+grep -rn 'paseo-sidecar' paseo-bots paseo-agy-acp paseo-feed paseo-long-session || echo "QUARANTINE_OK"
 
 # Verify $PASEO_HOME three-way symlink mappings
 node scripts/check-paseo-bots-link.mjs

@@ -17,14 +17,25 @@ import { taskCardOf, type TaskCard } from "../shared/task-card";
 import { newUuid } from "../shared/uuid";
 import {
   buildStageBriefPrompt,
+  checkBudget,
+  extractJsonFromOutput,
   parseWorkerHandoff,
   readyStages,
   resolveStepEngine,
+  sumUsage,
+  validateStageOutputContract,
   validateWorkflowDAG,
+  WorkflowErrorCategorySchema,
+  WorkflowStopReasonSchema,
+  type StageOutputContract,
+  type StageUsageMetadata,
   type TaskStageState,
+  type WorkflowBudgetConfig,
   type WorkflowDefinition,
+  type WorkflowErrorCategory,
   type WorkflowRunState,
   type WorkflowStageDefinition,
+  type WorkflowStopReason,
 } from "../shared/workflows";
 import { directSessionBoardPath, expandServerPath, teamSessionBoardPath } from "./bot-home";
 import { startChat } from "./chats";
@@ -34,6 +45,7 @@ import type { Relay } from "./relay";
 import { publishWorkflowCard, settleAndPublish } from "./task-cards";
 import {
   listTasks,
+  openTask,
   readTask,
   rekeyMember,
   reopenTaskWorkflow,
@@ -90,6 +102,8 @@ export interface StageDispatchResult {
   output?: string;
   error?: string;
   chatId?: string;
+  usage?: StageUsageMetadata;
+  stopReason?: WorkflowStopReason;
 }
 
 export interface RunWorkflowOptions {
@@ -139,12 +153,109 @@ export function isTransientApiError(error: unknown): boolean {
   return false;
 }
 
-/** Computes exponential backoff delay capped at maxMs. */
-export function computeBackoffMs(retryCount: number, baseMs = DEFAULT_BACKOFF_BASE_MS, maxMs = MAX_BACKOFF_MS): number {
+/**
+ * Computes exponential backoff delay capped at maxMs with controlled jitter.
+ * @param retryCount - Zero-indexed retry count.
+ * @param baseMs - Base delay in milliseconds (default: DEFAULT_BACKOFF_BASE_MS).
+ * @param maxMs - Upper bound in milliseconds (default: MAX_BACKOFF_MS).
+ * @param jitterRange - Symmetric jitter factor around delay (default: 0.1, i.e. +/-10%).
+ * @param randomFn - Deterministic or random generator returning [0, 1) (default: Math.random).
+ */
+export function computeBackoffMs(
+  retryCount: number,
+  baseMs = DEFAULT_BACKOFF_BASE_MS,
+  maxMs = MAX_BACKOFF_MS,
+  jitterRange = 0.1,
+  randomFn: () => number = Math.random,
+): number {
   const exponent = Math.max(0, retryCount);
   const base = baseMs > 0 ? baseMs : DEFAULT_BACKOFF_BASE_MS;
-  const delay = base * Math.pow(2, exponent);
-  return Math.min(delay, maxMs);
+  const rawDelay = base * Math.pow(2, exponent);
+  const cappedDelay = Math.min(rawDelay, maxMs);
+
+  if (jitterRange <= 0) {
+    return Math.max(0, cappedDelay);
+  }
+
+  // Symmetric jitter around the delay: [1 - jitterRange, 1 + jitterRange]
+  const jitterFactor = 1 + (randomFn() * 2 - 1) * jitterRange;
+  const jittered = Math.round(cappedDelay * jitterFactor);
+  return Math.max(0, Math.min(jittered, maxMs));
+}
+
+/**
+ * Classifies an error into a structured WorkflowErrorCategory.
+ */
+export function classifyStageError(error: unknown): WorkflowErrorCategory {
+  if (!error) return "unknown";
+  const msg = typeof error === "string" ? error : error instanceof Error ? error.message : String(error);
+
+  // 1. Cancelled / Aborted
+  if (/aborted|cancelled|interrupted/i.test(msg)) {
+    return "cancelled";
+  }
+
+  // 2. Policy / Permission denied
+  if (
+    /policy\s*denied|permission\s*denied|forbidden|unauthorized|\b403\b|\b401\b|waiting\s+for\s+user\s+approval/i.test(
+      msg,
+    )
+  ) {
+    return "policy_denied";
+  }
+
+  // 3. Budget exceeded
+  if (/budget\s*exceeded|exceeded\s*.*budget|token\s*budget|model\s*calls?\s*budget|tool\s*calls?\s*budget/i.test(msg)) {
+    return "budget_exceeded";
+  }
+
+  // 4. DAG invalid
+  if (
+    /invalid\s*(?:workflow\s*)?dag|cyclic\s*dependency|duplicate\s*stage|depends\s*on\s*unknown|cannot\s*depend\s*on\s*itself/i.test(
+      msg,
+    )
+  ) {
+    return "dag_invalid";
+  }
+
+  // 5. Stall timeout (check before general timeout)
+  if (/stalled\s+with\s+no\s+activity/i.test(msg)) {
+    return "stall_timeout";
+  }
+
+  // 6. Timeout
+  if (/timed?\s*out(?:\s+after)?|\btimeout\b/i.test(msg)) {
+    return "timeout";
+  }
+
+  // 7. Transient API (429, 5xx, rate limit, transport not connected, provider not configured)
+  if (isTransientApiError(msg)) {
+    return "transient_api";
+  }
+
+  // 8. Validation (schema/output validation, worker handoff format, syntax error, missing keys, JSON parse error)
+  if (
+    /validation|schema\s*error|syntax\s*error|output\s*contract|missing\s*(?:required\s*)?keys?|parse.*json|json.*parse|invalid\s*json|worker\s*handoff/i.test(
+      msg,
+    ) ||
+    /\b(?:failed|blocked|partial):/i.test(msg)
+  ) {
+    return "validation";
+  }
+
+  return "unknown";
+}
+
+/**
+ * Returns true when an error category is non-retryable and should fail-fast immediately.
+ */
+export function isFailFastErrorCategory(category: WorkflowErrorCategory): boolean {
+  return (
+    category === "policy_denied" ||
+    category === "dag_invalid" ||
+    category === "cancelled" ||
+    category === "budget_exceeded"
+  );
 }
 
 /**
@@ -432,6 +543,17 @@ export {
   WORKFLOW_STAGE_LABEL,
   WORKFLOW_ID_LABEL,
   WORKFLOW_STAGE_ID_LABEL,
+  checkBudget,
+  extractJsonFromOutput,
+  sumUsage,
+  validateStageOutputContract,
+  WorkflowErrorCategorySchema,
+  WorkflowStopReasonSchema,
+  type StageOutputContract,
+  type StageUsageMetadata,
+  type WorkflowBudgetConfig,
+  type WorkflowErrorCategory,
+  type WorkflowStopReason,
 };
 
 /**
@@ -453,6 +575,8 @@ async function defaultStageDispatcher(
     [ASK_NOTIFY_LABEL]: "false",
     [WORKFLOW_TASK_LABEL]: ctx.taskId,
     [WORKFLOW_STAGE_LABEL]: ctx.stage.id,
+    "paseo-bots:workflow-id": ctx.workflow.id,
+    "paseo-bots:workflow-stage-name": ctx.stage.name,
     ...(ctx.callerBotId ? { [ASKED_BY_LABEL]: ctx.callerBotId } : {}),
     ...(ctx.callerAgentId ? { [ASKED_IN_LABEL]: ctx.callerAgentId } : {}),
   };
@@ -537,39 +661,48 @@ async function defaultStageDispatcher(
     ...(ctx.signal ? { signal: ctx.signal } : {}),
   });
 
+  const agent = waitResult.agent;
+  const agentUsage: StageUsageMetadata | undefined = agent?.usage ?? (agent?.metrics ? {
+    promptTokens: agent.metrics.promptTokens,
+    candidatesTokens: agent.metrics.candidatesTokens,
+    thoughtsTokens: agent.metrics.thoughtsTokens,
+    totalTokens: agent.metrics.totalTokens,
+    toolCalls: agent.metrics.toolCalls,
+    modelCalls: agent.metrics.modelCalls,
+  } : undefined);
+
   if (waitResult.aborted) {
-    return { ok: false, error: waitResult.error ?? `Stage "${ctx.stage.name}" was aborted.`, chatId };
+    return { ok: false, error: waitResult.error ?? `Stage "${ctx.stage.name}" was aborted.`, chatId, stopReason: "cancelled", ...(agentUsage ? { usage: agentUsage } : {}) };
   }
   if (waitResult.agentDisappeared) {
-    return { ok: false, error: `Chat "${chatId}" disappeared before completing.`, chatId };
+    return { ok: false, error: `Chat "${chatId}" disappeared before completing.`, chatId, stopReason: "failed", ...(agentUsage ? { usage: agentUsage } : {}) };
   }
   if (waitResult.error) {
-    return { ok: false, error: waitResult.error, chatId };
+    return { ok: false, error: waitResult.error, chatId, stopReason: "failed", ...(agentUsage ? { usage: agentUsage } : {}) };
   }
   if (waitResult.stalled) {
     const stallSec = Math.round(stallTimeoutMs / 1000);
-    return { ok: false, error: `Stage "${ctx.stage.name}" stalled with no activity for ${stallSec}s in chat "${chatId}".`, chatId };
+    return { ok: false, error: `Stage "${ctx.stage.name}" stalled with no activity for ${stallSec}s in chat "${chatId}".`, chatId, stopReason: "stall_timeout", ...(agentUsage ? { usage: agentUsage } : {}) };
   }
   if (waitResult.hardTimedOut) {
     const hardSec = Math.round(hardTimeoutMs / 1000);
-    return { ok: false, error: `Stage "${ctx.stage.name}" timed out after ${hardSec}s in chat "${chatId}".`, chatId };
+    return { ok: false, error: `Stage "${ctx.stage.name}" timed out after ${hardSec}s in chat "${chatId}".`, chatId, stopReason: "timeout", ...(agentUsage ? { usage: agentUsage } : {}) };
   }
-  const agent = waitResult.agent;
   if (!agent) {
-    return { ok: false, error: `Chat "${chatId}" disappeared before completing.`, chatId };
+    return { ok: false, error: `Chat "${chatId}" disappeared before completing.`, chatId, stopReason: "failed" };
   }
   if (agent.archivedAt) {
-    return { ok: false, error: `Chat "${chatId}" was archived before completing.`, chatId };
+    return { ok: false, error: `Chat "${chatId}" was archived before completing.`, chatId, stopReason: "cancelled", ...(agentUsage ? { usage: agentUsage } : {}) };
   }
   if (agent.lastError) {
-    return { ok: false, error: agent.lastError, chatId };
+    return { ok: false, error: agent.lastError, chatId, stopReason: "failed", ...(agentUsage ? { usage: agentUsage } : {}) };
   }
   if (agent.pendingPermissions?.length) {
-    return { ok: false, error: `Stage "${ctx.stage.name}" is waiting for user approval in chat "${chatId}".`, chatId };
+    return { ok: false, error: `Stage "${ctx.stage.name}" is waiting for user approval in chat "${chatId}".`, chatId, stopReason: "policy_denied", ...(agentUsage ? { usage: agentUsage } : {}) };
   }
   if (agent.status === "running" || agent.status === "initializing") {
     const hardSec = Math.round(hardTimeoutMs / 1000);
-    return { ok: false, error: `Stage "${ctx.stage.name}" timed out after ${hardSec}s in chat "${chatId}".`, chatId };
+    return { ok: false, error: `Stage "${ctx.stage.name}" timed out after ${hardSec}s in chat "${chatId}".`, chatId, stopReason: "timeout", ...(agentUsage ? { usage: agentUsage } : {}) };
   }
 
   const page = await paseo.agents.ref(chatId).timeline.refetch({ direction: "tail", projection: "projected", limit: 80 }).catch(() => null);
@@ -580,9 +713,9 @@ async function defaultStageDispatcher(
     const reason = handoff.openIssues && handoff.openIssues.toLowerCase() !== "none"
       ? `${handoff.status}: ${handoff.openIssues}`
       : `${handoff.status}: ${handoff.summary || "Worker reported failure."}`;
-    return { ok: false, error: reason, output: reply, chatId };
+    return { ok: false, error: reason, output: reply, chatId, stopReason: "validation_failed", ...(agentUsage ? { usage: agentUsage } : {}) };
   }
-  return { ok: true, output: reply || `Stage "${ctx.stage.name}" completed.`, chatId };
+  return { ok: true, output: reply || `Stage "${ctx.stage.name}" completed.`, chatId, stopReason: "completed", ...(agentUsage ? { usage: agentUsage } : {}) };
 }
 
 /** Reserves a task pyramid member slot, backing off briefly if the fanout cap is temporarily full. */
@@ -768,10 +901,18 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
   const bots = await host.bots().catch(() => [] as Bot[]);
   const botMap = new Map(bots.map((b) => [b.id, b]));
 
-  await publishWorkflowCard(host, taskId, callerAgentId).catch(() => false);
-
   const callerChat = callerAgentId ? await host.chatOf(callerAgentId).catch(() => null) : null;
-  const initialTask = await readTask(taskId);
+  let initialTask = await readTask(taskId);
+  if (initialTask && ((group?.id && !initialTask.groupId) || (callerAgentId && !initialTask.sourceChatId))) {
+    initialTask = await openTask({
+      taskId,
+      title: initialTask.title || `Workflow: ${workflow.name}`,
+      ...(group?.id && !initialTask.groupId ? { groupId: group.id } : {}),
+      ...(callerAgentId && !initialTask.sourceChatId ? { sourceChatId: callerAgentId } : {}),
+    }).catch(() => initialTask);
+  }
+
+  await publishWorkflowCard(host, taskId, callerAgentId).catch(() => false);
   const fallbackSessionId = taskId.startsWith("wf-") ? taskId : `wf-${taskId}`;
   const teamSessionId = options.teamSessionId
     ?? initialTask?.workflow?.teamSessionId
@@ -810,11 +951,20 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
     const allDone = stages.every((s) => s.status === "done");
     if (allDone) {
       const completedAt = new Date().toISOString();
+      const startedAtMs = task.workflow.startedAt ? Date.parse(task.workflow.startedAt) : Date.now();
+      const durationMs = Math.max(0, Date.now() - (isNaN(startedAtMs) ? Date.now() : startedAtMs));
+      const totalWorkflowUsage = stages.reduce<StageUsageMetadata>(
+        (acc, s) => sumUsage(acc, s.usage),
+        {},
+      );
       const updated = await updateTaskWorkflow(taskId, (wf) => ({
         ...wf,
         status: "done",
         currentStageIds: [],
         completedAt,
+        durationMs,
+        stopReason: "completed",
+        usage: totalWorkflowUsage,
       }));
       await settleAndPublish(host, taskId, callerAgentId);
       if (notifyCallerOnSettle && callerAgentId) {
@@ -855,11 +1005,27 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
     // If no stages are ready (either because a dependency failed or DAG is blocked), fail and skip remaining pending stages.
     if (ready.length === 0 || anyFailed) {
       const completedAt = new Date().toISOString();
+      const startedAtMs = task.workflow.startedAt ? Date.parse(task.workflow.startedAt) : Date.now();
+      const durationMs = Math.max(0, Date.now() - (isNaN(startedAtMs) ? Date.now() : startedAtMs));
+      const failedStage = stages.find((s) => s.status === "failed");
+      let workflowStopReason: WorkflowStopReason = "failed";
+      if (failedStage?.stopReason) {
+        workflowStopReason = failedStage.stopReason;
+      } else if (signal?.aborted) {
+        workflowStopReason = "cancelled";
+      }
+      const totalWorkflowUsage = stages.reduce<StageUsageMetadata>(
+        (acc, s) => sumUsage(acc, s.usage),
+        {},
+      );
       const updated = await updateTaskWorkflow(taskId, (wf) => ({
         ...wf,
         status: "failed",
         currentStageIds: [],
         completedAt,
+        durationMs,
+        stopReason: workflowStopReason,
+        usage: totalWorkflowUsage,
         stages: wf.stages.map((s) => (s.status === "pending" ? { ...s, status: "skipped" } : s)),
       }));
       await settleAndPublish(host, taskId, callerAgentId);
@@ -931,7 +1097,15 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
             ...wf,
             stages: wf.stages.map((s) =>
               s.id === stageState.id
-                ? { ...s, status: "failed", error: "Could not acquire concurrency slot (fanout cap).", completedAt: new Date().toISOString() }
+                ? {
+                    ...s,
+                    status: "failed",
+                    error: "Could not acquire concurrency slot (fanout cap).",
+                    errorCategory: "unknown",
+                    stopReason: "failed",
+                    durationMs: 0,
+                    completedAt: new Date().toISOString(),
+                  }
                 : s,
             ),
           }));
@@ -959,6 +1133,7 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
           sessionBoardPath,
           attempt: stageState.retries + 1,
           previousError: stageState.error,
+          repairGuidance: stageState.repairGuidance,
         });
 
         const stageSeatKey = stageDef.skillIds && stageDef.skillIds.length > 0
@@ -966,6 +1141,7 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
           : undefined;
 
         let result: StageDispatchResult;
+        const stageExecutionStartTime = Date.now();
         try {
           const ctx: StageDispatchContext = {
             taskId,
@@ -996,6 +1172,44 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
 
         const effectiveChatId = result.chatId ?? reservedChatId;
         const now = new Date().toISOString();
+        const stageDurationMs = Math.max(0, Date.now() - stageExecutionStartTime);
+
+        // Budget check: stage-level
+        if (result.ok && stageDef.budget && result.usage) {
+          const stageBudgetCheck = checkBudget(stageDef.budget, result.usage);
+          if (stageBudgetCheck.exceeded) {
+            result.ok = false;
+            result.error = `Stage "${stageDef.name}" budget exceeded: ${stageBudgetCheck.reason}`;
+            result.stopReason = "budget_exceeded";
+          }
+        }
+
+        // Budget check: workflow-level
+        if (result.ok && workflow.budget && result.usage) {
+          const latestTaskForBudget = await readTask(taskId);
+          const completedStagesUsage = (latestTaskForBudget?.workflow?.stages ?? stages)
+            .filter((s) => s.id !== stageState.id && s.status === "done" && s.usage)
+            .reduce<StageUsageMetadata>((acc, s) => sumUsage(acc, s.usage), {});
+          const totalUsageWithCurrent = sumUsage(completedStagesUsage, result.usage);
+          const wfBudgetCheck = checkBudget(workflow.budget, totalUsageWithCurrent);
+          if (wfBudgetCheck.exceeded) {
+            result.ok = false;
+            result.error = `Workflow "${workflow.name}" budget exceeded: ${wfBudgetCheck.reason}`;
+            result.stopReason = "budget_exceeded";
+          }
+        }
+
+        // Structured output contract validation
+        let repairGuidance: string | null = null;
+        if (result.ok && stageDef.outputContract) {
+          const contractValidation = validateStageOutputContract(result.output ?? "", stageDef.outputContract);
+          if (!contractValidation.valid) {
+            result.ok = false;
+            result.error = contractValidation.error;
+            result.stopReason = "validation_failed";
+            repairGuidance = contractValidation.repairGuidance ?? null;
+          }
+        }
 
         if (result.ok) {
           const handoffFileName = `${stageDef.id}-${stageDef.botId}.md`;
@@ -1019,6 +1233,11 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
                     output: result.output ?? "",
                     handoffFilePath,
                     error: null,
+                    errorCategory: undefined,
+                    repairGuidance: null,
+                    stopReason: result.stopReason ?? "completed",
+                    durationMs: stageDurationMs,
+                    ...(result.usage ? { usage: result.usage } : {}),
                     chatId: effectiveChatId,
                     completedAt: now,
                   }
@@ -1034,6 +1253,18 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
           }
         } else {
           const errorMessage = result.error || `Stage "${stageDef.name}" failed.`;
+          const errorCategory = classifyStageError(errorMessage);
+          const stopReason: WorkflowStopReason = result.stopReason ?? (
+            errorCategory === "validation" ? "validation_failed" :
+            errorCategory === "budget_exceeded" ? "budget_exceeded" :
+            errorCategory === "policy_denied" ? "policy_denied" :
+            errorCategory === "timeout" ? "timeout" :
+            errorCategory === "stall_timeout" ? "stall_timeout" :
+            errorCategory === "cancelled" ? "cancelled" :
+            "failed"
+          );
+          const isFailFast = isFailFastErrorCategory(errorCategory);
+
           await upsertMember(taskId, {
             engine: resolvedEngine,
             botId: stageDef.botId,
@@ -1041,8 +1272,19 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
             status: "failed",
           }).catch(() => null);
 
+          if (errorCategory === "validation" && !repairGuidance) {
+            repairGuidance = [
+              "Validation repair guidance:",
+              `- Observed failure: ${errorMessage}`,
+              "- Corrective action: Ensure stage output satisfies expected format, syntax, and handoff contracts.",
+              "- Re-verify output before completing turn.",
+            ].join("\n");
+          }
+
+          const canRetry = !signal?.aborted && !isFailFast && stageState.retries < stageDef.maxRetries;
+
           // Apply exponential backoff ONLY for transient API/network errors before next retry
-          if (!signal?.aborted && stageState.retries < stageDef.maxRetries && isTransientApiError(errorMessage)) {
+          if (canRetry && errorCategory === "transient_api") {
             const backoffMs = computeBackoffMs(stageState.retries, backoffBaseMs);
             if (backoffMs > 0) {
               await new Promise((resolve) => setTimeout(resolve, backoffMs));
@@ -1053,13 +1295,18 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
             ...wf,
             stages: wf.stages.map((s) => {
               if (s.id !== stageState.id) return s;
-              if (!signal?.aborted && s.retries < s.maxRetries) {
+              if (canRetry) {
                 return {
                   ...s,
                   engine: resolvedEngine,
                   status: "pending",
                   retries: s.retries + 1,
                   error: errorMessage,
+                  errorCategory,
+                  stopReason,
+                  durationMs: stageDurationMs,
+                  ...(result.usage ? { usage: result.usage } : {}),
+                  repairGuidance,
                   chatId: effectiveChatId,
                 };
               }
@@ -1068,6 +1315,11 @@ export async function runWorkflowDag(options: RunWorkflowOptions): Promise<Workf
                 engine: resolvedEngine,
                 status: "failed",
                 error: errorMessage,
+                errorCategory,
+                stopReason,
+                durationMs: stageDurationMs,
+                ...(result.usage ? { usage: result.usage } : {}),
+                repairGuidance,
                 chatId: effectiveChatId,
                 completedAt: now,
               };
@@ -1091,6 +1343,7 @@ function workflowDefinitionFromState(wf: WorkflowRunState): WorkflowDefinition {
     id: wf.workflowId,
     name: wf.workflowName,
     description: "",
+    ...(wf.budget ? { budget: wf.budget } : {}),
     stages: wf.stages.map((s) => ({
       id: s.id,
       name: s.name,
@@ -1101,6 +1354,8 @@ function workflowDefinitionFromState(wf: WorkflowRunState): WorkflowDefinition {
       maxRetries: s.maxRetries,
       ...(s.skillIds ? { skillIds: s.skillIds } : {}),
       ...(s.mcpServerIds ? { mcpServerIds: s.mcpServerIds } : {}),
+      ...(s.budget ? { budget: s.budget } : {}),
+      ...(s.outputContract ? { outputContract: s.outputContract } : {}),
     })),
   };
 }
@@ -1175,7 +1430,7 @@ export async function resumeWorkflow(options: ResumeWorkflowOptions): Promise<Re
   }));
 
   const reopenedWf = reopened.workflow!;
-  const callerAgentId = reopenedWf.callerAgentId ?? reopened.cardAgentId;
+  const callerAgentId = reopenedWf.callerAgentId ?? reopened.sourceChatId ?? reopened.cardAgentId;
   await publishWorkflowCard(host, taskId, callerAgentId).catch(() => false);
   const card = taskCardOf(reopened);
 
@@ -1348,7 +1603,7 @@ export async function reconcileOrphanWorkflows(options?: ReconcileOrphanWorkflow
 
     let settled = false;
     if (options?.host?.paseo) {
-      const publishRes = await settleAndPublish(options.host, task.taskId, task.cardAgentId).catch(() => null);
+      const publishRes = await settleAndPublish(options.host, task.taskId, task.cardAgentId ?? task.sourceChatId).catch(() => null);
       if (publishRes?.settled) settled = true;
     }
     if (!settled) {
@@ -1364,7 +1619,7 @@ export async function reconcileOrphanWorkflows(options?: ReconcileOrphanWorkflow
     if (options?.host?.paseo && settled) {
       const currentTask = await readTask(task.taskId).catch(() => null);
       const wfState = currentTask?.workflow ?? task.workflow;
-      const notifyTarget = wfState.callerAgentId ?? currentTask?.cardAgentId ?? task.cardAgentId;
+      const notifyTarget = wfState.callerAgentId ?? currentTask?.cardAgentId ?? currentTask?.sourceChatId ?? task.cardAgentId ?? task.sourceChatId;
       if (notifyTarget) {
         await notifyWorkflowCallerOnSettle(options.host, {
           callerAgentId: notifyTarget,
@@ -1382,7 +1637,7 @@ export async function reconcileOrphanWorkflows(options?: ReconcileOrphanWorkflow
       const stagesToArchive = currentTask?.workflow?.stages ?? task.workflow.stages;
       await archiveWorkflowStageChats(options.host, {
         stages: stagesToArchive,
-        callerAgentId: task.cardAgentId,
+        callerAgentId: task.cardAgentId ?? task.sourceChatId,
       }).catch((err) => {
         console.warn(`paseo-bots: failed to archive orphan workflow stage chats for task "${task.taskId}":`, err);
       });
@@ -1474,7 +1729,7 @@ export async function archiveSettledWorkflowStageChats(
     if (!task.workflow) continue;
     await archiveWorkflowStageChats(host, {
       stages: task.workflow.stages,
-      callerAgentId: task.cardAgentId,
+      callerAgentId: task.cardAgentId ?? task.sourceChatId,
     }).catch((err) => {
       console.warn(`paseo-bots: failed to archive historical workflow stage chats for task "${task.taskId}":`, err);
     });

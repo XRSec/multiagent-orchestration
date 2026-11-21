@@ -8,6 +8,7 @@ import type { AnalysisStage, AnalyticsHistoryRecord, AnalyticsRunOutput, Analyti
 import type { Bot } from "../../shared/bot";
 import { analyticsHistoryDeleteRpc, analyticsHistoryListRpc, analyticsRunRpc, analyticsSessionsListRpc } from "../../shared/rpc";
 import { useT } from "../i18n";
+import { isImeComposing } from "../keyboard";
 import { Markdown } from "../Markdown";
 import { CONTENT_MAX_WIDTH, nativeTokens } from "../native";
 import { Button } from "../panel/controls";
@@ -377,6 +378,9 @@ function FieldInput({ colors, label, value, onChangeText, placeholder }: { color
         onChangeText={onChangeText}
         placeholder={placeholder}
         placeholderTextColor={colors.foregroundMuted}
+        onKeyPress={(e) => {
+          if (isImeComposing(e)) return;
+        }}
         style={{
           fontSize: ui(13),
           color: colors.foreground,

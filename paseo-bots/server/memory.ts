@@ -6,8 +6,10 @@ import { botDataPath } from "./bot-home";
 import { ensureRealDirectory, missingFile, readRegularText } from "./files";
 
 /** OpenMausBot's budget: the first 200 lines or 24 KB of MEMORY.md go into every chat. */
-const MEMORY_MAX_LINES = 200;
-const MEMORY_MAX_BYTES = 24_000;
+export const MAIN_MEMORY_MAX_LINES = 200;
+export const MAIN_MEMORY_MAX_BYTES = 24_000;
+const MEMORY_MAX_LINES = MAIN_MEMORY_MAX_LINES;
+const MEMORY_MAX_BYTES = MAIN_MEMORY_MAX_BYTES;
 export const MAIN_MEMORY = "MEMORY.md";
 export const MAX_MEMORY_FILE_BYTES = 2 * 1024 * 1024;
 
@@ -45,6 +47,70 @@ function trimForPrompt(text: string): string {
 
 export async function injectedMemory(botId: string): Promise<string> {
   return trimForPrompt(await readText(memoryFilePath(botId, MAIN_MEMORY)));
+}
+
+interface MemorySyncContent {
+  normalizedBody: string;
+  sections: string[];
+}
+
+async function loadMemorySyncContent(
+  botDataDir: string,
+  teamRootPath?: string | null,
+): Promise<MemorySyncContent | null> {
+  const botMemoryRaw = await readRegularText(join(botDataDir, MAIN_MEMORY), MAX_MEMORY_FILE_BYTES).catch(() => null);
+  const botMemory = botMemoryRaw ? trimForPrompt(botMemoryRaw).trim() : "";
+
+  let teamMemory = "";
+  if (teamRootPath) {
+    const teamMemoryRaw = await readRegularText(join(teamRootPath, MAIN_MEMORY), MAX_MEMORY_FILE_BYTES).catch(() => null);
+    teamMemory = teamMemoryRaw ? trimForPrompt(teamMemoryRaw).trim() : "";
+  }
+
+  if (!botMemory && !teamMemory) return null;
+
+  const sections: string[] = [];
+  if (botMemory) {
+    sections.push(`## Bot Memory (${MAIN_MEMORY})\n${botMemory}`);
+  }
+  if (teamMemory) {
+    sections.push(`## Team Memory (${MAIN_MEMORY})\n${teamMemory}`);
+  }
+
+  return {
+    normalizedBody: sections.join("\n\n"),
+    sections,
+  };
+}
+
+/**
+ * Computes a deterministic SHA-256 hash and post-compaction synchronization envelope
+ * from bot and optional team MEMORY.md, bounded by MAIN_MEMORY_MAX_LINES and MAIN_MEMORY_MAX_BYTES.
+ * Returns null if no memory content exists.
+ */
+export async function computeMemorySyncSnapshot(
+  botDataDir: string,
+  teamRootPath?: string | null,
+): Promise<{ hash: string; envelope: string } | null> {
+  const content = await loadMemorySyncContent(botDataDir, teamRootPath);
+  if (!content) return null;
+  const hash = createHash("sha256").update(content.normalizedBody, "utf8").digest("hex");
+  const envelope = [`<memory_sync hash="${hash.slice(0, 12)}">`, ...content.sections, "</memory_sync>"].join("\n\n");
+  return { hash, envelope };
+}
+
+/**
+ * Builds a post-compaction memory synchronization envelope from bot and optional team MEMORY.md,
+ * bounded by MAIN_MEMORY_MAX_LINES and MAIN_MEMORY_MAX_BYTES.
+ * Returns null if no memory content exists.
+ */
+export async function buildMemorySyncEnvelope(
+  botDataDir: string,
+  teamRootPath?: string | null,
+): Promise<string | null> {
+  const content = await loadMemorySyncContent(botDataDir, teamRootPath);
+  if (!content) return null;
+  return ["<memory_sync>", ...content.sections, "</memory_sync>"].join("\n\n");
 }
 
 export async function listMemory(botId: string) {

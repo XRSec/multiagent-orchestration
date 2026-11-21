@@ -9,11 +9,11 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import type { PaseoAgent } from "./paseo";
 import type { PluginOpenScreenInput, PluginScreenProps, PluginSurfaceProps } from "@getpaseo/plugin/client";
-import type { BotScreen } from "./screen-navigation";
+import { teamChatScreen, workflowsScreen, type BotScreen } from "./screen-navigation";
 import { useRpc } from "@getpaseo/plugin/client";
 import { copyText, useToast } from "@getpaseo/plugin/client/react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState, type MutableRefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { BackHandler, type LayoutRectangle, Platform, Text, View } from "react-native";
 import { randomSeed } from "../shared/avatar";
 import {
@@ -33,7 +33,8 @@ import {
 } from "../shared/bot";
 import { saveTeam, tabOf, teamTabs, withoutBot } from "../shared/groups";
 import { addImportedBots } from "../shared/library";
-import { displayTitle, resolveBotPlacement, startBotChat, syncBotWorkspaceTitle } from "../shared/chat";
+import { displayTitle, resolveBotPlacement, sendBotMessage, SESSION_ROLE_LABEL, startBotChat, syncBotWorkspaceTitle, TEAM_SESSION_LABEL } from "../shared/chat";
+import type { BotFeedChannelKind } from "../shared/feed-view";
 import { moveKey } from "../shared/sidebar";
 import { chatTranscript } from "../shared/transcript";
 import {
@@ -49,13 +50,15 @@ import {
 } from "../shared/rpc";
 import { botFromPreset, newBot } from "../shared/templates";
 import { formatPluralCount, useT } from "./i18n";
+import { Avatar, TeamLogo } from "./Avatar";
 import { botMenuEntries, chatMenuEntries } from "./BotDialogs";
+import { BotFeedPane } from "./BotFeedPane";
 import { BotsSurfaceModals } from "./BotsSurfaceModals";
 import { BotSidebar, BotSidebarFooter, type ChatMenuContext, type MenuSource, type Selection } from "./BotSidebar";
 import { useBotHost, useChatInvalidation, useHostResolver, useProviders, type LocalHost } from "./data";
 import { onIntent, takeIntent, type SurfaceIntent } from "./intent";
 import { LibraryView } from "./library/LibraryView";
-import { getGlobalNavigation, onLibraryTarget, setGlobalNavigation, type LibraryTarget } from "./navigation";
+import { getGlobalNavigation, navigateToAgentChat, onLibraryTarget, setGlobalNavigation, type LibraryTarget } from "./navigation";
 import { Splash } from "./Splash";
 import { TeamMap } from "./teams/TeamMap";
 import { DataAnalysisPane } from "./analytics/DataAnalysisPane";
@@ -86,7 +89,7 @@ export interface BotsSurfaceReadyProps extends PluginSurfaceProps, Partial<Pick<
   commit: (mutate: (values: BotSettingsValues) => BotSettingsValues) => Promise<boolean>;
 }
 
-export function BotsSurfaceReady({ theme, layout, host, navigation, screen, params, settings, latest, commit }: BotsSurfaceReadyProps) {
+export function BotsSurfaceReady({ theme, layout, host, navigation, screen, openScreen, params, settings, latest, commit }: BotsSurfaceReadyProps) {
   const { colors } = theme;
   const { t } = useT();
   const toast = useToast();
@@ -112,8 +115,10 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
   const [panelVersion, setPanelVersion] = useState(0);
   const [creating, setCreating] = useState(false);
   const [launcherTarget, setLauncherTarget] = useState<{ mode?: "direct" | "team"; groupId?: string | null; nonce: number } | null>(null);
-  const [teamMap, setTeamMap] = useState(false);
+  const isTeamsScreen = screen === "teams" || screen === "bot-teams";
+  const [teamMap, setTeamMap] = useState(isTeamsScreen);
   const [dataAnalysis, setDataAnalysis] = useState(false);
+  const [feedView, setFeedView] = useState<{ kind: BotFeedChannelKind; id: string } | null>(null);
   const [editingTeam, setEditingTeam] = useState<BotGroup | "new" | null>(null);
   const [partnerSettingsOpen, setPartnerSettingsOpen] = useState(false);
   const [libraryView, setLibraryView] = useState<{ target: LibraryTarget | null } | null>(null);
@@ -250,8 +255,34 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
     [],
   );
 
-  const back = useRef({ panel, compact: layout.compact, selection, teamMap, dataAnalysis, libraryView });
-  back.current = { panel, compact: layout.compact, selection, teamMap, dataAnalysis, libraryView };
+  useEffect(() => {
+    if (isTeamsScreen) {
+      setTeamMap(true);
+      setDataAnalysis(false);
+      setFeedView(null);
+      setPanel({ open: false, section: null });
+    }
+  }, [isTeamsScreen]);
+
+  const closeTeamMap = () => {
+    setTeamMap(false);
+    if (isTeamsScreen && openScreen) {
+      openScreen({ screenId: "bots" });
+    }
+  };
+
+  const openTeamView = () => {
+    if (openScreen && !isTeamsScreen) {
+      openScreen({ screenId: "teams" });
+      return;
+    }
+    setDataAnalysis(false);
+    setFeedView(null);
+    setTeamMap(true);
+  };
+
+  const back = useRef({ panel, compact: layout.compact, selection, teamMap, dataAnalysis, feedView, libraryView });
+  back.current = { panel, compact: layout.compact, selection, teamMap, dataAnalysis, feedView, libraryView };
   const goBack = (): boolean => {
     const state = back.current;
     if (state.libraryView) {
@@ -267,12 +298,17 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
       return true;
     }
     if (!state.compact) return false;
+    if (state.feedView) {
+      setFeedView(null);
+      if (isTeamsScreen) setTeamMap(true);
+      return true;
+    }
     if (state.dataAnalysis) {
       setDataAnalysis(false);
       return true;
     }
     if (state.teamMap) {
-      setTeamMap(false);
+      closeTeamMap();
       return true;
     }
     if (state.selection) {
@@ -375,11 +411,13 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
       }
       setSelection({ botId: next.botId, chatId: null });
       setPanel({ open: false, section: null });
+      setFeedView(null);
     } else {
       setSelection(next);
       setPanel({ open: false, section: null });
       setTeamMap(false);
       setDataAnalysis(false);
+      setFeedView(null);
     }
     const tab = openTab && tabOf(next.botId, groups) !== openTab.id ? tabOf(next.botId, groups) : null;
     if (tab || currentUi().collapsed.includes(next.botId)) {
@@ -535,6 +573,91 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
     return true;
   };
 
+  const workflowCountsByGroup = useMemo(() => {
+    const counts = new Map<string, number>();
+    const globalWorkflows = settings.values.workflows ?? [];
+    for (const group of groups) {
+      const memberSet = new Set<string>([...group.memberIds, ...(group.leadId ? [group.leadId] : [])]);
+      const ids = new Set<string>((group.workflows ?? []).map((wf) => wf.id));
+      for (const wf of globalWorkflows) {
+        if (wf.stages.some((stage) => memberSet.has(stage.botId))) {
+          ids.add(wf.id);
+        }
+      }
+      counts.set(group.id, ids.size);
+    }
+    return counts;
+  }, [groups, settings.values.workflows]);
+
+  const startTeamLauncher = (groupId: string) => {
+    setLibraryView(null);
+    setTeamMap(false);
+    setDataAnalysis(false);
+    setFeedView(null);
+    setPanel({ open: false, section: null });
+    const group = groups.find((g) => g.id === groupId);
+    if (group && currentUi().tab !== group.id) {
+      updateUi((current) => ({ ...current, tab: group.id }));
+    }
+    setLauncherTarget((prev) => ({
+      mode: "team",
+      groupId,
+      nonce: (prev?.nonce ?? 0) + 1,
+    }));
+    const targetBotId =
+      (group?.leadId && allBots.some((b) => b.id === group.leadId)
+        ? group.leadId
+        : group?.memberIds.find((id) => allBots.some((b) => b.id === id))) ?? listed[0]?.id;
+    if (targetBotId) {
+      select({ botId: targetBotId, chatId: null });
+    }
+  };
+
+  const openFeed = (override?: { kind: BotFeedChannelKind; id: string }) => {
+    setTeamMap(false);
+    setDataAnalysis(false);
+    setPanel({ open: false, section: null });
+    if (override) {
+      setFeedView(override);
+      return;
+    }
+    if (openTab?.group) {
+      setFeedView({ kind: "team", id: openTab.group.id });
+      return;
+    }
+    const targetBot = selectedBot ?? openTab?.bots[0] ?? listed[0];
+    if (targetBot) {
+      setFeedView({ kind: "bot", id: targetBot.id });
+      return;
+    }
+    toast.error(t("feed.noChannelAvailable"));
+  };
+
+  const handledDeepLinkRef = useRef<string | null>(null);
+  const deepLinkKey = params?.feedKind
+    ? `feed:${params.feedKind}:${params.feedId ?? ""}`
+    : params?.scope
+      ? `workflows:${params.scope}`
+      : params?.teamId || params?.groupId
+        ? `team:${params.teamId ?? params.groupId ?? ""}:${params.teamChat ?? ""}`
+        : null;
+  useEffect(() => {
+    if (!deepLinkKey || handledDeepLinkRef.current === deepLinkKey) return;
+    handledDeepLinkRef.current = deepLinkKey;
+    if (params?.feedKind === "bot" || params?.feedKind === "team") {
+      openFeed(params.feedId ? { kind: params.feedKind, id: params.feedId } : undefined);
+      return;
+    }
+    if (params?.scope && openScreen) {
+      openScreen(workflowsScreen(params.scope));
+      return;
+    }
+    const targetGroupId = params?.teamId || params?.groupId;
+    if (targetGroupId) {
+      startTeamLauncher(targetGroupId);
+    }
+  }, [deepLinkKey, params?.feedKind, params?.feedId, params?.scope, params?.teamId, params?.groupId]);
+
   const openTeamMenu = (group: BotGroup, anchor: LayoutRectangle) =>
     menu.open({
       anchor,
@@ -543,8 +666,12 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
       title: t("surface.teamActions"),
       entries: [
         { label: t("surface.editTeam"), icon: "Pencil", onSelect: () => setEditingTeam(group) },
-        { label: t("surface.dataAnalysis"), icon: "BarChart2", onSelect: () => { setTeamMap(false); setDataAnalysis(true); } },
-        { label: t("surface.teamMap"), icon: "Network", onSelect: () => { setDataAnalysis(false); setTeamMap(true); } },
+        { label: t("surface.continuousFeed"), icon: "MessageSquareText", onSelect: () => openFeed({ kind: "team", id: group.id }) },
+        ...(openScreen
+          ? [{ label: t("workflows.sidebarTitle"), icon: "GitBranch", onSelect: () => openScreen(workflowsScreen(`team:${group.id}`)) }]
+          : []),
+        { label: t("surface.dataAnalysis"), icon: "BarChart2", onSelect: () => { setTeamMap(false); setFeedView(null); setDataAnalysis(true); } },
+        { label: t("surface.teamMap"), icon: "Network", onSelect: openTeamView },
         { kind: "separator" },
         { label: t("surface.deleteTeam"), icon: "Trash2", destructive: true, onSelect: () => void deleteTeam(group) },
       ],
@@ -653,8 +780,9 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
       onChatMenu={openChatMenu}
       onDisplayMenu={openDisplayMenu}
       onEditTeam={setEditingTeam}
-      onDataAnalysis={() => { setTeamMap(false); setDataAnalysis(true); }}
-      onTeamMap={() => { setDataAnalysis(false); setTeamMap(true); }}
+      onDataAnalysis={() => { setTeamMap(false); setFeedView(null); setDataAnalysis(true); }}
+      onTeamMap={openTeamView}
+      onFeed={() => openFeed()}
       onNewChat={() => {
         const group = openTab?.group ?? null;
         const targetBotId = (group?.leadId ? openTab?.bots.find((b) => b.id === group.leadId)?.id : undefined) ?? openTab?.bots[0]?.id ?? listed[0]?.id;
@@ -674,6 +802,12 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
     ? { colors, tabs, openTab, onTab: (tab: string) => updateUi((current) => ({ ...current, tab })), onTeamMenu: openTeamMenu, onNewTeam: () => setEditingTeam("new" as const) }
     : null;
 
+  const feedGroup = feedView?.kind === "team" ? groups.find((g) => g.id === feedView.id) ?? null : null;
+  const feedBot = feedView?.kind === "bot" ? allBots.find((b) => b.id === feedView.id) ?? null : null;
+  const feedMemberCount = feedGroup
+    ? new Set([...(feedGroup.leadId ? [feedGroup.leadId] : []), ...feedGroup.memberIds]).size
+    : 0;
+
   const pane = dataAnalysis ? (
     <DataAnalysisPane
       colors={colors}
@@ -681,6 +815,169 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
       compact={layout.compact}
       bottomInset={bottomInset}
       onBack={() => setDataAnalysis(false)}
+    />
+  ) : feedView ? (
+    <BotFeedPane
+      colors={colors}
+      channelKind={feedView.kind}
+      channelId={feedView.id}
+      channelName={
+        feedView.kind === "team"
+          ? feedGroup?.name || t("teams.untitledTeam")
+          : feedBot?.name || feedView.id
+      }
+      subtitle={
+        feedView.kind === "team"
+          ? t("feed.teamChannelSubtitle", { count: feedMemberCount })
+          : feedBot?.title?.trim() || t("feed.botChannelSubtitle")
+      }
+      leading={
+        feedGroup ? (
+          <TeamLogo group={feedGroup} size={18} />
+        ) : feedBot ? (
+          <Avatar avatar={feedBot.avatar} size={18} />
+        ) : undefined
+      }
+      bots={allBots}
+      compact={layout.compact}
+      bottomInset={bottomInset}
+      onOpenTask={(agentId, botId) => {
+        const targetBot = allBots.find((b) => b.id === botId);
+        const botHost = resolveHost(targetBot?.hostId ?? null);
+        const opened = navigateToAgentChat(agentId, {
+          botId,
+          serverId: botHost.key,
+          navigation,
+        });
+        if (!opened) {
+          setFeedView(null);
+          select({ botId, chatId: agentId });
+        }
+      }}
+      onSendMessage={async (text) => {
+        const targetBot =
+          feedView.kind === "team"
+            ? (feedGroup?.leadId ? allBots.find((b) => b.id === feedGroup.leadId) : undefined) ??
+              feedGroup?.memberIds.map((id) => allBots.find((b) => b.id === id)).find((b): b is Bot => Boolean(b)) ??
+              listed[0]
+            : feedBot ?? listed[0];
+        if (!targetBot) {
+          const msg = t("feed.noChannelAvailable");
+          toast.error(msg);
+          throw new Error(msg);
+        }
+        const botHost = resolveHost(targetBot.hostId);
+        if (!botHost.api) {
+          const msg = t("surface.hostIsOffline", { label: botHost.label });
+          toast.error(msg);
+          throw new Error(msg);
+        }
+        try {
+          const cachedChats = queryClient.getQueryData<PaseoAgent[]>(["paseo-bots", "chats", botHost.key, targetBot.id]) ?? [];
+          const activeChats = cachedChats.filter((chat) => !chat.archivedAt);
+          const activeChat =
+            (feedView.kind === "team"
+              ? activeChats.find(
+                  (chat) =>
+                    Boolean(chat.labels?.[TEAM_SESSION_LABEL]) ||
+                    chat.labels?.[SESSION_ROLE_LABEL] === "team-lead" ||
+                    chat.labels?.[SESSION_ROLE_LABEL] === "team-direct-specialist",
+                )
+              : undefined) ?? activeChats[0];
+
+          if (activeChat) {
+            await sendBotMessage(botHost.api, { agentId: activeChat.id, text, bot: targetBot });
+          } else {
+            const group = feedGroup ?? primaryGroupForBot(targetBot.id, groups);
+            const home = await ensureHome({
+              botId: targetBot.id,
+              ...(group ? { groupId: group.id, groupName: group.name } : {}),
+            });
+            const { systemPrompt } = await compose({ bot: targetBot, local: botHost.isLocal, message: text });
+            const agentId = newUuid();
+            const plugin = botHost.isLocal ? await mountServers({ botId: targetBot.id, agentId }) : {};
+            await startBotChat(botHost.api, {
+              bot: targetBot,
+              library,
+              ...(botHost.isLocal ? { agentId } : {}),
+              plugin,
+              placement: resolveBotPlacement(targetBot, group, home),
+              prompt: text,
+              systemPrompt,
+              ...(feedView.kind === "team" && feedGroup
+                ? {
+                    labels: {
+                      [TEAM_SESSION_LABEL]: feedGroup.id,
+                      [SESSION_ROLE_LABEL]: targetBot.id === feedGroup.leadId ? "team-lead" : "team-direct-specialist",
+                    },
+                  }
+                : {}),
+            });
+          }
+          await queryClient.invalidateQueries({ queryKey: ["paseo-bots", "chats", botHost.key, targetBot.id] });
+          toast.show(t("feed.sentToast", { name: targetBot.name }), { variant: "success" });
+        } catch (error) {
+          toast.error(t("feed.sendFailed", { error: errorText(error) }));
+          throw error;
+        }
+      }}
+      onBack={() => {
+        setFeedView(null);
+        if (isTeamsScreen) setTeamMap(true);
+      }}
+      onOpenActiveChat={() => {
+        const targetBot =
+          feedView.kind === "team"
+            ? (feedGroup?.leadId ? allBots.find((b) => b.id === feedGroup.leadId) : undefined) ??
+              feedGroup?.memberIds.map((id) => allBots.find((b) => b.id === id)).find((b): b is Bot => Boolean(b)) ??
+              listed[0]
+            : feedBot ?? listed[0];
+        if (!targetBot) {
+          if (feedGroup) startTeamLauncher(feedGroup.id);
+          return;
+        }
+        const botHost = resolveHost(targetBot.hostId);
+        const cachedChats = queryClient.getQueryData<PaseoAgent[]>(["paseo-bots", "chats", botHost.key, targetBot.id]) ?? [];
+        const activeChats = cachedChats.filter((chat) => !chat.archivedAt);
+        const activeChat =
+          (feedView.kind === "team"
+            ? activeChats.find(
+                (chat) =>
+                  chat.labels?.[TEAM_SESSION_LABEL] === feedView.id ||
+                  Boolean(chat.labels?.[TEAM_SESSION_LABEL]) ||
+                  chat.labels?.[SESSION_ROLE_LABEL] === "team-lead" ||
+                  chat.labels?.[SESSION_ROLE_LABEL] === "team-direct-specialist",
+              )
+            : undefined) ?? activeChats[0];
+        if (activeChat) {
+          const opened = navigateToAgentChat(activeChat.id, {
+            botId: targetBot.id,
+            serverId: botHost.key,
+            navigation,
+          });
+          if (opened) return;
+          setFeedView(null);
+          select({ botId: targetBot.id, chatId: activeChat.id });
+          return;
+        }
+        if (feedView.kind === "team" && feedGroup) {
+          startTeamLauncher(feedGroup.id);
+          return;
+        }
+        setFeedView(null);
+        setLauncherTarget((prev) => ({
+          mode: "direct",
+          groupId: null,
+          nonce: (prev?.nonce ?? 0) + 1,
+        }));
+        select({ botId: targetBot.id, chatId: null });
+      }}
+      onOpenWorkflows={
+        openScreen
+          ? () => openScreen(workflowsScreen(feedView.kind === "team" ? `team:${feedView.id}` : `bot:${feedView.id}`))
+          : undefined
+      }
+      onOpenTeam={openTeamView}
     />
   ) : teamMap ? (
     <TeamMap
@@ -690,9 +987,17 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
       localHost={localHost}
       compact={layout.compact}
       bottomInset={bottomInset}
-      onBack={() => setTeamMap(false)}
+      workflowCountsByGroup={workflowCountsByGroup}
+      onBack={closeTeamMap}
       onNewTeam={() => setEditingTeam("new")}
       onEditTeam={setEditingTeam}
+      onOpenTeamTab={(group) => {
+        updateUi((current) => ({ ...current, tab: group.id }));
+        closeTeamMap();
+      }}
+      onOpenTeamFeed={(group) => openFeed({ kind: "team", id: group.id })}
+      onOpenTeamWorkflows={openScreen ? (groupId) => openScreen(workflowsScreen(`team:${groupId}`)) : undefined}
+      onStartTeamChat={(group) => (isTeamsScreen && openScreen ? openScreen(teamChatScreen(group.id)) : startTeamLauncher(group.id))}
       onOpenBot={(bot) => {
         select({ botId: bot.id, chatId: null });
         setPanel({ open: true, section: null });
@@ -714,6 +1019,7 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
       onClose={() => {
         setPanel({ open: false, section: null });
         setSelection(null);
+        if (isTeamsScreen) setTeamMap(true);
       }}
       onPatch={(patch) => patchBot(selectedBot.id, patch)}
       flush={flush}
@@ -803,7 +1109,7 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
         style={{ flex: 1, backgroundColor: colors.surface0, paddingBottom: keyboardHeight }}
         onLayout={(event) => setSurfaceWidth(event.nativeEvent.layout.width)}
       >
-        {!orphansDismissed && !libraryScreen && !dataAnalysis && !teamMap ? (
+        {!orphansDismissed && !libraryScreen && !dataAnalysis && !teamMap && !feedView ? (
           <AgyOrphanBanner
             colors={colors}
             orphans={agyOrphans}
@@ -845,19 +1151,20 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
                   <BotSidebarFooter
                     colors={colors}
                     onNewBot={() => setCreating(true)}
-                    onDataAnalysis={() => { setTeamMap(false); setDataAnalysis(true); }}
-                    onTeamMap={() => { setDataAnalysis(false); setTeamMap(true); }}
+                    onDataAnalysis={() => { setTeamMap(false); setFeedView(null); setDataAnalysis(true); }}
+                    onTeamMap={openTeamView}
+                    onFeed={() => openFeed()}
                     onPartnerSettings={() => setPartnerSettingsOpen(true)}
                   />
                 </View>
               </>
             ) : null}
-            {selection || teamMap || dataAnalysis ? <SlideOver onClose={() => (dataAnalysis ? setDataAnalysis(false) : teamMap ? setTeamMap(false) : setSelection(null))}>{pane}</SlideOver> : null}
+            {selection || teamMap || dataAnalysis || feedView ? <SlideOver onClose={() => (feedView ? (setFeedView(null), isTeamsScreen && setTeamMap(true)) : dataAnalysis ? setDataAnalysis(false) : teamMap ? closeTeamMap() : setSelection(null))}>{pane}</SlideOver> : null}
             {libraryScreen ? <SlideOver onClose={() => setLibraryView(null)}>{libraryScreen}</SlideOver> : null}
           </View>
         ) : libraryScreen ? (
           libraryScreen
-        ) : dataAnalysis || teamMap ? (
+        ) : dataAnalysis || teamMap || feedView ? (
           pane
         ) : (
           <>
@@ -916,8 +1223,9 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, para
                 <BotSidebarFooter
                   colors={colors}
                   onNewBot={() => setCreating(true)}
-                  onDataAnalysis={() => setDataAnalysis(true)}
-                  onTeamMap={() => setTeamMap(true)}
+                  onDataAnalysis={() => { setTeamMap(false); setFeedView(null); setDataAnalysis(true); }}
+                  onTeamMap={openTeamView}
+                  onFeed={() => openFeed()}
                   onPartnerSettings={() => setPartnerSettingsOpen(true)}
                 />
               </View>

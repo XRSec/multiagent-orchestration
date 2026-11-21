@@ -7,6 +7,54 @@ import { z } from "zod";
 export const WorkflowStepEngineSchema = z.enum(["auto", "native", "paseo-bot"]);
 export type WorkflowStepEngine = z.infer<typeof WorkflowStepEngineSchema>;
 
+export const WorkflowStopReasonSchema = z.enum([
+  "completed",
+  "failed",
+  "timeout",
+  "stall_timeout",
+  "budget_exceeded",
+  "policy_denied",
+  "validation_failed",
+  "cancelled",
+]);
+export type WorkflowStopReason = z.infer<typeof WorkflowStopReasonSchema>;
+
+export const WorkflowErrorCategorySchema = z.enum([
+  "transient_api",
+  "validation",
+  "policy_denied",
+  "dag_invalid",
+  "cancelled",
+  "timeout",
+  "stall_timeout",
+  "budget_exceeded",
+  "unknown",
+]);
+export type WorkflowErrorCategory = z.infer<typeof WorkflowErrorCategorySchema>;
+
+export const WorkflowBudgetConfigSchema = z.object({
+  maxModelCalls: z.number().int().nonnegative().optional(),
+  maxToolCalls: z.number().int().nonnegative().optional(),
+  maxTotalTokens: z.number().int().nonnegative().optional(),
+});
+export type WorkflowBudgetConfig = z.infer<typeof WorkflowBudgetConfigSchema>;
+
+export const StageUsageMetadataSchema = z.object({
+  promptTokens: z.number().int().nonnegative().optional(),
+  candidatesTokens: z.number().int().nonnegative().optional(),
+  thoughtsTokens: z.number().int().nonnegative().optional(),
+  totalTokens: z.number().int().nonnegative().optional(),
+  toolCalls: z.number().int().nonnegative().optional(),
+  modelCalls: z.number().int().nonnegative().optional(),
+});
+export type StageUsageMetadata = z.infer<typeof StageUsageMetadataSchema>;
+
+export const StageOutputContractSchema = z.object({
+  format: z.enum(["json", "text"]).default("text"),
+  requiredKeys: z.array(z.string().trim().min(1)).optional(),
+});
+export type StageOutputContract = z.infer<typeof StageOutputContractSchema>;
+
 export const WorkflowStageDefinitionSchema = z.object({
   /** Unique stage identifier within the workflow (e.g. "research", "code", "review"). */
   id: z.string().trim().min(1).max(100),
@@ -26,6 +74,10 @@ export const WorkflowStageDefinitionSchema = z.object({
   skillIds: z.array(z.string().trim().min(1).max(100)).optional(),
   /** Optional stage-level MCP server overrides or additions. */
   mcpServerIds: z.array(z.string().trim().min(1).max(100)).optional(),
+  /** Optional declarative resource/call budget for this stage. */
+  budget: WorkflowBudgetConfigSchema.optional(),
+  /** Optional structured output validation contract (e.g. JSON format & required keys). */
+  outputContract: StageOutputContractSchema.optional(),
 });
 export type WorkflowStageDefinition = z.infer<typeof WorkflowStageDefinitionSchema>;
 
@@ -36,6 +88,7 @@ export const WorkflowDefinitionSchema = z.object({
   stages: z.array(WorkflowStageDefinitionSchema).min(1).max(50),
   createdAt: z.string().optional(),
   updatedAt: z.string().optional(),
+  budget: WorkflowBudgetConfigSchema.optional(),
 });
 export type WorkflowDefinition = z.infer<typeof WorkflowDefinitionSchema>;
 
@@ -60,6 +113,13 @@ export const TaskStageStateSchema = z.object({
   prompt: z.string().nullable().optional().default(null),
   skillIds: z.array(z.string()).optional(),
   mcpServerIds: z.array(z.string()).optional(),
+  budget: WorkflowBudgetConfigSchema.optional(),
+  outputContract: StageOutputContractSchema.optional(),
+  stopReason: WorkflowStopReasonSchema.optional(),
+  errorCategory: WorkflowErrorCategorySchema.optional(),
+  durationMs: z.number().nonnegative().optional(),
+  usage: StageUsageMetadataSchema.optional(),
+  repairGuidance: z.string().nullable().optional(),
 });
 export type TaskStageState = z.infer<typeof TaskStageStateSchema>;
 
@@ -77,6 +137,10 @@ export const WorkflowRunStateSchema = z.object({
   callerAgentId: z.string().optional(),
   callerBotId: z.string().optional(),
   userInput: z.string().optional(),
+  budget: WorkflowBudgetConfigSchema.optional(),
+  stopReason: WorkflowStopReasonSchema.optional(),
+  durationMs: z.number().nonnegative().optional(),
+  usage: StageUsageMetadataSchema.optional(),
 });
 export type WorkflowRunState = z.infer<typeof WorkflowRunStateSchema>;
 
@@ -230,6 +294,10 @@ export function initWorkflowRunState(
       startedAt: null,
       completedAt: null,
       prompt: stage.prompt || null,
+      ...(stage.skillIds ? { skillIds: stage.skillIds } : {}),
+      ...(stage.mcpServerIds ? { mcpServerIds: stage.mcpServerIds } : {}),
+      ...(stage.budget ? { budget: stage.budget } : {}),
+      ...(stage.outputContract ? { outputContract: stage.outputContract } : {}),
     };
   });
 
@@ -243,6 +311,7 @@ export function initWorkflowRunState(
     currentStageIds: ready,
     startedAt: now,
     completedAt: null,
+    ...(workflow.budget ? { budget: workflow.budget } : {}),
     ...(context?.teamSessionId ? { teamSessionId: context.teamSessionId } : {}),
     ...(context?.sessionBoardPath ? { sessionBoardPath: context.sessionBoardPath } : {}),
   };
@@ -306,6 +375,7 @@ export interface StageBriefInput {
   sessionBoardPath?: string;
   attempt: number;
   previousError?: string | null;
+  repairGuidance?: string | null;
 }
 
 /**
@@ -316,15 +386,23 @@ export function buildStageBriefPrompt(input: StageBriefInput): string {
   const sections: string[] = [];
 
   if (input.attempt > 1 && input.previousError) {
-    sections.push([
+    const repairLines = [
       "<repair_brief>",
       `- WORKFLOW: ${input.workflowName}`,
       `- STAGE_ID: ${input.stage.id} (${input.stage.name})`,
       `- ATTEMPT: ${input.attempt}/${(input.stage.maxRetries ?? 1) + 1}`,
       `- PREVIOUS_FAILURE: ${input.previousError}`,
+    ];
+    if (input.repairGuidance?.trim()) {
+      repairLines.push(
+        `- REPAIR_GUIDANCE:\n<repair_guidance>\n${input.repairGuidance.trim()}\n</repair_guidance>`,
+      );
+    }
+    repairLines.push(
       "- INSTRUCTION: Diagnose the failure above, apply only the minimal surgical fix required without rewriting working parts, and re-verify.",
       "</repair_brief>",
-    ].join("\n"));
+    );
+    sections.push(repairLines.join("\n"));
   }
 
   const upstreamBlock = input.upstreamOutputs && input.upstreamOutputs.length > 0
@@ -544,5 +622,215 @@ export function formatElapsedDuration(startStr?: string | null, endStr?: string 
   const seconds = totalSeconds % 60;
   return `${minutes}m ${seconds}s`;
 }
+
+// ------------------------------------------------------------------ Output Contract & Budget Helpers
+
+/**
+ * Extracts and parses JSON from raw stage output text.
+ * Supports:
+ * 1. Markdown code fences: ```json ... ``` or ``` ... ```
+ * 2. Raw JSON string
+ * 3. Substrings delimited by { ... } or [ ... ]
+ */
+export function extractJsonFromOutput(output: string): { success: boolean; data?: unknown; error?: string } {
+  if (!output || typeof output !== "string") {
+    return { success: false, error: "Output is empty or not a string." };
+  }
+
+  const trimmed = output.trim();
+
+  // 1. Try markdown code fences: ```json ... ``` or ``` ... ```
+  const fenceRegex = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let match: RegExpExecArray | null;
+  const fenceMatches: string[] = [];
+  while ((match = fenceRegex.exec(trimmed)) !== null) {
+    if (match[1]?.trim()) {
+      fenceMatches.push(match[1].trim());
+    }
+  }
+
+  for (let i = fenceMatches.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(fenceMatches[i]);
+      return { success: true, data: parsed };
+    } catch {
+      // Fall through to next attempt
+    }
+  }
+
+  // 2. Try raw trimmed text
+  try {
+    const parsed = JSON.parse(trimmed);
+    return { success: true, data: parsed };
+  } catch {
+    // Fall through
+  }
+
+  // 3. Try outermost object { ... }
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try {
+      const parsed = JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+      return { success: true, data: parsed };
+    } catch {
+      // Fall through
+    }
+  }
+
+  // 4. Try outermost array [ ... ]
+  const firstBracket = trimmed.indexOf("[");
+  const lastBracket = trimmed.lastIndexOf("]");
+  if (firstBracket !== -1 && lastBracket > firstBracket) {
+    try {
+      const parsed = JSON.parse(trimmed.slice(firstBracket, lastBracket + 1));
+      return { success: true, data: parsed };
+    } catch {
+      // Fall through
+    }
+  }
+
+  return { success: false, error: "Failed to parse stage output as JSON." };
+}
+
+export interface StageContractValidationResult {
+  valid: boolean;
+  error?: string;
+  repairGuidance?: string;
+  parsed?: unknown;
+}
+
+/**
+ * Validates stage output against an optional output contract.
+ * If format === "json", verifies JSON syntax and requiredKeys.
+ * On mismatch, returns valid: false with an actionable repairGuidance block.
+ */
+export function validateStageOutputContract(
+  output: string,
+  contract?: StageOutputContract,
+): StageContractValidationResult {
+  if (!contract || contract.format !== "json") {
+    return { valid: true };
+  }
+
+  const jsonResult = extractJsonFromOutput(output);
+  if (!jsonResult.success) {
+    const errorMsg = `Stage output failed JSON contract validation: ${jsonResult.error}`;
+    const guidanceLines = [
+      "Structured output validation failed: Output could not be parsed as valid JSON.",
+      "- Requirement: Stage output must be formatted as valid JSON (optionally enclosed in a ```json ... ``` code fence).",
+    ];
+    if (contract.requiredKeys && contract.requiredKeys.length > 0) {
+      guidanceLines.push(`- Required JSON keys: ${contract.requiredKeys.map((k) => `"${k}"`).join(", ")}`);
+    }
+    guidanceLines.push("Please output valid JSON satisfying these requirements.");
+
+    return {
+      valid: false,
+      error: errorMsg,
+      repairGuidance: guidanceLines.join("\n"),
+    };
+  }
+
+  const parsed = jsonResult.data;
+  if (contract.requiredKeys && contract.requiredKeys.length > 0) {
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      const errorMsg = `Stage output JSON must be a key-value object to validate required keys, got ${Array.isArray(parsed) ? "array" : typeof parsed}.`;
+      return {
+        valid: false,
+        error: errorMsg,
+        repairGuidance: `Structured output validation failed: JSON output must be a key-value object containing: ${contract.requiredKeys.map((k) => `"${k}"`).join(", ")}.`,
+        parsed,
+      };
+    }
+
+    const obj = parsed as Record<string, unknown>;
+    const missingKeys = contract.requiredKeys.filter((k) => !(k in obj) || obj[k] === undefined);
+    if (missingKeys.length > 0) {
+      const errorMsg = `Stage output JSON is missing required key(s): ${missingKeys.map((k) => `"${k}"`).join(", ")}.`;
+      const guidance = [
+        `Structured output validation failed: Missing required key(s): ${missingKeys.map((k) => `"${k}"`).join(", ")}.`,
+        `- Expected keys: ${contract.requiredKeys.map((k) => `"${k}"`).join(", ")}.`,
+        `- Present keys: ${Object.keys(obj).map((k) => `"${k}"`).join(", ")}.`,
+        "Please provide the complete JSON response with all required fields.",
+      ].join("\n");
+
+      return {
+        valid: false,
+        error: errorMsg,
+        repairGuidance: guidance,
+        parsed,
+      };
+    }
+  }
+
+  return { valid: true, parsed };
+}
+
+export interface BudgetCheckResult {
+  exceeded: boolean;
+  reason?: string;
+  field?: "maxModelCalls" | "maxToolCalls" | "maxTotalTokens";
+  limit?: number;
+  actual?: number;
+}
+
+/**
+ * Checks whether reported usage exceeds configured budget limits.
+ */
+export function checkBudget(
+  budget?: WorkflowBudgetConfig,
+  usage?: StageUsageMetadata,
+): BudgetCheckResult {
+  if (!budget || !usage) return { exceeded: false };
+
+  if (budget.maxModelCalls !== undefined && (usage.modelCalls ?? 0) > budget.maxModelCalls) {
+    return {
+      exceeded: true,
+      reason: `Exceeded maxModelCalls budget limit: ${usage.modelCalls ?? 0} > ${budget.maxModelCalls}`,
+      field: "maxModelCalls",
+      limit: budget.maxModelCalls,
+      actual: usage.modelCalls ?? 0,
+    };
+  }
+
+  if (budget.maxToolCalls !== undefined && (usage.toolCalls ?? 0) > budget.maxToolCalls) {
+    return {
+      exceeded: true,
+      reason: `Exceeded maxToolCalls budget limit: ${usage.toolCalls ?? 0} > ${budget.maxToolCalls}`,
+      field: "maxToolCalls",
+      limit: budget.maxToolCalls,
+      actual: usage.toolCalls ?? 0,
+    };
+  }
+
+  if (budget.maxTotalTokens !== undefined && (usage.totalTokens ?? 0) > budget.maxTotalTokens) {
+    return {
+      exceeded: true,
+      reason: `Exceeded maxTotalTokens budget limit: ${usage.totalTokens ?? 0} > ${budget.maxTotalTokens}`,
+      field: "maxTotalTokens",
+      limit: budget.maxTotalTokens,
+      actual: usage.totalTokens ?? 0,
+    };
+  }
+
+  return { exceeded: false };
+}
+
+/**
+ * Accumulates two StageUsageMetadata records into a single sum record.
+ */
+export function sumUsage(u1?: StageUsageMetadata, u2?: StageUsageMetadata): StageUsageMetadata {
+  if (!u1 && !u2) return {};
+  return {
+    promptTokens: (u1?.promptTokens ?? 0) + (u2?.promptTokens ?? 0),
+    candidatesTokens: (u1?.candidatesTokens ?? 0) + (u2?.candidatesTokens ?? 0),
+    thoughtsTokens: (u1?.thoughtsTokens ?? 0) + (u2?.thoughtsTokens ?? 0),
+    totalTokens: (u1?.totalTokens ?? 0) + (u2?.totalTokens ?? 0),
+    toolCalls: (u1?.toolCalls ?? 0) + (u2?.toolCalls ?? 0),
+    modelCalls: (u1?.modelCalls ?? 0) + (u2?.modelCalls ?? 0),
+  };
+}
+
 
 

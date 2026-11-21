@@ -1,8 +1,8 @@
 ---
 doc_id: DESIGN-PASEO-AGY-ACP-INDEX
 status: CURRENT
-version: 1.0.0
-last_verified: 2026-11-18
+version: 1.1.0
+last_verified: 2026-11-21
 language: en-US
 ---
 
@@ -24,7 +24,7 @@ Parent index: [../INDEX.md](../INDEX.md)
 
 | Shard | Scope & Codebase Anchors |
 | :--- | :--- |
-| [shards/01-dual-plane-and-brain-observer.md](shards/01-dual-plane-and-brain-observer.md) | ACP stdio + `_meta.antigravity` injection, Brain `.system_generated` observer, Reactive Wakeup phase machine, `settleBrainTurn`, `O_TRUNC` detection, and idle external transcript sync (`session.ts`, `brain.ts`, `brain-io.ts`, `brain-observer.ts`, `brain-projector.ts`). |
+| [shards/01-dual-plane-and-brain-observer.md](shards/01-dual-plane-and-brain-observer.md) | ACP stdio + `_meta.antigravity` & `PASEO_AGY_BOT_PROMPT_FILE` injection (`resolveEffectiveSystemPrompt`), Brain `.system_generated` observer, Reactive Wakeup phase machine, `settleBrainTurn`, `O_TRUNC` detection, compaction thresholds (`resolveCompactionThresholds`), and idle external transcript sync (`session.ts`, `brain.ts`, `brain-io.ts`, `brain-observer.ts`, `brain-projector.ts`). |
 | [shards/02-turn-lifecycle-and-fail-closed-guards.md](shards/02-turn-lifecycle-and-fail-closed-guards.md) | Fail-closed `stopReason` & tool settlement, `120s`/`600s` two-clock watchdog, write-ahead `turn-journal.ts`, `runLoadSessionWithReplayIdle`, read-only SQLite `step_type = 17` forensics (`error-inspection.ts`), and safe config fallback. |
 | [shards/03-subagents-checkpoints-and-steer.md](shards/03-subagents-checkpoints-and-steer.md) | Multi-level `<sessionId>:child:<nativeChildId>` registry (`subagents.ts`), cross-plane tool alignment, shadow-Git + SQLite fork time-machine (`checkpoints.ts`, `agy-fork.ts`, `revert.ts`), `/usage` quota (`usage.ts`), and Steer vs Queue contract. |
 

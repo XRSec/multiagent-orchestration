@@ -1,8 +1,8 @@
 ---
 doc_id: PASEO-BOTS-SHARD-03-WORKFLOW-ENGINE-ROUTING
 status: CURRENT
-version: 1.0.0
-last_verified: 2026-11-18
+version: 1.1.0
+last_verified: 2026-11-21
 language: en-US
 ---
 
@@ -18,7 +18,7 @@ Route delegated work across three distinct execution tiers according to task det
 | :--- | :--- | :--- | :--- |
 | **Route 1** | `"native"` (`INVOKE_SUBAGENT_TOOL = "invoke_subagent"`) | Harness-native child subagent inside parent turn (`paseo-agy-acp` subagents or Claude `Task`). `toolsForEngine` strips `ask_bot` (`DISPATCH_ONLY_TOOLS`) while retaining `check_chat` and `search_chats`. | Explicit `engine: "native"`, or `engine: "auto"` when `provider !== "codex"`, `bot.playbooks` is empty, and `bot.contactBots === "off"`. |
 | **Route 2** | `"paseo-bot"` (`ask_bot` -> `startChat`) | Resumable independent bot chat tagged with `ASKED_BY_LABEL`, `ASKED_IN_LABEL`, and `TEAM_SESSION_LABEL`; supports follow-up steering and `check_chat` inspection. | Explicit `engine: "paseo-bot"`, or `engine: "auto"` when `provider === "codex"` (no native subagent tool), `bot.playbooks.length > 0`, or `bot.contactBots !== "off"`. |
-| **Route 3** | `run_workflow` (`runWorkflowTool` -> `runWorkflowDag`) | Host-scheduled declarative stage DAG (`WorkflowDefinitionSchema`, `1..50` stages) executing parallel topological waves with stage-level `skillIds` and `mcpServerIds` unions. | Triggered by `team-lead` via `run_workflow` MCP tool or by operator via `WorkflowsScreen`. |
+| **Route 3** | `run_workflow` / `workflowRunRpc` (`runWorkflowTool`, `startWorkflowFromRpc` -> `launchResolvedWorkflow` -> `runWorkflowDag`) | Host-scheduled declarative stage DAG (`WorkflowDefinitionSchema`, `1..50` stages) executing parallel topological waves with stage-level `skillIds` and `mcpServerIds` unions; resumable via `resumeWorkflowTool` (`resume_workflow`) or `workflowResumeRpc`. | Triggered by `team-lead` via `run_workflow` MCP tool or directly from UI via `workflowRunRpc` (`"bots.workflows.run"`, backed by `resolveWorkflowForRpc` supporting `groupId`-scoped lookup and disk + in-flight `inflightIdempotentRuns` `idempotencyKey` deduplication). |
 
 When a stage declares `stage.skillIds`, `defaultStageDispatcher` (`paseo-bots/server/workflow-runner.ts`) sets `stageSeatKey = "<stageId>-<botId>"`, isolating merged `[...bot.skillIds, ...stage.skillIds]` symlinks under `<sessionBoardPath>/seats/<stageId>-<botId>` without mutating persistent seats or writing to `targetProjectDirs`.
 
@@ -36,8 +36,8 @@ Validate every `WorkflowDefinition` via `validateWorkflowDAG` (`paseo-bots/share
 ### Kahn Topological Validation & Parallel Wave Loop
 1. **Graph Integrity (`validateWorkflowDAG`)**: Rejects empty stage arrays, blank/duplicate stage IDs, unknown `dependsOn` targets, self-dependencies, and cycles (via Kahn's zero-in-degree layer partitioning `layers: string[][]`, failing whenever `processedCount !== stages.length`).
 2. **Wave Dispatch (`runWorkflowDag` in `paseo-bots/server/workflow-runner.ts`)**:
-   - Registers `taskId` in `activeWorkflowTaskIds`, resolves `teamSessionId` and `sessionBoardPath`, provisions `handoffs/`, `artifacts/`, and `runs/`, and emits an initial live `TaskCard` (`publishWorkflowCard`).
-   - Evaluates `readyStages(stages)` (`status === "pending"` with every `dependsOn` stage `"done"`), slices the wave to `task.budget?.fanout` when configured, and marks wave stages `"running"` (`WORKFLOW_TASK_LABEL`, `WORKFLOW_STAGE_LABEL`).
+   - Registers `taskId` in `activeWorkflowTaskIds`, resolves `teamSessionId` and `sessionBoardPath`, provisions `handoffs/`, `artifacts/`, and `runs/`, back-fills `groupId` / `sourceChatId` into `openTask` when missing, and emits an initial live `TaskCard` (`publishWorkflowCard`, preserving `sourceChatId` on `resumeWorkflow`, `reconcileOrphanWorkflows`, and `archiveSettledWorkflowStageChats`).
+   - Evaluates `readyStages(stages)` (`status === "pending"` with every `dependsOn` stage `"done"`), slices the wave to `task.budget?.fanout` when configured, and marks wave stages `"running"` (`WORKFLOW_TASK_LABEL = "paseo-bots:workflow-task"`, `WORKFLOW_STAGE_LABEL = "paseo-bots:workflow-stage"`, `"paseo-bots:workflow-id"`, and `"paseo-bots:workflow-stage-name"` emitted by `defaultStageDispatcher`).
    - Acquires per-stage concurrency slots (`reserveMemberSlot`, retrying up to `MAX_SLOT_WAIT_ATTEMPTS = 20` at `SLOT_WAIT_MS = 500`) and executes the wave concurrently via `Promise.allSettled`.
    - Persists successful stage replies to `<sessionBoardPath>/handoffs/<stageId>-<botId>.md`, stamps `handoffFilePath`, updates `TaskRecord` via `updateTaskWorkflow`, and archives the finished stage chat immediately.
    - Stops the pipeline if any stage enters terminal `"failed"` (after exhausting `maxRetries`), marking all remaining `"pending"` stages `"skipped"` and settling via `settleAndPublish`.

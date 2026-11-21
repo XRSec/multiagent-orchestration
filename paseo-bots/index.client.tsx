@@ -4,7 +4,7 @@ import { Text, View } from "react-native";
 import { z } from "zod";
 import { BotsSurface } from "./client/BotsSurface";
 import { BotLauncherPopover } from "./client/launcher/BotLauncherPopover";
-import { BOT_SCREENS, resolveBotScreen } from "./client/screen-navigation";
+import { BOT_SCREENS, chatScreen, feedScreen, resolveBotScreen, teamChatScreen, teamsScreen, workflowsScreen } from "./client/screen-navigation";
 import { NativeConnectCard } from "./client/chat/stream/ConnectCard";
 import { ProposalCard } from "./client/chat/stream/ProposalCard";
 import { RoutineRunCard } from "./client/chat/stream/RoutineRunCard";
@@ -28,13 +28,14 @@ import { TASK_CARD, TaskCardSchema } from "./shared/task-card";
 import { requestIntent } from "./client/intent";
 import { initPluginI18n, tMsg, translateNow } from "./client/i18n";
 import { RoutinesScreen } from "./client/RoutinesScreen";
-import { PaseoBotsSidebar, PaseoWorkflowsSidebar } from "./client/PaseoSidebar";
+import { PaseoBotsSidebar, PaseoTeamsSidebar, PaseoWorkflowsSidebar } from "./client/PaseoSidebar";
 import { WorkflowsScreen } from "./client/WorkflowsScreen";
 import { BackBar } from "./client/library/parts";
 import { useTypeScale } from "./client/typography";
 import { installTooltips } from "./client/ui/Tooltip";
 import { appSignIns } from "./shared/apps";
 import { BOT_LABEL } from "./shared/bot";
+import { TEAM_SESSION_LABEL } from "./shared/chat";
 import { proposalIdOf } from "./shared/proposals";
 import { APP_SIGN_IN_CARD, AppSignInSchema, helloRpc, ROUTINE_RUN_CARD, RoutineRunCardSchema } from "./shared/rpc";
 import { LEARN_COMMAND, learnPrompt, REMEMBER_COMMAND, rememberPrompt } from "./shared/skills";
@@ -130,7 +131,7 @@ function registerBotScreen(client: PluginClientContext, definition: typeof BOT_S
   }
   client.addScreen({
     id,
-    title: (params) => resolveBotScreen(id, params) === "bots" ? "Bots" : params.title || title,
+    title: (params) => params.title || (resolveBotScreen(id, params) === "bots" ? "Bots" : title),
     Component: BotScreenPage,
   });
 }
@@ -148,6 +149,7 @@ export default function contribute(client: PluginClientContext) {
     registerBotScreen(client, screen);
   }
   client.addSidebarHeaderItem({ id: "bots", title: tMsg("plugin.title"), Component: PaseoBotsSidebar });
+  client.addSidebarHeaderItem({ id: "teams", title: tMsg("teams.sidebarTitle"), Component: PaseoTeamsSidebar });
   client.addSidebarHeaderItem({ id: "workflows", title: tMsg("workflows.sidebarTitle"), Component: PaseoWorkflowsSidebar });
   const backToBots = () => client.openScreen({ screenId: BOTS_SCREEN });
   // Existing open tabs/bookmarks from the removed settings page return to Bots.
@@ -155,10 +157,33 @@ export default function contribute(client: PluginClientContext) {
     useEffect(() => { void backToBots(); }, []);
     return null;
   }
+  function WorkflowsRoute(props: PluginScreenProps) {
+    useTypeScale();
+    return (
+      <WorkflowsScreen
+        {...props}
+        initialScope={props.params?.scope}
+        openScreen={(input) => client.openScreen(input)}
+        onOpenFeed={(kind, id) => client.openScreen(feedScreen(kind, id))}
+        onOpenTeamChat={(groupId) => client.openScreen(teamChatScreen(groupId))}
+        onOpenTeams={() => client.openScreen(teamsScreen())}
+        onOpenChat={(chatId, botId) => {
+          const opened = navigateToAgentChat(chatId, {
+            botId,
+            client,
+            navigation: props.navigation,
+          });
+          if (!opened && botId) {
+            client.openScreen(chatScreen({ botId, chatId }, botId));
+          }
+        }}
+      />
+    );
+  }
   client.addScreen({ id: "bot-preferences", title: tMsg("plugin.title"), Component: PreviousSettingsRoute });
   client.addScreen({ id: "bot-routines", title: tMsg("plugin.title"), Component: (props) => <BotsPage props={props} title="Routines" onBack={backToBots}><RoutinesScreen {...props} openScreen={(input) => client.openScreen(input)} /></BotsPage> });
-  client.addScreen({ id: "workflows", title: tMsg("workflows.sidebarTitle"), Component: (props) => <BotsPage props={props} title="Workflows" onBack={backToBots}><WorkflowsScreen {...props} openScreen={(input) => client.openScreen(input)} /></BotsPage> });
-  client.addScreen({ id: "bot-workflows", title: tMsg("workflows.sidebarTitle"), Component: (props) => <BotsPage props={props} title="Workflows" onBack={backToBots}><WorkflowsScreen {...props} openScreen={(input) => client.openScreen(input)} /></BotsPage> });
+  client.addScreen({ id: "workflows", title: tMsg("workflows.sidebarTitle"), Component: WorkflowsRoute });
+  client.addScreen({ id: "bot-workflows", title: tMsg("workflows.sidebarTitle"), Component: WorkflowsRoute });
   client.addCommandCenterItem({
     id: "open-bots",
     title: tMsg("plugin.openBots"),
@@ -167,6 +192,16 @@ export default function contribute(client: PluginClientContext) {
     context: "global",
     onSelect({ openScreen }) {
       openScreen({ screenId: BOTS_SCREEN });
+    },
+  });
+  client.addCommandCenterItem({
+    id: "open-teams",
+    title: tMsg("teams.openTeams"),
+    icon: "Users",
+    keywords: ["team", "squad", "fleet", "团队", "舰队"],
+    context: "global",
+    onSelect({ openScreen }) {
+      openScreen({ screenId: "teams" });
     },
   });
   client.addCommandCenterItem({
@@ -209,6 +244,90 @@ export default function contribute(client: PluginClientContext) {
     async onSubmit({ agent, args, paseo }) {
       if (!agent.labels[BOT_LABEL]) throw new Error(translateNow("plugin.rememberOnlyInBotChats"));
       await paseo.agents.ref(agent.id).send(rememberPrompt(args));
+    },
+  });
+  client.addSlashCommand({
+    name: "feed",
+    description: tMsg("plugin.feedDescription"),
+    argumentHint: tMsg("plugin.feedArgHint"),
+    context: "agent",
+    onSubmit({ agent, args, openScreen }) {
+      const trimmed = args.trim();
+      if (trimmed.startsWith("team:")) {
+        const id = trimmed.slice("team:".length).trim();
+        if (id) {
+          openScreen(feedScreen("team", id));
+          return;
+        }
+      }
+      if (trimmed.startsWith("bot:")) {
+        const id = trimmed.slice("bot:".length).trim();
+        if (id) {
+          openScreen(feedScreen("bot", id));
+          return;
+        }
+      }
+      if (trimmed) {
+        openScreen(feedScreen(trimmed.startsWith("team-") ? "team" : "bot", trimmed));
+        return;
+      }
+      const teamId = agent.labels?.[TEAM_SESSION_LABEL]?.trim();
+      if (teamId && teamId.startsWith("team-")) {
+        openScreen(feedScreen("team", teamId));
+        return;
+      }
+      const botId = agent.labels?.[BOT_LABEL]?.trim();
+      if (botId) {
+        openScreen(feedScreen("bot", botId));
+        return;
+      }
+      openScreen(feedScreen("bot", ""));
+    },
+  });
+  client.addSlashCommand({
+    name: "team",
+    description: tMsg("plugin.teamDescription"),
+    argumentHint: tMsg("plugin.teamArgHint"),
+    context: "agent",
+    onSubmit({ agent, args, openScreen }) {
+      const trimmed = args.trim();
+      if (trimmed) {
+        const id = trimmed.startsWith("team:") ? trimmed.slice("team:".length).trim() : trimmed;
+        if (id) {
+          openScreen(teamChatScreen(id));
+          return;
+        }
+      }
+      const teamId = agent.labels?.[TEAM_SESSION_LABEL]?.trim();
+      if (teamId && teamId.startsWith("team-")) {
+        openScreen(teamChatScreen(teamId));
+        return;
+      }
+      openScreen(teamsScreen());
+    },
+  });
+  client.addSlashCommand({
+    name: "workflows",
+    description: tMsg("plugin.workflowsDescription"),
+    argumentHint: tMsg("plugin.workflowsArgHint"),
+    context: "agent",
+    onSubmit({ agent, args, openScreen }) {
+      const trimmed = args.trim();
+      if (trimmed) {
+        openScreen(workflowsScreen(trimmed));
+        return;
+      }
+      const teamId = agent.labels?.[TEAM_SESSION_LABEL]?.trim();
+      if (teamId && teamId.startsWith("team-")) {
+        openScreen(workflowsScreen(`team:${teamId}`));
+        return;
+      }
+      const botId = agent.labels?.[BOT_LABEL]?.trim();
+      if (botId) {
+        openScreen(workflowsScreen(`bot:${botId}`));
+        return;
+      }
+      openScreen(workflowsScreen());
     },
   });
   client.addTimelineTransformer({
@@ -283,6 +402,13 @@ export default function contribute(client: PluginClientContext) {
         onOpenChat={(chatId, botId) => {
           navigateToAgentChat(chatId, {
             botId,
+            client,
+            navigation: (rest as any).navigation,
+          });
+        }}
+        onOpenTeamFeed={(groupId) => client.openScreen(feedScreen("team", groupId))}
+        onOpenSourceChat={(chatId) => {
+          navigateToAgentChat(chatId, {
             client,
             navigation: (rest as any).navigation,
           });

@@ -1,8 +1,8 @@
 ---
 doc_id: PASEO-BOTS-SHARD-05-FALLBACK-ROUTINES-SURFACES
 status: CURRENT
-version: 1.0.0
-last_verified: 2026-11-18
+version: 1.1.0
+last_verified: 2026-11-21
 language: en-US
 ---
 
@@ -60,6 +60,7 @@ Execute recurring and webhook-triggered bot jobs in isolated background run chat
 
 - **Run Isolation**: Every scheduled or manual trigger (`routineRunNowRpc`) spawns a dedicated chat via `startChat` stamped with `ROUTINE_LABEL = "paseo-bots.routine"`; active runs can be inspected via `routineStatusRpc` or aborted via `routineCancelRunRpc`.
 - **Results Thread Projection**: When `routine.resultsChatId` is configured, run completion appends a `ROUTINE_RUN_CARD` item (`RoutineRunCard` in `paseo-bots/client/chat/stream/RoutineRunCard.tsx`) to `resultsChatId` while retaining verbose tool execution logs inside the isolated run chat.
+- **Unattended Scheduler Auth Breaker & Backoff (`connectSchedulerHost` in `server/connection.ts`)**: `isAuthConnectionError` inspects error messages and codes against `/password required|unauthorized|4401/i`; on auth faults, the background connector logs once, halts retry timers, and waits passively for `host.onAttach` instead of flooding daemon auth failures. Transient connection failures back off along `TRANSIENT_BACKOFF_MS = [30_000, 60_000, 120_000, 300_000]` via `nextRetryDelayMs`.
 
 ## 3. Two-Stage Session Friction Telemetry Pipeline (`analytics/`)
 
@@ -79,14 +80,16 @@ Build all cross-platform views on React Native + Unistyles (`paseo-bots/index.cl
 
 | Client Surface / Module | File Coordinate | Architectural Role & Reuse Contract |
 | :--- | :--- | :--- |
-| `BotsSurface` | `paseo-bots/client/BotsSurface.tsx` | Primary multi-column workspace coordinating `TeamTabs`, `BotSidebar`, `ChatPane`, `RoutinesScreen`, and `DataAnalysisPane` |
+| `BotsSurfaceReady` & `TeamMap` | `paseo-bots/client/BotsSurface.tsx`, `client/BotsSurfaceReady.tsx`, `client/teams/TeamMap.tsx` | Primary workspace coordinating `TeamTabs`, `BotSidebar`, `TeamMap` (`workflowCountsByGroup`, `onOpenTeamWorkflows`, `onStartTeamChat`), `BotFeedPane`, `RoutinesScreen`, and `DataAnalysisPane`, consuming `feedKind`/`feedId`/`teamId`/`groupId`/`scope` deep-link params |
 | `PartnerSettingsModal` | `paseo-bots/client/settings/PartnerSettingsModal.tsx` | Dual-row modal selector (Team row + horizontal Bot pill row) embedding `<BotPanel embedded />` (`client/panel/BotPanel.tsx`) so identity, soul, fallback chain, MCP/skills, and routines share one editor |
-| `WorkflowsScreen` | `paseo-bots/client/WorkflowsScreen.tsx` | Declarative DAG studio (`WorkflowEditor`, `WorkflowPipelinePreview`) + live `workflowRunsRpc` wave monitor; clicking any stage opens `TaskStageModal` (`client/chat/stream/TaskStageModal.tsx`) to inspect handoffs or jump to archived child chats |
+| `WorkflowsScreen` | `paseo-bots/client/WorkflowsScreen.tsx`, `client/settings/WorkflowEditor.tsx` | Top-level `WorkflowsRoute` (without redundant `BackBar`; all hooks unconditional before early returns), `WorkflowListEditor` (`onRunWorkflow`), inline `workflowRunRpc` goal runner, `TaskStageModal` drilldown, and team `Feed`/`Team Chat`/`Teams` quick links |
+| `BotFeedPane` | `paseo-bots/client/BotFeedPane.tsx`, `server/feed-bridge.ts`, `shared/feed-view.ts` | Renders unified `index.jsonl` + read-only legacy channel merge (`readMergedBotFeed`), classifies `"workflow"` before `"delegated"` (`classifySource`), projects `workflowTaskId`/`workflowId`/`workflowStageId`/`workflowStageName` badges/pills, and exposes header jumps (`onOpenActiveChat`, `onOpenWorkflows`, `onOpenTeam`) |
 | `ProtocolCard` | `paseo-bots/client/chat/stream/ProtocolCard.tsx` | Renders `<task_brief>`, `<repair_brief>`, `<worker_protocol>`, and `<worker_handoff>` (segmented by `transformUserProtocolCards` / `transformAssistantProtocolCards` in `shared/protocol-cards.ts`) as localized (`en` / `zh-CN`) collapsible cards |
-| `TaskCardView` & Stream Cards | `paseo-bots/client/chat/stream/TaskCard.tsx` | Renders L1 task and live DAG progress cards (`TASK_CARD`), alongside `HandoffCard`, `InteractionCard`, `ProposalCard`, `RoutineRunCard`, and `NativeConnectCard` |
-| `BotLauncherPopover` & Navigation | `paseo-bots/index.client.tsx`, `paseo-bots/client/navigation.ts` | Plugins cannot replace Paseo's native composer root: `registerLauncherButtons` mounts `BotLauncherPopover` per `(workspaceId, agentId)` via `client.addComposerPill` (`bot-launcher-pill-<agentId>`) and switches chats via `navigateToAgentChat` (`navigation.openAgent`) |
+| `TaskCardView` & Stream Cards | `paseo-bots/client/chat/stream/TaskCard.tsx` | Renders L1 task and live DAG progress cards (`TASK_CARD`) with `onOpenTeamFeed` (`groupId`) and `onOpenSourceChat` (`sourceChatId`) quick links, alongside `HandoffCard`, `InteractionCard`, `ProposalCard`, `RoutineRunCard`, and `NativeConnectCard` |
+| `PaseoSidebar`, `screen-navigation` & `BotLauncherPopover` | `paseo-bots/index.client.tsx`, `client/PaseoSidebar.tsx`, `client/screen-navigation.ts`, `client/navigation.ts` | Registers 3 sidebar pillars (`Bots`, `Team`, `Workflow` alongside `paseo-feed`'s `Feed`), deep-link helpers (`BOT_SCREENS`, `teamsScreen`, `workflowsScreen(scope?)`, `feedScreen(kind, id, title?)`, `teamChatScreen(groupId)`), `BotLauncherPopover` pills (`addComposerPill`), and `navigateToAgentChat` (`navigation.openAgent`) |
 
-- **Agent Slash Commands (`/learn`, `/remember`)**: Registered in `paseo-bots/index.client.tsx` (`LEARN_COMMAND`, `REMEMBER_COMMAND` from `paseo-bots/shared/skills.ts`) with `context: "agent"`, verifying `agent.labels[BOT_LABEL]` before dispatching skill-extraction or memory-update prompts into bot chats opened inside Paseo's native agent view.
+- **Unified `agent.open.before` Lifecycle & CLI Dispatch (`bot-lifecycle.ts`, `mcp-oauth-lifecycle.ts`, `paseo-chief-dispatch.mjs`)**: `registerBotSessionLifecycle` owns the sole `agent.open.before` hook (merging `oauthProxy` server mounts while `registerMcpOAuthLifecycle` passes `{ registerOpenHook: false }` to handle `agent.permission.before` exclusively), mounting `bots`/`composio` MCP and `PASEO_AGY_BOT_PROMPT_FILE` (`ensureAgyPromptFile` -> `resolveEffectiveSystemPrompt`) only when `LIFECYCLE_MOUNT_LABEL === "true"`. Official headless inspection and `bot-chief` dispatch run through `scripts/paseo-chief-dispatch.mjs`.
+- **Agent Slash Commands (`/learn`, `/remember`, `/feed`, `/team`, `/workflows`)**: Registered in `paseo-bots/index.client.tsx` (`LEARN_COMMAND`, `REMEMBER_COMMAND` from `paseo-bots/shared/skills.ts` plus `/feed`, `/team`, `/workflows` deep-link routes) with `context: "agent"` inside Paseo's native agent view.
 - **MCP OAuth Proxy & App Sign-In Cards (`McpOAuthProxy`, `NativeConnectCard`)**: `registerMcpOAuthLifecycle` (`paseo-bots/server/mcp-oauth-lifecycle.ts`, `McpOAuth`, `McpOAuthProxy`) brokers OAuth token exchange (`mcpOAuthStartRpc` / `mcpOAuthFinishRpc` / `mcpOAuthStatusRpc` / `mcpOAuthDisconnectRpc`), while Composio toolkit sign-ins render inline via `APP_SIGN_IN_CARD` (`NativeConnectCard` in `paseo-bots/client/chat/stream/ConnectCard.tsx`).
 
 ## 5. Conformance Matrix

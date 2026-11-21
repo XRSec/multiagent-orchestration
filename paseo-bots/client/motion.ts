@@ -43,6 +43,26 @@ export function motionDuration(ms: number, reduceMotion: boolean): number {
   return reduceMotion ? 0 : ms;
 }
 
+/**
+ * Safely triggers React Native LayoutAnimation with CDS easeInEaseOut curve and reduced motion gating.
+ * Resilient against partial React Native mocks in headless/test environments.
+ */
+export function triggerLayoutAnimation(ms: number = 200, reduceMotion: boolean = false): void {
+  if (reduceMotion) return;
+  try {
+    const la = (RN as unknown as { LayoutAnimation?: any }).LayoutAnimation;
+    if (la && typeof la.configureNext === "function") {
+      if (typeof la.create === "function" && la.Types?.easeInEaseOut && la.Properties?.opacity) {
+        la.configureNext(la.create(motionDuration(ms, reduceMotion), la.Types.easeInEaseOut, la.Properties.opacity));
+      } else if (la.Presets?.easeInEaseOut) {
+        la.configureNext(la.Presets.easeInEaseOut);
+      }
+    }
+  } catch {
+    // Gracefully ignore environments where LayoutAnimation is not supported
+  }
+}
+
 type MediaQueryLike = {
   matches: boolean;
   addEventListener?: (type: "change", listener: (event: { matches: boolean }) => void) => void;

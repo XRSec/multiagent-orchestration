@@ -45,6 +45,14 @@ export {
 
 /** Agent label carrying the bot id. Chats are found by filtering on it. */
 export const BOT_LABEL = "paseo-bots.bot";
+/** Label marking sessions owned by the global personal assistant (L1 Router). */
+export const GLOBAL_ASSISTANT_LABEL = "paseo-bots.global-assistant";
+/** Cross-plugin opt-in label read by paseo-long-session for auto-compaction. */
+export const LONG_SESSION_ENABLED_LABEL = "paseo-long-session.enabled";
+/** Agent metadata key carrying compaction & memory-sync handshake state. */
+export const LONG_SESSION_SYNC_METADATA = "paseo-long-session.sync";
+/** Opt-in agent label allowing `agent.open.before` to mount live plugin MCP servers and AGY prompt file. */
+export const LIFECYCLE_MOUNT_LABEL = "paseo-bots.lifecycle-mount";
 
 const StringRecord = z.record(z.string(), z.string());
 
@@ -269,10 +277,17 @@ export const BotSchema = z.object({
   mounts: z.array(z.string()).default([]),
   pinned: z.boolean().default(false),
   archived: z.boolean().default(false),
+  /** True for the single Global Personal Assistant (L1 Chief of Staff Router) spanning all teams/projects. */
+  isGlobalAssistant: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 export type Bot = z.infer<typeof BotSchema>;
+
+/** Returns true when a bot is configured as the Global Personal Assistant (L1 Router). */
+export function isGlobalAssistantBot(bot: Pick<Bot, "id" | "isGlobalAssistant"> | null | undefined): boolean {
+  return Boolean(bot?.isGlobalAssistant);
+}
 
 const HistoryEntrySchema = z.object({ botId: z.string(), at: z.string(), snapshot: BotSchema });
 export type HistoryEntry = z.infer<typeof HistoryEntrySchema>;
@@ -626,6 +641,8 @@ export interface PromptContext {
   sessionBoardPath?: string | null;
   teamMemory?: { path: string; content: string } | null;
   targetProjects?: { path: string; rulesFile?: string; rulesExcerpt?: string; truncated?: boolean }[];
+  tierDepth?: 1 | 2 | 3;
+  isGlobalAssistant?: boolean;
 }
 
 export interface PromptSection {
@@ -677,7 +694,16 @@ export function promptSections(bot: Bot, context: PromptContext): PromptSection[
   }
 
   // Block 2: Session role
-  const roleText = context.sessionRoleText ?? (context.sessionRole ? sessionRolePrompt(context.sessionRole, { bot, sessionBoardPath: context.sessionBoardPath }) : null);
+  const roleText =
+    context.sessionRoleText ??
+    (context.sessionRole
+      ? sessionRolePrompt(context.sessionRole, {
+          bot,
+          sessionBoardPath: context.sessionBoardPath,
+          tierDepth: context.tierDepth,
+          isGlobalAssistant: context.isGlobalAssistant ?? isGlobalAssistantBot(bot),
+        })
+      : null);
   if (roleText) {
     sections.push({ title: "Session role", text: roleText });
   }

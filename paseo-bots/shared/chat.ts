@@ -7,7 +7,20 @@
  */
 
 import type { WireAttachment } from "./attachments";
-import { BOT_LABEL, buildAgentConfig, defaultModelId, type Bot, type BotGroup, type FallbackModel, type Library, type PluginServers } from "./bot";
+import {
+  BOT_LABEL,
+  buildAgentConfig,
+  defaultModelId,
+  GLOBAL_ASSISTANT_LABEL,
+  isGlobalAssistantBot,
+  LONG_SESSION_ENABLED_LABEL,
+  type Bot,
+  type BotGroup,
+  type FallbackModel,
+  type Library,
+  type PluginServers,
+} from "./bot";
+import { ASKED_BY_LABEL } from "./handoff";
 
 /** Label on chats carrying the team session correlation ID (teamSessionId). */
 export const TEAM_SESSION_LABEL = "paseo-bots.team-session";
@@ -548,6 +561,8 @@ export async function startBotChat(
   let lastError: unknown;
   const attemptedModels: string[] = [];
 
+  const isGlobalAuto = isGlobalAssistantBot(effectiveBot) && !input.labels?.[ASKED_BY_LABEL];
+
   for (let i = 0; i < candidates.length; i++) {
     const candidate = candidates[i]!;
     attemptedModels.push(candidate.model);
@@ -570,7 +585,16 @@ export async function startBotChat(
         ),
         cwd: input.placement.path,
         ...(workspaceId ? { workspaceId } : {}),
-        labels: { [BOT_LABEL]: effectiveBot.id, ...input.labels },
+        labels: {
+          [BOT_LABEL]: effectiveBot.id,
+          ...(isGlobalAuto
+            ? {
+                [GLOBAL_ASSISTANT_LABEL]: "true",
+                [LONG_SESSION_ENABLED_LABEL]: "true",
+              }
+            : {}),
+          ...input.labels,
+        },
         prompt: input.prompt,
         ...(input.title ? { title: input.title.slice(0, MAX_TITLE_CHARS) } : {}),
         ...(input.images?.length ? { images: input.images } : {}),

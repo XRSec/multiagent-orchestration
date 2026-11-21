@@ -556,8 +556,11 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
 
       const agentId = newUuid();
 
-      if (host.isLocal && companionIntentEnabled && !selectedWorkflowId && !shouldBypassCompanionIntent(effectivePrompt)) {
-        setSubmittingStatus(t("companion.distillingStatus"));
+      if (host.isLocal && companionIntentEnabled && !selectedWorkflowId) {
+        const showDistillingStatus = !shouldBypassCompanionIntent(effectivePrompt);
+        if (showDistillingStatus) {
+          setSubmittingStatus(t("companion.distillingStatus"));
+        }
         try {
           const compiled = await compileCompanion({
             mainAgentId: agentId,
@@ -565,13 +568,16 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
             groupId: group?.id ?? null,
             rawText: effectivePrompt,
           });
-          if (compiled?.outgoingText && !compiled.bypassed) {
+          // Bypassed turns may still prepend a post-compaction MEMORY.md sync prefix.
+          if (compiled?.outgoingText && compiled.outgoingText !== effectivePrompt) {
             effectivePrompt = compiled.outgoingText;
           }
         } catch {
           // fail-open
         } finally {
-          setSubmittingStatus(null);
+          if (showDistillingStatus) {
+            setSubmittingStatus(null);
+          }
         }
       }
 
@@ -647,6 +653,8 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
     currentWorkspaceDir,
     compose,
     mountServers,
+    compileCompanion,
+    companionIntentEnabled,
     library,
     queryClient,
     props,
@@ -847,8 +855,8 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
               style={[
                 styles.pillItem,
                 {
-                  borderColor: companionIntentEnabled && !selectedWorkflowId ? colors.accent : colors.border,
-                  backgroundColor: companionIntentEnabled && !selectedWorkflowId ? colors.surface2 : colors.surface1,
+                  borderColor: companionIntentEnabled && !selectedWorkflowId ? tokens.brandClay : colors.border,
+                  backgroundColor: companionIntentEnabled && !selectedWorkflowId ? tokens.brandClaySoft : colors.surface1,
                   opacity: selectedWorkflowId ? 0.4 : 1,
                 },
                 Platform.OS === "web" ? ({ touchAction: "pan-x" } as any) : null,
@@ -857,13 +865,13 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
               <Icon
                 name="Sparkles"
                 size={14}
-                color={companionIntentEnabled && !selectedWorkflowId ? colors.accent : colors.foregroundMuted}
+                color={companionIntentEnabled && !selectedWorkflowId ? tokens.brandClay : colors.foregroundMuted}
               />
               <Text
                 numberOfLines={1}
                 style={[
                   styles.pillText,
-                  { color: companionIntentEnabled && !selectedWorkflowId ? colors.foreground : colors.foregroundMuted },
+                  { color: companionIntentEnabled && !selectedWorkflowId ? tokens.brandClay : colors.foregroundMuted },
                 ]}
               >
                 {t("companion.intentDistillPill")}
