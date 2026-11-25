@@ -1,8 +1,8 @@
 ---
 doc_id: PASEO-BOTS-SHARD-05-FALLBACK-ROUTINES-SURFACES
 status: CURRENT
-version: 1.1.0
-last_verified: 2026-11-21
+version: 1.2.0
+last_verified: 2026-11-23
 language: en-US
 ---
 
@@ -83,7 +83,7 @@ Build all cross-platform views on React Native + Unistyles (`paseo-bots/index.cl
 | `BotsSurfaceReady` & `TeamMap` | `paseo-bots/client/BotsSurface.tsx`, `client/BotsSurfaceReady.tsx`, `client/teams/TeamMap.tsx` | Primary workspace coordinating `TeamTabs`, `BotSidebar`, `TeamMap` (`workflowCountsByGroup`, `onOpenTeamWorkflows`, `onStartTeamChat`), `BotFeedPane`, `RoutinesScreen`, and `DataAnalysisPane`, consuming `feedKind`/`feedId`/`teamId`/`groupId`/`scope` deep-link params |
 | `PartnerSettingsModal` | `paseo-bots/client/settings/PartnerSettingsModal.tsx` | Dual-row modal selector (Team row + horizontal Bot pill row) embedding `<BotPanel embedded />` (`client/panel/BotPanel.tsx`) so identity, soul, fallback chain, MCP/skills, and routines share one editor |
 | `WorkflowsScreen` | `paseo-bots/client/WorkflowsScreen.tsx`, `client/settings/WorkflowEditor.tsx` | Top-level `WorkflowsRoute` (without redundant `BackBar`; all hooks unconditional before early returns), `WorkflowListEditor` (`onRunWorkflow`), inline `workflowRunRpc` goal runner, `TaskStageModal` drilldown, and team `Feed`/`Team Chat`/`Teams` quick links |
-| `BotFeedPane` | `paseo-bots/client/BotFeedPane.tsx`, `server/feed-bridge.ts`, `shared/feed-view.ts` | Renders unified `index.jsonl` + read-only legacy channel merge (`readMergedBotFeed`), classifies `"workflow"` before `"delegated"` (`classifySource`), projects `workflowTaskId`/`workflowId`/`workflowStageId`/`workflowStageName` badges/pills, and exposes header jumps (`onOpenActiveChat`, `onOpenWorkflows`, `onOpenTeam`) |
+| `BotFeedPane` | `paseo-bots/client/BotFeedPane.tsx`, `server/feed-bridge.ts`, `shared/feed-view.ts` | Renders unified `index.jsonl` + read-only legacy channel merge (`readMergedBotFeed`), classifies `"workflow"` before `"delegated"` (`classifySource`), projects `workflowTaskId`/`workflowId`/`workflowStageId`/`workflowStageName` badges/pills, clears stale entries immediately on partner/filter switch, pins default-latest scroll (`canPinScrollToEnd`, `scrollWebListToEnd`, `watchWebListSize`) with `loadOlder` anchor restore, re-pins on `keyboardHeight` open with `flexShrink: 0` composer containment, and exposes header jumps (`onOpenActiveChat`, `onOpenWorkflows`, `onOpenTeam`) |
 | `ProtocolCard` | `paseo-bots/client/chat/stream/ProtocolCard.tsx` | Renders `<task_brief>`, `<repair_brief>`, `<worker_protocol>`, and `<worker_handoff>` (segmented by `transformUserProtocolCards` / `transformAssistantProtocolCards` in `shared/protocol-cards.ts`) as localized (`en` / `zh-CN`) collapsible cards |
 | `TaskCardView` & Stream Cards | `paseo-bots/client/chat/stream/TaskCard.tsx` | Renders L1 task and live DAG progress cards (`TASK_CARD`) with `onOpenTeamFeed` (`groupId`) and `onOpenSourceChat` (`sourceChatId`) quick links, alongside `HandoffCard`, `InteractionCard`, `ProposalCard`, `RoutineRunCard`, and `NativeConnectCard` |
 | `PaseoSidebar`, `screen-navigation` & `BotLauncherPopover` | `paseo-bots/index.client.tsx`, `client/PaseoSidebar.tsx`, `client/screen-navigation.ts`, `client/navigation.ts` | Registers 3 sidebar pillars (`Bots`, `Team`, `Workflow` alongside `paseo-feed`'s `Feed`), deep-link helpers (`BOT_SCREENS`, `teamsScreen`, `workflowsScreen(scope?)`, `feedScreen(kind, id, title?)`, `teamChatScreen(groupId)`), `BotLauncherPopover` pills (`addComposerPill`), and `navigateToAgentChat` (`navigation.openAgent`) |

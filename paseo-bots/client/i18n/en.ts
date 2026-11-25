@@ -987,6 +987,8 @@ export const en = {
     thisHost: "This host",
     hostOfflineError: "{{label}} is offline, so its providers can't be listed",
     providersLoadError: "Couldn't load providers from {{label}}.",
+    providersEmpty: "No enabled providers returned from {{label}}.",
+    providerUnavailable: "Provider \"{{provider}}\" is not currently available on {{label}}.",
     agentProfileHint: "Fills in provider, model, mode and thinking",
     approvalSection: "Approval",
     approvalInfo: "How much the bot may do before asking you. Also applies to its routines.",

@@ -179,7 +179,7 @@ describe("interactive card delivery", () => {
     const results = await Promise.all(Array.from({ length: 5 }, () => f.store.respond(card.id, "chat-1", response, f.host)));
     expect(results.every((entry) => entry.status === "answered")).toBe(true);
     expect(f.sent).toHaveLength(1);
-    expect(f.sent[0]!.text).toContain('"draft": "An edited answer"');
+    expect(f.sent[0]!.text).toBe(`[card ${card.id}] approved (edited draft):\nAn edited answer`);
     expect(f.sent[0]!.options.messageId).toBe(`bots-card-${card.id}`);
     expect(f.ref.mock.calls.every(([id]) => id === "chat-1")).toBe(true);
     expect(JSON.parse(await readFile(join(f.directory, `${card.id}.json`), "utf8")).status).toBe("answered");
@@ -405,14 +405,40 @@ describe("interactive timeline presentation", () => {
     expect(buildRows(entries, false)).toMatchObject([{ kind: "tool", status: "failed" }, { kind: "tool", status: "completed", error: "MCP execution failed" }]);
   });
 
-  it("sends chosen labels along with stable ids and the exact approved draft", () => {
-    const text = interactionReplyText(card, answer(card.spec, { text: "Changed exactly\n" }));
-    expect(text).toContain('"draft": "Changed exactly\\n"');
-    expect(text).toContain(card.id);
-    expect(text).toContain("grants no permissions beyond");
+  it("omits unmodified draft text to save tokens and sends compact edited drafts or choices", () => {
+    const spec = draft();
+    const unchanged = interactionReplyText(card, answer(spec));
+    expect(unchanged).toBe(`[card ${card.id}] approved (draft unchanged)`);
+    expect(unchanged).not.toContain("Tuesday works.");
+    expect(unchanged.length).toBeLessThan(80);
+
+    const edited = interactionReplyText(card, answer(spec, { text: "Changed exactly\n" }));
+    expect(edited).toBe(`[card ${card.id}] approved (edited draft):\nChanged exactly\n`);
+    expect(edited).not.toContain('"selected"');
+    expect(edited).not.toContain('"values"');
+
+    const withField = draft({ fields: [{ id: "cc", label: "CC", kind: "text" }] });
+    const withFieldCard = { ...card, spec: withField };
+    expect(interactionReplyText(withFieldCard, answer(withField, { values: { cc: "bob" } }))).toBe(
+      `[card ${card.id}] approved (draft unchanged) {"cc":"bob"}`,
+    );
+
+    const confirmCard = { ...card, spec: confirm() };
+    expect(interactionReplyText(confirmCard, answer(confirmCard.spec, { action: "approve" }))).toBe(
+      `[card ${card.id}] confirmed: Send message (approve)`,
+    );
+
+    const choiceSpec = InteractionSpecSchema.parse({ kind: "choice", title: "Pick", options: [{ id: "a", label: "Alpha" }] });
+    expect(interactionReplyText({ ...card, spec: choiceSpec }, answer(choiceSpec, { selected: ["a"] }))).toBe(
+      `[card ${card.id}] selected: Alpha (a)`,
+    );
+
+    expect(interactionReplyText(card, { action: "dismiss", values: {}, selected: [], text: "" })).toBe(
+      `[card ${card.id}] dismissed. Do not perform the proposed action.`,
+    );
   });
 
-  it("renders verified replies readably while preserving the complete original message and search", () => {
+  it("renders verified replies readably while supporting compact and legacy replies in search and summary", () => {
     const answered = { ...card, status: "answered" as const, response: answer(card.spec, { text: "Hello Ada!\nTuesday at noon." }) };
     const text = interactionReplyText(answered, answered.response);
     const messageId = `bots-card-${card.id}`;
@@ -421,9 +447,23 @@ describe("interactive timeline presentation", () => {
       entry({ type: "user_message", text, messageId, clientMessageId: messageId }, 2),
     ], false);
     expect(rows[1]).toMatchObject({ kind: "user", text, messageId, cardReply: "Reply to Ada\n\nApproved draft\n\nHello Ada!\nTuesday at noon." });
-    expect(findRows(layoutStream(rows, false).items, "grants no permissions")).toEqual([1]);
+    expect(findRows(layoutStream(rows, false).items, "edited draft")).toEqual([1]);
     expect(findRows(layoutStream(rows, false).items, "approved draft")).toEqual([1]);
     expect(interactionReplySummary(answered, text, [messageId])).toBeTruthy();
+
+    // Backward compatibility: pre-existing timelines holding verbose JSON replies still summarize cleanly.
+    const legacyText = `I answered your interactive card. Here is my response:\n\n${JSON.stringify({
+      cardId: card.id,
+      title: answered.spec.title,
+      kind: answered.spec.kind,
+      action: answered.response.action,
+      values: answered.response.values,
+      selected: answered.response.selected,
+      draft: answered.response.text,
+    }, null, 2)}\n\nUse these answers for the request this card belongs to. This response grants no permissions beyond the action and content shown on that card.`;
+    expect(interactionReplySummary(answered, legacyText, [messageId])).toBe(
+      "Reply to Ada\n\nApproved draft\n\nHello Ada!\nTuesday at noon.",
+    );
   });
 
   it("keeps nonmatching, copied, malformed, missing and foreign card replies as plain messages", () => {

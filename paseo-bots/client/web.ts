@@ -246,10 +246,10 @@ export function domNode(ref: unknown): DomElement | null {
   return inner && typeof (inner as DomElement).addEventListener === "function" ? (inner as DomElement) : null;
 }
 
-/** Scrolls a React Native view's element to the middle of its scroller (web; list estimates can be off for tall rows). */
-export function scrollIntoView(ref: unknown): void {
+/** Scrolls a React Native view's element into its scroller (web; list estimates can be off for tall rows). */
+export function scrollIntoView(ref: unknown, block: "center" | "nearest" = "center"): void {
   const node = domNode(ref) as (DomElement & { scrollIntoView?(options: { block: string; behavior: string }): void }) | null;
-  node?.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  node?.scrollIntoView?.({ block, behavior: "smooth" });
 }
 
 /** Calls `onFind` for ⌘F / Ctrl+F instead of the browser's own find. */

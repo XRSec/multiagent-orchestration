@@ -407,6 +407,98 @@ export function resolveHeaderChatAgentId(
   return null;
 }
 
+export const NEAR_BOTTOM_THRESHOLD_PX = 64;
+export const SCROLL_PIN_COOLDOWN_MS = 150;
+export const WEB_KEYBOARD_MIN_HEIGHT_PX = 80;
+
+export type ImeLikeEvent =
+  | {
+      isComposing?: boolean;
+      keyCode?: number;
+      nativeEvent?: unknown;
+    }
+  | object
+  | null
+  | undefined;
+
+/** Returns true while an IME composition session is active (incl. WebKit keyCode 229). */
+export function isImeComposing(event: ImeLikeEvent): boolean {
+  if (!event || typeof event !== "object") return false;
+  const target = ((event as { nativeEvent?: unknown }).nativeEvent ?? event) as {
+    isComposing?: boolean;
+    keyCode?: number;
+  };
+  return Boolean(target?.isComposing) || target?.keyCode === 229;
+}
+
+/** Computes virtual-keyboard occlusion height from window.visualViewport metrics. */
+export function computeVisualViewportKeyboardHeight(
+  innerHeight: number,
+  vvHeight: number,
+  vvOffsetTop = 0,
+  minHeight = WEB_KEYBOARD_MIN_HEIGHT_PX,
+): number {
+  if (!Number.isFinite(innerHeight) || !Number.isFinite(vvHeight)) return 0;
+  const offset = Number.isFinite(vvOffsetTop) ? Math.max(0, vvOffsetTop) : 0;
+  const occluded = innerHeight - (vvHeight + offset);
+  return occluded > minHeight ? occluded : 0;
+}
+
+/** Resolves FlatList keyboardDismissMode; web uses "none" so programmatic scroll never blurs input. */
+export function resolveKeyboardDismissMode(platform: string): "none" | "interactive" | "on-drag" {
+  if (platform === "web") return "none";
+  return platform === "ios" ? "interactive" : "on-drag";
+}
+
+/** Resolves root container bottom padding from active keyboard height or home-indicator inset. */
+export function resolveContainerBottomPadding(keyboardHeight: number, bottomInset: number): number {
+  return keyboardHeight > 0 ? keyboardHeight : Math.max(0, bottomInset);
+}
+
+/** Returns true when scroll position is within threshold of the bottom edge. */
+export function isNearBottom(
+  contentOffsetY: number,
+  contentHeight: number,
+  viewportHeight: number,
+  thresholdPx = NEAR_BOTTOM_THRESHOLD_PX,
+): boolean {
+  if (contentHeight <= viewportHeight) return true;
+  return contentHeight - (contentOffsetY + viewportHeight) <= thresholdPx;
+}
+
+/** Returns true after the post-user-scroll cooldown expires so layout growth can re-pin. */
+export function canPinScrollToEnd(
+  lastUserScrollAt: number,
+  now = Date.now(),
+  cooldownMs = SCROLL_PIN_COOLDOWN_MS,
+): boolean {
+  return lastUserScrollAt === 0 || now - lastUserScrollAt >= cooldownMs;
+}
+
+/** Computes restored scroll offset after older entries are prepended above the viewport. */
+export function computePrependRestoreOffset(
+  prevScrollY: number,
+  prevContentHeight: number,
+  nextContentHeight: number,
+): number | null {
+  if (prevContentHeight <= 0 || nextContentHeight <= prevContentHeight) return null;
+  return Math.max(0, prevScrollY + (nextContentHeight - prevContentHeight));
+}
+
+/** Guards auto-loading older pages against initial bottom-follow and short viewports. */
+export function shouldAutoLoadOlder(opts: {
+  initialFollow: boolean;
+  pagination: Pick<FeedPaginationState, "hasOlder" | "nextCursor" | "loadingOlder">;
+  scrollOffsetY: number;
+  contentHeight: number;
+  viewportHeight: number;
+  thresholdPx?: number;
+}): boolean {
+  if (opts.initialFollow) return false;
+  if (opts.contentHeight <= opts.viewportHeight) return false;
+  return shouldTriggerLoadOlder(opts.pagination, opts.scrollOffsetY, opts.thresholdPx);
+}
+
 /** Maps a feed.send response into a UI notice banner state, or null when silent. */
 export function resolveComposerNotice(
   result: FeedComposerSendResult,

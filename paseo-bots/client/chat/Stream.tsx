@@ -27,7 +27,7 @@ import { ui } from "../typography";
 import type { ChatState } from "../useChat";
 import { PermissionCard } from "./Permission";
 import { FindBar } from "./FindBar";
-import { buildRows, chatKeyboardDismissMode, findRows, groupToolRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
+import { canPinScrollToEnd, chatKeyboardDismissMode, SCROLL_PIN_COOLDOWN_MS, buildRows, findRows, groupToolRows, layoutStream, retainLayout, type StreamEntry, type StreamLayout, type StreamLayoutItem, type StreamRow } from "./stream/model";
 import { CompletedTurnFooter, RowContent, RowFrame, WorkingIndicator, type RowContext } from "./stream/rows";
 import { SecondaryButton } from "./stream/ui";
 import { tooltip } from "../ui/Tooltip";
@@ -43,12 +43,9 @@ type Colors = PluginTheme["colors"];
 const WEB_NEAR_BOTTOM = 64;
 const NATIVE_NEAR_BOTTOM = 32;
 const HISTORY_START_THRESHOLD = 96;
-export const SCROLL_PIN_COOLDOWN_MS = 150;
 const EMPTY_ATTACHMENTS: ComposerAttachment[] = [];
 
-export function canPinScrollToEnd(lastUserScrollAt: number, now = Date.now(), cooldownMs = SCROLL_PIN_COOLDOWN_MS): boolean {
-  return lastUserScrollAt === 0 || now - lastUserScrollAt >= cooldownMs;
-}
+export { canPinScrollToEnd, SCROLL_PIN_COOLDOWN_MS };
 
 export interface ChatStreamProps {
   colors: Colors;

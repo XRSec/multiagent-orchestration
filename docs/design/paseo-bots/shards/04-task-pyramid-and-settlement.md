@@ -47,7 +47,7 @@ Expose 17 host tools to local bot sessions via `TOOLS_MCP_NAME = "bots"` (`BOT_T
 | `run_routine` | `server/tools/routines.ts` | Triggers an immediate out-of-band run of an existing routine |
 | `cancel_routine_run` | `server/tools/routines.ts` | Cancels an active routine run chat |
 | `propose_changes` | `server/tools/setup.ts` | Emits setup diff proposals (`paseo-bots/shared/changes.ts`; bypassed for admin CLI mutations per Shard 01) |
-| `show_card` | `server/tools/interactions.ts` | Renders structured interactive `INTERACTION_CARD` forms/questions in chat |
+| `show_card` | `server/tools/interactions.ts` | Renders structured interactive `INTERACTION_CARD` forms or inline-editable drafts in chat (prefer native `ask_question` for simple confirmations) |
 
 ## 3. Cross-Process Atomic File Lease Protocol (`leases.ts`)
 

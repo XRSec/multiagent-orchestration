@@ -51,25 +51,25 @@ Top-level layout: `paseo-bots/` (Paseo bots plugin, active core), `paseo-agy-acp
 
 ## 3. Paseo Bots Roster & Domain Boundaries
 
-Authoritative SSOT: [paseo-bots-plugin-settings/bots.json](paseo-bots-plugin-settings/bots.json). All bots execute with CWD `.` via Antigravity (`agy`) native tools and Paseo runtime.
+Authoritative SSOT: [paseo-bots-plugin-settings/bots.json](paseo-bots-plugin-settings/bots.json). All bots execute with CWD `.` via Antigravity (`antigravity` built-in provider) native tools and Paseo runtime.
 
 | Bot ID | Display Name | Provider / Model | CWD | Domain & Capabilities | Allowed Write Scope |
 |---|---|---|---|---|---|
-| `bot-chief` | **全局助理** | `agy` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | Global L1 personal assistant, Companion intent distillation, `paseo-long-session` auto-compact, cross-team routing (`ask_question` only) | None (Pure Global Router) |
-| `bot-moadmin` | **moAdmin** | `agy` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | Taskforce director; subagent orchestration (`invoke_subagent`, `send_message`, `manage_subagents`), `.t3/TASK_MANIFEST.md` | None (Pure Orchestrator; delegates all file writes to specialist bots) |
-| `bot-mocode` | **moCode** | `agy` / `gemini-4-hydrogen` | `.` | Fullstack developer & code architect; Antigravity native tools (`read_file`, `write_file`, `edit_file`, `run_command`) | `paseo-bots/`, `paseo-agy-acp/`, `scripts/`, `tools/`, `extensions/` |
-| `bot-modoc` | **moDoc** | `agy` / `gemini-4-hydrogen` | `.` | Architecture scribe & documentation steward; Antigravity native tools | `docs/`, `*.md` |
-| `bot-moci` | **MoCI** | `agy` / `gemini-4-hydrogen` | `.` | CI & QA gatekeeper; test execution, regression verification, 3-tier verdicts (`PASS`/`WARN`/`FAIL`) | `.github/`, `paseo-bots/`, `paseo-agy-acp/` (tests/reports only) |
-| `bot-mogit` | **MoGit** | `agy` / `gemini-4-hydrogen` | `.` | SCM & git hygiene specialist; commit squashing, hooks, branch lifecycle | `.git/`, `.githooks/`, `scripts/`, `CHANGELOG.md` |
-| `bot-modeep` | **MoDeep** | `agy` / `gemini-4-hydrogen` | `.` | Research scout & codebase reconnaissance (`read_file`, `search_web`) | `docs/research/` (read-only on code) |
-| `bot-mo` | **Mo** | `agy` / `gemini-4-hydrogen` | `.` | Meta-toolsmith; agent scaffolding & skill creation | `paseo-bots-plugin-settings/`, `~/.gemini/config/agents/`, `~/.gemini/config/skills/` |
-| `bot-rea` | **REA** | `agy` / `gemini-4-hydrogen` | `.` | Reverse engineering & security audit (`run_command`, `read_file`, CLI-first) | `docs/research/` (disallowed: `paseo-bots/`, `paseo-agy-acp/`, `.env`) |
-| `bot-x` | **X 订阅官** | `agy` / `gemini-3.8-flash` | `.` | X (Twitter) intelligence & daily digest (`read-twitter` skill, `ego-browser`) | `./workspace/` (bot-scoped outputs) |
-| `bot-xhs` | **小红书订阅官** | `agy` / `gemini-4-hydrogen` | `.` | Xiaohongshu feed & trend digest (`ego-browser`) | `./workspace/` (bot-scoped outputs) |
-| `bot-github` | **GitHub** | `agy` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | GitHub PR, Issues & notifications monitor (`gh` CLI read-only queries) | `./workspace/` (bot-scoped outputs) |
-| `bot-cleaner` | **会话提取官** | `agy` / `gemini-3.8-flash` | `.` | Multi-harness session telemetry & friction distiller | `./workspace/` (bot-scoped outputs) |
-| `bot-analyst` | **工作流架构师** | `agy` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | Execution ROI, anti-bloat diagnosis & skill/rule optimizer | `docs/`, `AGENTS.md`, `~/.gemini/config/skills/` |
-| `bot-prism` | **Prism** | `agy` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | Prism antidetect browser & fingerprint automation, CDP session control, structured page extraction | `./workspace/` (bot-scoped outputs) |
+| `bot-chief` | **全局助理** | `antigravity` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | Global L1 personal assistant, Companion intent distillation, `paseo-long-session` auto-compact, cross-team routing (`ask_question` only) | None (Pure Global Router) |
+| `bot-moadmin` | **moAdmin** | `antigravity` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | Taskforce director; subagent orchestration (`invoke_subagent`, `send_message`, `manage_subagents`), `.t3/TASK_MANIFEST.md` | None (Pure Orchestrator; delegates all file writes to specialist bots) |
+| `bot-mocode` | **moCode** | `antigravity` / `gemini-4-hydrogen` | `.` | Fullstack developer & code architect; Antigravity native tools (`read_file`, `write_file`, `edit_file`, `run_command`) | `paseo-bots/`, `paseo-agy-acp/`, `scripts/`, `tools/`, `extensions/` |
+| `bot-modoc` | **moDoc** | `antigravity` / `gemini-4-hydrogen` | `.` | Architecture scribe & documentation steward; Antigravity native tools | `docs/`, `*.md` |
+| `bot-moci` | **MoCI** | `antigravity` / `gemini-4-hydrogen` | `.` | CI & QA gatekeeper; test execution, regression verification, 3-tier verdicts (`PASS`/`WARN`/`FAIL`) | `.github/`, `paseo-bots/`, `paseo-agy-acp/` (tests/reports only) |
+| `bot-mogit` | **MoGit** | `antigravity` / `gemini-4-hydrogen` | `.` | SCM & git hygiene specialist; commit squashing, hooks, branch lifecycle | `.git/`, `.githooks/`, `scripts/`, `CHANGELOG.md` |
+| `bot-modeep` | **MoDeep** | `antigravity` / `gemini-4-hydrogen` | `.` | Research scout & codebase reconnaissance (`read_file`, `search_web`) | `docs/research/` (read-only on code) |
+| `bot-mo` | **Mo** | `antigravity` / `gemini-4-hydrogen` | `.` | Meta-toolsmith; agent scaffolding & skill creation | `paseo-bots-plugin-settings/`, `~/.gemini/config/agents/`, `~/.gemini/config/skills/` |
+| `bot-rea` | **REA** | `antigravity` / `gemini-4-hydrogen` | `.` | Reverse engineering & security audit (`run_command`, `read_file`, CLI-first) | `docs/research/` (disallowed: `paseo-bots/`, `paseo-agy-acp/`, `.env`) |
+| `bot-x` | **X 订阅官** | `antigravity` / `gemini-3.8-flash` | `.` | X (Twitter) intelligence & daily digest (`read-twitter` skill, `ego-browser`) | `./workspace/` (bot-scoped outputs) |
+| `bot-xhs` | **小红书订阅官** | `antigravity` / `gemini-4-hydrogen` | `.` | Xiaohongshu feed & trend digest (`ego-browser`) | `./workspace/` (bot-scoped outputs) |
+| `bot-github` | **GitHub** | `antigravity` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | GitHub PR, Issues & notifications monitor (`gh` CLI read-only queries) | `./workspace/` (bot-scoped outputs) |
+| `bot-cleaner` | **会话提取官** | `antigravity` / `gemini-3.8-flash` | `.` | Multi-harness session telemetry & friction distiller | `./workspace/` (bot-scoped outputs) |
+| `bot-analyst` | **工作流架构师** | `antigravity` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | Execution ROI, anti-bloat diagnosis & skill/rule optimizer | `docs/`, `AGENTS.md`, `~/.gemini/config/skills/` |
+| `bot-prism` | **Prism** | `antigravity` / `gemini-4-hydrogen` (fallback: `gemini-3.8-flash`) | `.` | Prism antidetect browser & fingerprint automation, CDP session control, structured page extraction | `./workspace/` (bot-scoped outputs) |
 
 ---
 

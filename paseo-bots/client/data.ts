@@ -74,7 +74,8 @@ export function useProviders(host: BotHost) {
     enabled: !!host.api,
     staleTime: 60_000,
     queryFn: async () => {
-      const snapshot = await host.api!.providers.snapshot();
+      if (!host.api) return [];
+      const snapshot = await host.api.providers.snapshot();
       return (snapshot?.entries ?? []).filter((entry) => entry.enabled);
     },
   });

@@ -1,8 +1,8 @@
 ---
 doc_id: PASEO-BOTS-SHARD-06-CLIENT-UI-CDS
 status: CURRENT
-version: 1.0.0
-last_verified: 2026-11-19
+version: 1.2.0
+last_verified: 2026-11-23
 language: en-US
 ---
 
@@ -14,10 +14,12 @@ Parent index: [../INDEX.md](../INDEX.md). Governs the Claude Design System (CDS)
 
 - Color & surface tokens: `paseo-bots/client/native.ts` (`NativeTokens`, `nativeTokens`, `withAlpha`, `placeholderColor`)
 - Motion physics & accessibility: `paseo-bots/client/motion.ts` (`SPRING_BOUNCY`, `SPRING_SNAPPY`, `SPRING_GENTLE`, `SPRING_HEAVY_SNAP`, `CDS_EASE_OUT`, `CDS_WEB_CURVE`, `motionDuration`, `useReduceMotion`)
-- Keyboard & IME guard: `paseo-bots/client/keyboard.ts` (`isImeComposing`, `ImeLikeEvent`)
-- Stream scroll-pinning guard: `paseo-bots/client/chat/Stream.tsx` (`SCROLL_PIN_COOLDOWN_MS`, `canPinScrollToEnd`)
-- Shared controls & web bridge: `paseo-bots/client/panel/controls.tsx` (`Button`), `paseo-bots/client/web.ts`
-- Verification suite: `paseo-bots/tests/cds-ui.test.ts`, `paseo-bots/tests/chat-scroll.test.tsx`
+- Keyboard, viewport & IME guard: `paseo-bots/client/keyboard.ts` (`isImeComposing`, `ImeLikeEvent`, `useKeyboardHeight`, `useVisualViewport`, `computeVisualViewportState`, `WEB_KEYBOARD_MIN_HEIGHT`, `homeIndicatorInset`); `paseo-bots/client/launcher/useVisualViewport.ts` (thin re-export)
+- Stream scroll-pinning & dismiss model: `paseo-bots/client/chat/stream/model.ts` (`SCROLL_PIN_COOLDOWN_MS`, `canPinScrollToEnd`, `chatKeyboardDismissMode`; re-exported by `paseo-bots/client/chat/Stream.tsx`)
+- Feed & launcher containment: `paseo-bots/client/BotFeedPane.tsx`, `paseo-bots/client/launcher/BotLauncherCore.tsx`, `paseo-bots/client/Composer.tsx`
+- Compact menu containment & model settings: `paseo-bots/client/ui/Menu.tsx` (`MenuProvider`, `CompactSheet`), `paseo-bots/client/settings/PartnerSettingsModal.tsx`, `paseo-bots/client/panel/AgentSections.tsx` (`findMatchingProvider`, `InlineSelect`, `ModelSection`), `paseo-bots/client/data.ts` (`useProviders`)
+- Shared controls & web bridge: `paseo-bots/client/panel/controls.tsx` (`Button`), `paseo-bots/client/web.ts` (`scrollIntoView`, `scrollWebListToEnd`, `watchWebListSize`)
+- Verification suite: `paseo-bots/tests/cds-ui.test.ts`, `paseo-bots/tests/chat-scroll.test.tsx`, `paseo-bots/tests/bot-feed-scroll-keyboard.test.tsx`, `paseo-bots/tests/mobile-model-settings.test.tsx`
 
 ## 2. CDS Color Tokens & Role Separation
 
@@ -58,9 +60,21 @@ Parent index: [../INDEX.md](../INDEX.md). Governs the Claude Design System (CDS)
 1. **CJK IME Composition Guard (`isImeComposing`)**:
    - `isImeComposing(event)` in `paseo-bots/client/keyboard.ts` (and `chat/composer/logic.ts`) inspects `event.nativeEvent ?? event` and returns `true` when `isComposing` is truthy or `keyCode === 229` (WebKit/Safari IME marker).
    - Keyboard submit/navigation handlers in `Composer.tsx`, `FindBar.tsx`, `Stream.tsx`, and `BotLauncherCore.tsx` MUST return early when `isImeComposing(event)` is `true`.
-2. **Scroll-Pinning Cooldown (`canPinScrollToEnd`)**:
-   - `SCROLL_PIN_COOLDOWN_MS = 150` in `paseo-bots/client/chat/Stream.tsx`.
-   - `canPinScrollToEnd(lastUserScrollAt, now, cooldownMs)` returns `true` only when `now - lastUserScrollAt >= cooldownMs`, preventing auto-scroll fighting for `150ms` after user scroll input.
+2. **Scroll-Pinning Cooldown & Default-Latest Feed Pinning (`canPinScrollToEnd`, `BotFeedPane`)**:
+   - `SCROLL_PIN_COOLDOWN_MS = 150`, `canPinScrollToEnd`, and `chatKeyboardDismissMode` reside in `paseo-bots/client/chat/stream/model.ts` (re-exported by `paseo-bots/client/chat/Stream.tsx`) so `ChatStream` and `BotFeedPane` share one cooldown guard without duplicating logic or breaking `Stream` mocks.
+   - `BotFeedPane.tsx` clears `entries` and resets pagination/scroll refs immediately on `channelKind` / `channelId` / `humanOnly` switches, tracks `initialFollowRef` and `nearBottomRef` (`NEAR_BOTTOM_THRESHOLD = 64`), pins via `scrollWebListToEnd` + `watchWebListSize` (or `scrollToEnd`), restores `pendingPrependAnchorRef` offsets across `loadOlder`, and re-pins when `keyboardHeight` opens while following the bottom.
+3. **Unified Keyboard Viewport & `embedded` Containment**:
+   - `paseo-bots/client/keyboard.ts` unifies `useVisualViewport` (`computeVisualViewportState`, `WEB_KEYBOARD_MIN_HEIGHT = 80` across `resize`/`scroll`) and `useKeyboardHeight` (iOS `keyboardWillChangeFrame`/`keyboardWillHide`, Android `keyboardDidShow`/`keyboardDidHide`, Web `visualViewport.keyboardHeight`); `paseo-bots/client/launcher/useVisualViewport.ts` re-exports from `../keyboard` with zero duplicated logic.
+   - `BotLauncherCore` (`paseo-bots/client/launcher/BotLauncherCore.tsx`) applies standalone `paddingBottom` (`keyboardHeight` / safe-area fallback) strictly when `!embedded` so embedded host sheets never double-pad.
+   - `Composer.tsx` and `BotFeedPane` composer wrappers enforce `flexShrink: 0`, scroll focused web inputs via `scrollIntoView(..., "nearest")`, and set `keyboardDismissMode={chatKeyboardDismissMode(Platform.OS)}` (web `"none"`).
+4. **Scoped Compact Menu Containment (`PartnerSettingsModal`, `MenuProvider`, `CompactSheet`)**:
+   - `PartnerSettingsModal` (`paseo-bots/client/settings/PartnerSettingsModal.tsx`) sets `scrollable={false}` on `Modal.Content` and wraps its inner `ScrollView` (`keyboardShouldPersistTaps="handled"`) in `<MenuProvider colors={colors} compact={isCompact} inlineCompact>`.
+   - When `compact && inlineCompact` is active, `MenuProvider` (`paseo-bots/client/ui/Menu.tsx`) mounts `CompactSheet` as an in-tree `position: "absolute"` bottom overlay (`zIndex: 1000`, `maxHeight: "75%"`) instead of opening a second `<Modal>`, avoiding dual-`<Modal>` occlusion on mobile.
+5. **Model Settings Resilience & AGY Alias Resolution (`AgentSections.tsx`, `useProviders`)**:
+   - `useProviders` (`paseo-bots/client/data.ts`) pairs `enabled: !!host.api` with an explicit `if (!host.api) return [];` guard inside `queryFn` so offline hosts never dereference a missing `host.api`.
+   - `findMatchingProvider` (`paseo-bots/client/panel/AgentSections.tsx`) resolves exact `entry.provider === providerId` matches first, then falls back to `isAgyProvider` (`antigravity` / `agy` / `agy-acp` alias family); `isSameProvider` applies the same family equivalence for `agentProfiles`.
+   - `InlineSelect` sets `hasUnmatchedValue = !selected && Boolean(value)` to echo configured `label || value` with `statusWarning` border and `AlertCircle` icon rather than blanking out, and disables empty option lists (`isDisabled = Boolean(disabled || options.length === 0)`) with `opacity: 0.5`.
+   - `ModelSection` surfaces deterministic host/provider diagnostics and recovery controls: `CardNote` for `!host.online` (`panel.hostOfflineError`) or unmatched configured providers (`panel.providerUnavailable`), and `SettingsAction` with `providers.refetch()` retry (`chat.retry`) on `providers.isError` or empty `providerOptions`.
 
 ## 6. Conformance Matrix
 
@@ -69,4 +83,6 @@ Parent index: [../INDEX.md](../INDEX.md). Governs the Claude Design System (CDS)
 | `brandClay` / `warmPaper` tokens & 0 `#000000`/`#ffffff`/`#fff` | `paseo-bots/client/native.ts` | CURRENT | `npm --prefix paseo-bots test` (`tests/cds-ui.test.ts`) |
 | Single-stroke `Button` borders & `tabular-nums` | `paseo-bots/client/panel/controls.tsx` | CURRENT | `npm --prefix paseo-bots run typecheck` |
 | CDS springs, `CDS_EASE_OUT`, `CDS_WEB_CURVE`, `useReduceMotion` | `paseo-bots/client/motion.ts` | CURRENT | `npm --prefix paseo-bots test` (`tests/cds-ui.test.ts`) |
-| `isImeComposing` guard & `150ms` `canPinScrollToEnd` | `paseo-bots/client/keyboard.ts`, `paseo-bots/client/chat/Stream.tsx` | CURRENT | `npm --prefix paseo-bots test` (`tests/cds-ui.test.ts`, `tests/chat-scroll.test.tsx`) |
+| `isImeComposing`, unified `useKeyboardHeight` / `useVisualViewport`, `embedded` containment | `paseo-bots/client/keyboard.ts`, `paseo-bots/client/launcher/useVisualViewport.ts`, `paseo-bots/client/launcher/BotLauncherCore.tsx`, `paseo-bots/client/Composer.tsx` | CURRENT | `npm --prefix paseo-bots test` (`tests/cds-ui.test.ts`, `tests/bot-feed-scroll-keyboard.test.tsx`) |
+| `canPinScrollToEnd` (`150ms`), `chatKeyboardDismissMode`, `BotFeedPane` default-latest pinning | `paseo-bots/client/chat/stream/model.ts`, `paseo-bots/client/BotFeedPane.tsx` | CURRENT | `npm --prefix paseo-bots test` (`tests/chat-scroll.test.tsx`, `tests/bot-feed-scroll-keyboard.test.tsx`) |
+| Scoped `inlineCompact` `CompactSheet`, `InlineSelect`/`ModelSection` recovery, AGY alias match, `useProviders` offline guard | `paseo-bots/client/ui/Menu.tsx`, `paseo-bots/client/settings/PartnerSettingsModal.tsx`, `paseo-bots/client/panel/AgentSections.tsx`, `paseo-bots/client/data.ts` | CURRENT | `npm --prefix paseo-bots test` (`tests/mobile-model-settings.test.tsx`) |

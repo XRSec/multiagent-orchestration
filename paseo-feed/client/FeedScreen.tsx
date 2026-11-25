@@ -10,10 +10,12 @@ import { FlatList, Icon, Loading, useToast } from "@getpaseo/plugin/client/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   Text,
   View,
   type FlatList as NativeFlatList,
+  type LayoutChangeEvent,
   type ListRenderItem,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -33,19 +35,31 @@ import { ChannelList } from "./ChannelList.tsx";
 import { FeedComposer } from "./FeedComposer.tsx";
 import { FeedMessageCard } from "./FeedMessageCard.tsx";
 import {
+  canPinScrollToEnd,
+  computePrependRestoreOffset,
   createInitialPaginationState,
   filterFeedEntries,
   isEntryAppendedAtBottom,
+  isImeComposing,
+  isNearBottom,
   markAgentArchived,
   mergeFeedEntry,
   prependOlderEntries,
+  resolveContainerBottomPadding,
   resolveInitialChannel,
+  resolveKeyboardDismissMode,
   resolvePaginationFromPage,
   resolveHeaderChatAgentId,
   resolveTaskJumpTarget,
-  shouldTriggerLoadOlder,
+  shouldAutoLoadOlder,
   type FeedPaginationState,
 } from "./feed-helpers.ts";
+import {
+  homeIndicatorInset,
+  scrollWebListToEnd,
+  useKeyboardHeight,
+  watchWebListSize,
+} from "./keyboard.ts";
 import { createFeedPalette, FEED_STREAM_MAX_WIDTH, type FeedPalette } from "./styles.ts";
 
 const PAGE_SIZE = 20;
@@ -238,23 +252,40 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
   const channelSeqRef = useRef(0);
   const loadingOlderRef = useRef(false);
   const autoSyncedChannelsRef = useRef<Set<string>>(new Set());
-  const ignoreTopScrollUntilRef = useRef(0);
-  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialFollowRef = useRef(true);
+  const nearBottomRef = useRef(true);
+  const lastUserScrollAtRef = useRef(0);
+  const metricsRef = useRef({ offset: 0, content: 0, viewport: 0 });
+  const pendingPrependAnchorRef = useRef<{ prevContentHeight: number; prevScrollY: number } | null>(null);
+
+  const keyboardHeight = useKeyboardHeight();
+  const bottomInset = keyboardHeight > 0 ? 0 : homeIndicatorInset();
+
+  const markUserScroll = useCallback(() => {
+    initialFollowRef.current = false;
+    lastUserScrollAtRef.current = Date.now();
+  }, []);
 
   const fetchEntriesPage = useCallback((req: FeedEntriesRequest) => {
     const fn = rpcRef.current.callEntries as unknown as (input: FeedEntriesRequest) => Promise<FeedEntriesResponse>;
     return fn(req);
   }, []);
 
-  const requestScrollToEnd = useCallback((animated: boolean) => {
-    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
-    ignoreTopScrollUntilRef.current = Date.now() + 600;
-    scrollTimerRef.current = setTimeout(() => {
-      listRef.current?.scrollToEnd({ animated });
-    }, 60);
+  const pinToBottom = useCallback((animated: boolean) => {
+    const list = listRef.current;
+    if (!list) return;
+    if (Platform.OS === "web" && scrollWebListToEnd(list as unknown as { getScrollableNode?(): unknown }, animated)) {
+      return;
+    }
+    list.scrollToEnd({ animated });
   }, []);
 
-  useEffect(() => () => { if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current); }, []);
+  const requestScrollToEnd = useCallback((animated: boolean) => {
+    initialFollowRef.current = true;
+    lastUserScrollAtRef.current = 0;
+    nearBottomRef.current = true;
+    pinToBottom(animated);
+  }, [pinToBottom]);
 
   const loadChannels = useCallback(async () => {
     try {
@@ -295,6 +326,10 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
       const seq = background ? channelSeqRef.current : ++channelSeqRef.current;
       if (!background) {
         loadingOlderRef.current = false;
+        initialFollowRef.current = true;
+        nearBottomRef.current = true;
+        lastUserScrollAtRef.current = 0;
+        pendingPrependAnchorRef.current = null;
         setPagination(createInitialPaginationState());
         setLoadingEntries(true);
       }
@@ -310,7 +345,9 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
         if (channelSeqRef.current !== seq || !cur || cur.kind !== target.kind || cur.id !== target.id) return;
         setEntries(res.entries);
         setPagination(resolvePaginationFromPage(res));
-        if (res.entries.length > 0) requestScrollToEnd(false);
+        if (res.entries.length > 0 && (!background || initialFollowRef.current || nearBottomRef.current)) {
+          requestScrollToEnd(false);
+        }
         if (background && (res.syncedAgents > 0 || res.entries.length > 0)) void loadChannels();
         const total = typeof res.totalPointers === "number" ? res.totalPointers : res.entries.length;
         const chKey = `${target.kind}:${target.id}`;
@@ -329,6 +366,11 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
 
   useEffect(() => {
     setCreatedAgentId(null);
+    initialFollowRef.current = true;
+    nearBottomRef.current = true;
+    lastUserScrollAtRef.current = 0;
+    pendingPrependAnchorRef.current = null;
+    metricsRef.current = { offset: 0, content: 0, viewport: 0 };
     if (!selected) {
       channelSeqRef.current += 1;
       setEntries([]);
@@ -355,7 +397,12 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
         humanOnly: humanOnlyRef.current,
       });
       if (channelSeqRef.current !== seq) return;
-      ignoreTopScrollUntilRef.current = Date.now() + 400;
+      initialFollowRef.current = false;
+      nearBottomRef.current = false;
+      pendingPrependAnchorRef.current = {
+        prevContentHeight: metricsRef.current.content,
+        prevScrollY: metricsRef.current.offset,
+      };
       setEntries((prev) => prependOlderEntries(prev, res.entries));
       setPagination((prev) => resolvePaginationFromPage(res, prev.totalPointers));
     } catch (error) {
@@ -369,10 +416,26 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
   }, [fetchEntriesPage, toast]);
 
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (Date.now() < ignoreTopScrollUntilRef.current) return;
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    if (contentSize.height <= layoutMeasurement.height) return;
-    if (shouldTriggerLoadOlder(paginationRef.current, contentOffset.y, LOAD_OLDER_SCROLL_THRESHOLD)) {
+    metricsRef.current = {
+      offset: contentOffset.y,
+      content: contentSize.height,
+      viewport: layoutMeasurement.height,
+    };
+    const near = isNearBottom(contentOffset.y, contentSize.height, layoutMeasurement.height);
+    if (!initialFollowRef.current || near) {
+      nearBottomRef.current = near;
+    }
+    if (
+      shouldAutoLoadOlder({
+        initialFollow: initialFollowRef.current,
+        pagination: paginationRef.current,
+        scrollOffsetY: contentOffset.y,
+        contentHeight: contentSize.height,
+        viewportHeight: layoutMeasurement.height,
+        thresholdPx: LOAD_OLDER_SCROLL_THRESHOLD,
+      })
+    ) {
       void loadOlder();
     }
   }, [loadOlder]);
@@ -389,7 +452,9 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
       setEntries(next);
       if (appended) {
         setPagination((prev) => ({ ...prev, totalPointers: Math.max(prev.totalPointers + 1, next.length) }));
-        requestScrollToEnd(true);
+        if (initialFollowRef.current || nearBottomRef.current) {
+          requestScrollToEnd(true);
+        }
       }
     } else if (event.kind === "agent_archived" && event.agentId) {
       setEntries((prev) => markAgentArchived(prev, event.agentId!));
@@ -404,6 +469,65 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
   useSubscription(feedUpdatesSub, emptySubInput, handleUpdateEvent);
 
   const visibleEntries = useMemo(() => filterFeedEntries(entries, humanOnly), [entries, humanOnly]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || loadingEntries || visibleEntries.length === 0) return;
+    return watchWebListSize(listRef.current as unknown as { getScrollableNode?(): unknown } | null, () => {
+      if (
+        !pendingPrependAnchorRef.current &&
+        (initialFollowRef.current || nearBottomRef.current) &&
+        canPinScrollToEnd(lastUserScrollAtRef.current)
+      ) {
+        pinToBottom(false);
+      }
+    });
+  }, [loadingEntries, visibleEntries.length, selected?.kind, selected?.id, humanOnly, pinToBottom]);
+
+  const prevKeyboardHeightRef = useRef(keyboardHeight);
+  useEffect(() => {
+    const wasClosed = prevKeyboardHeightRef.current === 0;
+    prevKeyboardHeightRef.current = keyboardHeight;
+    if (!wasClosed || keyboardHeight <= 0 || visibleEntries.length === 0 || pendingPrependAnchorRef.current) return;
+    if ((initialFollowRef.current || nearBottomRef.current) && canPinScrollToEnd(lastUserScrollAtRef.current)) {
+      const timer = setTimeout(() => pinToBottom(false), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [keyboardHeight, visibleEntries.length, pinToBottom]);
+
+  const handleContentSizeChange = useCallback((_width: number, nextHeight: number) => {
+    const prevHeight = metricsRef.current.content;
+    metricsRef.current.content = nextHeight;
+    const anchor = pendingPrependAnchorRef.current;
+    if (anchor) {
+      const restored = computePrependRestoreOffset(anchor.prevScrollY, anchor.prevContentHeight, nextHeight);
+      if (restored !== null) {
+        pendingPrependAnchorRef.current = null;
+        listRef.current?.scrollToOffset({ offset: restored, animated: false });
+        metricsRef.current.offset = restored;
+      }
+      return;
+    }
+    if (
+      visibleEntries.length > 0 &&
+      nextHeight !== prevHeight &&
+      (initialFollowRef.current || nearBottomRef.current) &&
+      canPinScrollToEnd(lastUserScrollAtRef.current)
+    ) {
+      pinToBottom(false);
+    }
+  }, [pinToBottom, visibleEntries.length]);
+
+  const handleListLayout = useCallback((event: LayoutChangeEvent) => {
+    metricsRef.current.viewport = event.nativeEvent.layout.height;
+    if (
+      !pendingPrependAnchorRef.current &&
+      visibleEntries.length > 0 &&
+      (initialFollowRef.current || nearBottomRef.current) &&
+      canPinScrollToEnd(lastUserScrollAtRef.current)
+    ) {
+      pinToBottom(false);
+    }
+  }, [pinToBottom, visibleEntries.length]);
   const activeChannel = useMemo(
     () => (selected ? (channels.find((ch) => ch.kind === selected.kind && ch.id === selected.id) ?? null) : null),
     [channels, selected],
@@ -463,7 +587,14 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
   const showStream = !layout.compact || mobileView === "stream";
 
   return (
-    <View style={{ flex: 1, flexDirection: "row", backgroundColor: palette.canvasBg }}>
+    <View
+      style={{
+        flex: 1,
+        flexDirection: "row",
+        backgroundColor: palette.canvasBg,
+        paddingBottom: resolveContainerBottomPadding(keyboardHeight, bottomInset),
+      }}
+    >
       {showRail ? (
         <ChannelList
           channels={channels}
@@ -493,34 +624,58 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
           {loadingEntries && visibleEntries.length === 0 ? (
             <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}><Loading /></View>
           ) : (
-            <FlatList
-              ref={listRef}
-              data={visibleEntries}
-              keyExtractor={(item) => item.id}
-              renderItem={renderEntry}
-              onScroll={handleScroll}
-              scrollEventThrottle={100}
-              initialNumToRender={10}
-              maxToRenderPerBatch={10}
-              windowSize={7}
-              ListHeaderComponent={
-                <StreamListHeader
-                  hasOlder={pagination.hasOlder}
-                  loadingOlder={pagination.loadingOlder}
-                  hasEntries={visibleEntries.length > 0}
-                  palette={palette}
-                  onLoadOlder={() => void loadOlder()}
-                />
-              }
-              ListEmptyComponent={
-                <StreamEmptyState activeChannel={activeChannel} humanOnly={humanOnly} palette={palette} />
-              }
-              style={{ flex: 1 }}
-              contentContainerStyle={{
-                paddingHorizontal: 16, paddingVertical: 16, width: "100%",
-                maxWidth: FEED_STREAM_MAX_WIDTH, alignSelf: "center",
-              }}
-            />
+            <View
+              style={{ flex: 1, minHeight: 0 }}
+              {...(Platform.OS === "web"
+                ? {
+                    onWheel: markUserScroll,
+                    onTouchStart: markUserScroll,
+                    onPointerDown: markUserScroll,
+                    onKeyDown: (event: { key?: string; isComposing?: boolean; keyCode?: number; nativeEvent?: { key?: string; isComposing?: boolean; keyCode?: number } }) => {
+                      if (isImeComposing(event)) return;
+                      if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key ?? event.nativeEvent?.key ?? "")) {
+                        markUserScroll();
+                      }
+                    },
+                  }
+                : {})}
+            >
+              <FlatList
+                key={selected ? `${selected.kind}:${selected.id}:${humanOnly ? "1" : "0"}` : "none"}
+                ref={listRef}
+                data={visibleEntries}
+                keyExtractor={(item) => item.id}
+                renderItem={renderEntry}
+                onScroll={handleScroll}
+                onScrollBeginDrag={markUserScroll}
+                onContentSizeChange={handleContentSizeChange}
+                onLayout={handleListLayout}
+                scrollEventThrottle={16}
+                initialNumToRender={Math.max(20, PAGE_SIZE)}
+                maxToRenderPerBatch={20}
+                windowSize={10}
+                maintainVisibleContentPosition={Platform.OS === "ios" ? { minIndexForVisible: 0, autoscrollToTopThreshold: 0 } : undefined}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={resolveKeyboardDismissMode(Platform.OS)}
+                ListHeaderComponent={
+                  <StreamListHeader
+                    hasOlder={pagination.hasOlder}
+                    loadingOlder={pagination.loadingOlder}
+                    hasEntries={visibleEntries.length > 0}
+                    palette={palette}
+                    onLoadOlder={() => void loadOlder()}
+                  />
+                }
+                ListEmptyComponent={
+                  <StreamEmptyState activeChannel={activeChannel} humanOnly={humanOnly} palette={palette} />
+                }
+                style={{ flex: 1 }}
+                contentContainerStyle={{
+                  paddingHorizontal: 16, paddingVertical: 16, width: "100%",
+                  maxWidth: FEED_STREAM_MAX_WIDTH, alignSelf: "center",
+                }}
+              />
+            </View>
           )}
           <FeedComposer
             channel={activeChannel}
@@ -530,7 +685,15 @@ export function FeedScreen({ theme, host, layout, navigation, params }: PluginSc
               return rpcRef.current.callSend({ channelKind: activeChannel.kind, channelId: activeChannel.id, text });
             }}
             onOpenAgent={openAgentById}
+            onFocusInput={() => {
+              if ((initialFollowRef.current || nearBottomRef.current) && visibleEntries.length > 0 && canPinScrollToEnd(lastUserScrollAtRef.current)) {
+                pinToBottom(false);
+              }
+            }}
             onSent={(res) => {
+              initialFollowRef.current = true;
+              nearBottomRef.current = true;
+              lastUserScrollAtRef.current = 0;
               if (res.reason === "created") {
                 if (res.agentId) setCreatedAgentId(res.agentId);
                 if (activeChannel) {

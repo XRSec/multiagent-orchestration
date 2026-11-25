@@ -70,6 +70,7 @@ import {
   parseIntentAnalysis,
   parseReplySummary,
   readShadowSession,
+  resolveCompanionModel,
 } from "../server/companion-session";
 import { turnEnded } from "../server/activity";
 import type { BotsHost } from "../server/host";
@@ -1489,6 +1490,15 @@ Turn 2 compiled prompt
       expect(archivedAgents).toContain("companion-distill-timeout-1");
       ledger = await readShadowSession(mainAgentId);
       expect(ledger?.companionAgentId).toBeNull();
+    });
+
+    it("resolves built-in antigravity bots to companion gemini-3.8-flash on the same provider", () => {
+      const bot = { id: "bot-mocode", provider: "antigravity", model: "gemini-4-hydrogen" } as any;
+      expect(resolveCompanionModel(bot)).toEqual({
+        provider: "antigravity",
+        model: "gemini-3.8-flash",
+        thinkingOptionId: "medium",
+      });
     });
   });
 });

@@ -1,8 +1,8 @@
 ---
 doc_id: PASEO-BOTS-INDEX
 status: CURRENT
-version: 1.3.0
-last_verified: 2026-11-21
+version: 1.3.1
+last_verified: 2026-11-23
 language: en-US
 ---
 
@@ -31,7 +31,7 @@ Parent router: [../INDEX.md](../INDEX.md). Governs the multi-agent orchestration
 | [03-workflow-engine-and-routing.md](shards/03-workflow-engine-and-routing.md) | 3-tier routing (`resolveStepEngine`), `L1 -> L2 -> L3`, Kahn DAG waves, `workflowRunRpc` (`startWorkflowFromRpc`, `idempotencyKey`), `resume_workflow`, stage `groupId`/`sourceChatId` & workflow labels, `<task_brief>` / `<worker_handoff>`, stall/hard timeouts, orphan reconciliation | Editing `shared/workflows.ts`, `shared/handoff.ts`, `server/workflow-runner.ts`, `server/tools/workflows.ts`, `server/tools/bots.ts` |
 | [04-task-pyramid-and-settlement.md](shards/04-task-pyramid-and-settlement.md) | L1/L2/L3 visibility pyramid, 17 `BOT_TOOLS`, `CompanionSessionManager` (`memoryPrefix` retention), `O_EXCL` file leases (`leases.ts`), `TaskRecord.sourceChatId` & monotonic settlement (`tasks.ts`), idempotent `TaskCard` (`groupId`/`sourceChatId`), restart recovery | Editing `server/tasks.ts`, `server/leases.ts`, `server/task-cards.ts`, `server/task-turns.ts`, `server/companion-session.ts`, `server/tools/`, `shared/task-card.ts` |
 | [05-fallback-routines-and-surfaces.md](shards/05-fallback-routines-and-surfaces.md) | Same-provider `runWithModelFallback`, `RoutineScheduler` + `connectSchedulerHost` auth/backoff, 2-stage friction analytics, 4-pillar cross-navigation (`screen-navigation.ts`, `WorkflowsScreen` inline runner, `TaskCardView`, `TeamMap`, `BotFeedPane`, `BotsSurfaceReady`, slash commands), unified `agent.open.before` (`bot-lifecycle.ts`), single-index `feed-bridge.ts` (`"workflow"` source), `scripts/paseo-chief-dispatch.mjs` | Editing `server/chats.ts`, `server/connection.ts`, `server/scheduler.ts`, `server/bot-lifecycle.ts`, `server/mcp-oauth-lifecycle.ts`, `server/feed-bridge.ts`, `shared/rpc.ts`, `shared/feed-view.ts`, `client/`, `index.client.tsx` |
-| [06-client-ui-and-cds.md](shards/06-client-ui-and-cds.md) | CDS color tokens (`nativeTokens`, `brandClay`, `warmPaper`), single-stroke borders, `tabular-nums`, calibrated springs/easings (`useReduceMotion`), CJK IME (`isImeComposing`) & scroll-pinning (`canPinScrollToEnd`) edge guards | Editing `client/native.ts`, `client/motion.ts`, `client/keyboard.ts`, `client/chat/Stream.tsx`, `client/panel/controls.tsx`, `client/web.ts` |
+| [06-client-ui-and-cds.md](shards/06-client-ui-and-cds.md) | CDS color tokens (`nativeTokens`, `brandClay`, `warmPaper`), single-stroke borders, `tabular-nums`, calibrated springs/easings (`useReduceMotion`), unified `useKeyboardHeight`/`useVisualViewport`, CJK IME (`isImeComposing`), scroll-pinning (`canPinScrollToEnd`, `BotFeedPane`), `BotLauncherCore` `embedded` containment, `MenuProvider` `inlineCompact` (`CompactSheet`), and `ModelSection`/`InlineSelect`/`useProviders` resilience | Editing `client/native.ts`, `client/motion.ts`, `client/keyboard.ts`, `client/chat/stream/model.ts`, `client/BotFeedPane.tsx`, `client/launcher/BotLauncherCore.tsx`, `client/panel/controls.tsx`, `client/panel/AgentSections.tsx`, `client/settings/PartnerSettingsModal.tsx`, `client/ui/Menu.tsx`, `client/data.ts`, `client/web.ts` |
 
 Related specs: decoupled micro-plugins [../paseo-feed/INDEX.md](../paseo-feed/INDEX.md) and shared X.com research skill [../../../paseo-bots-plugin-data/library/skills/x-research/SKILL.md](../../../paseo-bots-plugin-data/library/skills/x-research/SKILL.md).
 

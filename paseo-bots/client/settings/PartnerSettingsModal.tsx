@@ -18,8 +18,10 @@ import { useT } from "../i18n";
 import { isImeComposing } from "../keyboard";
 import { nativeTokens } from "../native";
 import { BotPanel, type PanelProps, type SectionId } from "../panel/BotPanel";
+import { useCompact } from "../panel/controls";
 import { TeamEditorForm } from "../teams/TeamSheet";
 import { ui } from "../typography";
+import { MenuProvider } from "../ui/Menu";
 import { WorkflowListEditor } from "./WorkflowEditor";
 
 type Colors = PluginTheme["colors"];
@@ -32,6 +34,7 @@ export type PartnerSettingsTarget =
 export interface PartnerSettingsModalProps {
   open: boolean;
   colors: Colors;
+  compact?: boolean;
   groups: readonly BotGroup[];
   bots: readonly Bot[];
   localHost: LocalHost;
@@ -53,6 +56,7 @@ export interface PartnerSettingsModalProps {
 export function PartnerSettingsModal({
   open,
   colors,
+  compact,
   groups,
   bots,
   localHost,
@@ -71,6 +75,7 @@ export function PartnerSettingsModal({
   onSaveGlobalWorkflows,
 }: PartnerSettingsModalProps) {
   const { t } = useT();
+  const isCompact = useCompact(compact);
   const tokens = nativeTokens(colors);
   const liveBots = useMemo(() => bots.filter((b) => !b.archived), [bots]);
 
@@ -131,95 +136,104 @@ export function PartnerSettingsModal({
 
   return (
     <Modal title={t("partnerSettings.title")} open={open} onOpenChange={(next) => !next && handleClose()}>
-      <Modal.Content contentContainerStyle={{ gap: 12 }}>
-        {(groups.length > 0 || liveBots.length > 0 || onSaveGlobalWorkflows) ? (
-          <View style={{ gap: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-            {groups.length > 0 ? (
-              <TargetSelectorRow
-                label={t("partnerSettings.teamsGroup")}
-                colors={colors}
-                items={groups.map((g) => ({
-                  key: `team:${g.id}`,
-                  label: g.name || t("teams.untitledTeam"),
-                  active: target?.kind === "team" && target.id === g.id,
-                  icon: <TeamLogo group={g} size={18} dark={tokens.dark} />,
-                  onPress: () => selectTarget({ kind: "team", id: g.id }),
-                }))}
-              />
+      <Modal.Content scrollable={false} contentContainerStyle={{ padding: 0, gap: 0 }}>
+        <MenuProvider colors={colors} compact={isCompact} inlineCompact>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            style={{ flex: 1 }}
+            contentContainerStyle={{ padding: isCompact ? 16 : 24, gap: 12 }}
+          >
+            {(groups.length > 0 || liveBots.length > 0 || onSaveGlobalWorkflows) ? (
+              <View style={{ gap: 8, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                {groups.length > 0 ? (
+                  <TargetSelectorRow
+                    label={t("partnerSettings.teamsGroup")}
+                    colors={colors}
+                    items={groups.map((g) => ({
+                      key: `team:${g.id}`,
+                      label: g.name || t("teams.untitledTeam"),
+                      active: target?.kind === "team" && target.id === g.id,
+                      icon: <TeamLogo group={g} size={18} dark={tokens.dark} />,
+                      onPress: () => selectTarget({ kind: "team", id: g.id }),
+                    }))}
+                  />
+                ) : null}
+
+                {liveBots.length > 0 ? (
+                  <TargetSelectorRow
+                    label={t("partnerSettings.partnersGroup")}
+                    colors={colors}
+                    items={liveBots.map((b) => ({
+                      key: `bot:${b.id}`,
+                      label: b.name || t("panel.untitledBot"),
+                      active: target?.kind === "bot" && target.id === b.id,
+                      icon: <Avatar avatar={b.avatar} size={18} dark={tokens.dark} />,
+                      onPress: () => selectTarget({ kind: "bot", id: b.id }),
+                    }))}
+                  />
+                ) : null}
+
+                {onSaveGlobalWorkflows ? (
+                  <TargetSelectorRow
+                    label={t("workflows.templatesGroup")}
+                    colors={colors}
+                    items={[
+                      {
+                        key: "global:workflows",
+                        label: t("workflows.globalTemplates"),
+                        active: target?.kind === "workflows",
+                        icon: <Icon name="GitBranch" size={16} color={target?.kind === "workflows" ? colors.accent : colors.foregroundMuted} />,
+                        onPress: () => selectTarget({ kind: "workflows" }),
+                      },
+                    ]}
+                  />
+                ) : null}
+              </View>
             ) : null}
 
-            {liveBots.length > 0 ? (
-              <TargetSelectorRow
-                label={t("partnerSettings.partnersGroup")}
+            {target?.kind === "workflows" && onSaveGlobalWorkflows ? (
+              <WorkflowListEditor
                 colors={colors}
-                items={liveBots.map((b) => ({
-                  key: `bot:${b.id}`,
-                  label: b.name || t("panel.untitledBot"),
-                  active: target?.kind === "bot" && target.id === b.id,
-                  icon: <Avatar avatar={b.avatar} size={18} dark={tokens.dark} />,
-                  onPress: () => selectTarget({ kind: "bot", id: b.id }),
-                }))}
+                title={t("workflows.globalTitle")}
+                info={t("workflows.globalInfo")}
+                workflows={globalWorkflows ?? []}
+                bots={liveBots}
+                onChange={onSaveGlobalWorkflows}
               />
-            ) : null}
-
-            {onSaveGlobalWorkflows ? (
-              <TargetSelectorRow
-                label={t("workflows.templatesGroup")}
+            ) : selectedGroup ? (
+              <TeamEditorForm
+                key={selectedGroup.id}
                 colors={colors}
-                items={[
-                  {
-                    key: "global:workflows",
-                    label: t("workflows.globalTemplates"),
-                    active: target?.kind === "workflows",
-                    icon: <Icon name="GitBranch" size={16} color={target?.kind === "workflows" ? colors.accent : colors.foregroundMuted} />,
-                    onPress: () => selectTarget({ kind: "workflows" }),
-                  },
-                ]}
+                group={selectedGroup}
+                groups={groups}
+                bots={bots}
+                onClose={handleClose}
+                onSave={(draft) => onSaveTeam(selectedGroup.id, draft)}
+                onDelete={onDeleteTeam ? () => onDeleteTeam(selectedGroup) : undefined}
               />
-            ) : null}
-          </View>
-        ) : null}
-
-        {target?.kind === "workflows" && onSaveGlobalWorkflows ? (
-          <WorkflowListEditor
-            colors={colors}
-            title={t("workflows.globalTitle")}
-            info={t("workflows.globalInfo")}
-            workflows={globalWorkflows ?? []}
-            bots={liveBots}
-            onChange={onSaveGlobalWorkflows}
-          />
-        ) : selectedGroup ? (
-          <TeamEditorForm
-            key={selectedGroup.id}
-            colors={colors}
-            group={selectedGroup}
-            groups={groups}
-            bots={bots}
-            onClose={handleClose}
-            onSave={(draft) => onSaveTeam(selectedGroup.id, draft)}
-            onDelete={onDeleteTeam ? () => onDeleteTeam(selectedGroup) : undefined}
-          />
-        ) : botPanelProps ? (
-          <BotPanel
-            key={selectedBot!.id}
-            {...botPanelProps}
-            section={botSection}
-            onSection={setBotSection}
-            onClose={handleClose}
-            bottomInset={0}
-            embedded
-          />
-        ) : (
-          <View style={{ paddingVertical: 32, alignItems: "center", gap: 8 }}>
-            <Text style={{ fontSize: ui(14), fontWeight: "600", color: colors.foreground }}>
-              {t("partnerSettings.emptyTitle")}
-            </Text>
-            <Text style={{ fontSize: ui(13), color: colors.foregroundMuted, textAlign: "center" }}>
-              {t("partnerSettings.emptyDesc")}
-            </Text>
-          </View>
-        )}
+            ) : botPanelProps ? (
+              <BotPanel
+                key={selectedBot!.id}
+                {...botPanelProps}
+                compact={isCompact}
+                section={botSection}
+                onSection={setBotSection}
+                onClose={handleClose}
+                bottomInset={0}
+                embedded
+              />
+            ) : (
+              <View style={{ paddingVertical: 32, alignItems: "center", gap: 8 }}>
+                <Text style={{ fontSize: ui(14), fontWeight: "600", color: colors.foreground }}>
+                  {t("partnerSettings.emptyTitle")}
+                </Text>
+                <Text style={{ fontSize: ui(13), color: colors.foregroundMuted, textAlign: "center" }}>
+                  {t("partnerSettings.emptyDesc")}
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+        </MenuProvider>
       </Modal.Content>
     </Modal>
   );

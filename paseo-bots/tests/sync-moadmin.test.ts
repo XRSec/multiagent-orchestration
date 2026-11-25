@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { syncBotToAgyAgent } from "../server/agy-agents";
+import { isAgyProvider } from "../shared/bot-tools";
 
 describe("Sync bot-moadmin configuration", () => {
   it("verifies bot-moadmin baseTools and syncs into isolated agy agents directory", async () => {
@@ -24,7 +25,7 @@ describe("Sync bot-moadmin configuration", () => {
     moadmin.baseTools = targetTools;
     if (moadmin.providerConfigs) {
       for (const cfg of moadmin.providerConfigs) {
-        if (cfg.provider === "agy") {
+        if (isAgyProvider(cfg.provider)) {
           cfg.baseTools = targetTools;
         }
       }

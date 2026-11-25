@@ -149,8 +149,8 @@ describe("agy-agents", () => {
     expect(existsSync(join(agentsDir, "bot-claude-1.md"))).toBe(false);
   });
 
-  it("resolves agyAgent to bot.id and sets providerOptions.agent while omitting systemPrompt for agy and agy-acp", () => {
-    for (const provider of ["agy", "agy-acp"] as const) {
+  it("resolves agyAgent to bot.id and sets providerOptions.agent while omitting systemPrompt for antigravity, agy, and agy-acp", () => {
+    for (const provider of ["antigravity", "agy", "agy-acp"] as const) {
       const bot = makeBot({ provider });
       expect(resolveAgyAgent(bot)).toBe(bot.id);
       const config = buildAgentConfig(bot, EMPTY_LIBRARY, "flash", "sys");

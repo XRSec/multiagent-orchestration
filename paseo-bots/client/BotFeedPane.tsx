@@ -16,12 +16,15 @@ import { botFeedReadRpc } from "../shared/rpc";
 import { Avatar } from "./Avatar";
 import { formatPluralCount, formatRelativeTime, useT } from "./i18n";
 import { isImeComposing } from "./keyboard";
+import { canPinScrollToEnd, chatKeyboardDismissMode } from "./chat/stream/model";
 import { Markdown } from "./Markdown";
 import { CONTENT_MAX_WIDTH, errorText, nativeTokens, withAlpha } from "./native";
 import { ui } from "./typography";
 import { tooltip } from "./ui/Tooltip";
+import { scrollIntoView, scrollWebListToEnd, watchWebListSize } from "./web";
 
 const FEED_PAGE_SIZE = 20;
+const NEAR_BOTTOM_THRESHOLD = 64;
 const POST_SEND_REFRESH_DELAYS_MS = [2500, 6500] as const;
 
 type Colors = PluginTheme["colors"];
@@ -36,6 +39,7 @@ export interface BotFeedPaneProps {
   bots?: readonly Bot[];
   compact: boolean;
   bottomInset: number;
+  keyboardHeight?: number;
   onOpenTask(agentId: string, botId: string): void;
   onSendMessage(text: string): Promise<void> | void;
   onBack(): void;
@@ -54,6 +58,7 @@ export function BotFeedPane({
   bots = [],
   compact,
   bottomInset,
+  keyboardHeight = 0,
   onOpenTask,
   onSendMessage,
   onBack,
@@ -81,14 +86,35 @@ export function BotFeedPane({
   const scrollRef = useRef<{
     scrollToEnd?: (options?: { animated?: boolean }) => void;
     scrollTo?: (options: { y: number; animated?: boolean }) => void;
+    getScrollableNode?: () => unknown;
   } | null>(null);
   const requestEpoch = useRef(0);
   const scrollOffsetRef = useRef(0);
   const contentHeightRef = useRef(0);
-  const shouldScrollToBottomRef = useRef(true);
+  const initialFollowRef = useRef(true);
+  const nearBottomRef = useRef(true);
+  const lastUserScrollAtRef = useRef(0);
   const lastBottomIdRef = useRef<string | null>(null);
   const pendingPrependAnchorRef = useRef<{ prevContentHeight: number; prevScrollY: number } | null>(null);
   const postSendTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+
+  const markUserScroll = useCallback(() => {
+    initialFollowRef.current = false;
+    lastUserScrollAtRef.current = Date.now();
+  }, []);
+
+  const pinToBottom = useCallback((animated = false) => {
+    const node = scrollRef.current;
+    if (!node) return;
+    if (Platform.OS === "web" && typeof node.getScrollableNode === "function") {
+      const dom = node.getScrollableNode();
+      if (dom) {
+        scrollWebListToEnd(node as { getScrollableNode(): unknown }, animated);
+        return;
+      }
+    }
+    node.scrollToEnd?.({ animated });
+  }, []);
 
   const clearPostSendTimers = useCallback(() => {
     for (const timer of postSendTimersRef.current) {
@@ -108,7 +134,9 @@ export function BotFeedPane({
       if (isRefresh) setRefreshing(true);
       else {
         setLoading(true);
-        shouldScrollToBottomRef.current = true;
+        initialFollowRef.current = true;
+        nearBottomRef.current = true;
+        lastUserScrollAtRef.current = 0;
       }
       setLoadError(null);
       try {
@@ -116,8 +144,10 @@ export function BotFeedPane({
         if (epoch !== requestEpoch.current) return;
         const nextEntries = res.entries ?? [];
         const nextBottomId = nextEntries.length > 0 ? nextEntries[nextEntries.length - 1]!.id : null;
-        if (!isRefresh || forceScrollBottom || (nextBottomId && nextBottomId !== lastBottomIdRef.current)) {
-          shouldScrollToBottomRef.current = true;
+        if (!isRefresh || forceScrollBottom) {
+          initialFollowRef.current = true;
+          nearBottomRef.current = true;
+          lastUserScrollAtRef.current = 0;
         }
         lastBottomIdRef.current = nextBottomId;
         pendingPrependAnchorRef.current = null;
@@ -143,6 +173,10 @@ export function BotFeedPane({
     pendingPrependAnchorRef.current = null;
     scrollOffsetRef.current = 0;
     contentHeightRef.current = 0;
+    initialFollowRef.current = true;
+    nearBottomRef.current = true;
+    lastUserScrollAtRef.current = 0;
+    setEntries([]);
     setHasOlder(false);
     setNextCursor(null);
     setTotalPointers(0);
@@ -152,13 +186,35 @@ export function BotFeedPane({
 
   const lastEntryId = entries.length > 0 ? entries[entries.length - 1]!.id : null;
   useEffect(() => {
-    if (!lastEntryId || !shouldScrollToBottomRef.current) return;
-    shouldScrollToBottomRef.current = false;
-    const timer = setTimeout(() => {
-      scrollRef.current?.scrollToEnd?.({ animated: false });
-    }, 30);
-    return () => clearTimeout(timer);
-  }, [lastEntryId, channelKind, channelId]);
+    if (!lastEntryId || pendingPrependAnchorRef.current) return;
+    if ((initialFollowRef.current || nearBottomRef.current) && canPinScrollToEnd(lastUserScrollAtRef.current)) {
+      pinToBottom(false);
+    }
+  }, [lastEntryId, channelKind, channelId, humanOnly, entries.length, pinToBottom]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || loading || entries.length === 0) return;
+    return watchWebListSize(scrollRef.current as { getScrollableNode(): unknown } | null, () => {
+      if (
+        !pendingPrependAnchorRef.current &&
+        (initialFollowRef.current || nearBottomRef.current) &&
+        canPinScrollToEnd(lastUserScrollAtRef.current)
+      ) {
+        pinToBottom(false);
+      }
+    });
+  }, [loading, entries.length, channelKind, channelId, pinToBottom]);
+
+  const prevKeyboardHeightRef = useRef(keyboardHeight);
+  useEffect(() => {
+    const wasClosed = prevKeyboardHeightRef.current === 0;
+    prevKeyboardHeightRef.current = keyboardHeight;
+    if (!wasClosed || keyboardHeight <= 0 || entries.length === 0 || pendingPrependAnchorRef.current) return;
+    if ((initialFollowRef.current || nearBottomRef.current) && canPinScrollToEnd(lastUserScrollAtRef.current)) {
+      const timer = setTimeout(() => pinToBottom(false), 50);
+      return () => clearTimeout(timer);
+    }
+  }, [keyboardHeight, entries.length, pinToBottom]);
 
   const loadOlder = useCallback(async () => {
     if (loadingOlder || !hasOlder || !nextCursor) return;
@@ -174,7 +230,8 @@ export function BotFeedPane({
       });
       if (epoch !== requestEpoch.current) return;
       const olderEntries = res.entries ?? [];
-      shouldScrollToBottomRef.current = false;
+      initialFollowRef.current = false;
+      nearBottomRef.current = false;
       pendingPrependAnchorRef.current = {
         prevContentHeight: contentHeightRef.current,
         prevScrollY: scrollOffsetRef.current,
@@ -227,6 +284,8 @@ export function BotFeedPane({
 
   const botById = new Map(bots.map((bot) => [bot.id, bot]));
 
+  const scrollListPlatform = Platform.OS === "ios" ? "ios" : Platform.OS === "android" ? "android" : "web";
+
   return (
     <View style={{ flex: 1, backgroundColor: colors.surface0 }}>
       <FeedHeader
@@ -246,32 +305,80 @@ export function BotFeedPane({
         onOpenTeam={onOpenTeam}
       />
 
-      <ScrollView
-        ref={scrollRef as never}
-        style={{ flex: 1 }}
-        keyboardShouldPersistTaps="handled"
-        scrollEventThrottle={16}
-        onScroll={(event) => {
-          scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
-        }}
-        onContentSizeChange={(_w, nextHeight) => {
-          const anchor = pendingPrependAnchorRef.current;
-          if (anchor) {
-            pendingPrependAnchorRef.current = null;
-            if (nextHeight > anchor.prevContentHeight) {
-              const delta = nextHeight - anchor.prevContentHeight;
-              scrollRef.current?.scrollTo?.({ y: anchor.prevScrollY + delta, animated: false });
+      <View
+        style={{ flex: 1, minHeight: 0 }}
+        {...(Platform.OS === "web"
+          ? {
+              onWheel: markUserScroll,
+              onTouchStart: markUserScroll,
+              onPointerDown: markUserScroll,
+              onKeyDown: (event: { key?: string; isComposing?: boolean; keyCode?: number; nativeEvent?: { key?: string; isComposing?: boolean; keyCode?: number } }) => {
+                if (isImeComposing(event)) return;
+                if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key ?? event.nativeEvent?.key ?? "")) {
+                  markUserScroll();
+                }
+              },
             }
-          }
-          contentHeightRef.current = nextHeight;
-        }}
-        contentContainerStyle={{
-          paddingHorizontal: compact ? 14 : 24,
-          paddingVertical: 16,
-          alignItems: "center",
-          flexGrow: 1,
-        }}
+          : {})}
       >
+        <ScrollView
+          ref={scrollRef as never}
+          style={{ flex: 1 }}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={chatKeyboardDismissMode(scrollListPlatform)}
+          scrollEventThrottle={16}
+          onScrollBeginDrag={markUserScroll}
+          onScroll={(event) => {
+            const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+            scrollOffsetRef.current = contentOffset.y;
+            if (contentSize?.height) contentHeightRef.current = contentSize.height;
+            if (contentSize && layoutMeasurement) {
+              const distance = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+              const isNear = distance <= NEAR_BOTTOM_THRESHOLD;
+              if (!initialFollowRef.current || isNear) {
+                nearBottomRef.current = isNear;
+              }
+            }
+          }}
+          onLayout={() => {
+            if (
+              !pendingPrependAnchorRef.current &&
+              entries.length > 0 &&
+              (initialFollowRef.current || nearBottomRef.current) &&
+              canPinScrollToEnd(lastUserScrollAtRef.current)
+            ) {
+              pinToBottom(false);
+            }
+          }}
+          onContentSizeChange={(_w, nextHeight) => {
+            const anchor = pendingPrependAnchorRef.current;
+            if (anchor) {
+              pendingPrependAnchorRef.current = null;
+              if (nextHeight > anchor.prevContentHeight) {
+                const delta = nextHeight - anchor.prevContentHeight;
+                scrollRef.current?.scrollTo?.({ y: anchor.prevScrollY + delta, animated: false });
+              }
+              contentHeightRef.current = nextHeight;
+              return;
+            }
+            const prevHeight = contentHeightRef.current;
+            contentHeightRef.current = nextHeight;
+            if (
+              entries.length > 0 &&
+              nextHeight !== prevHeight &&
+              (initialFollowRef.current || nearBottomRef.current) &&
+              canPinScrollToEnd(lastUserScrollAtRef.current)
+            ) {
+              pinToBottom(false);
+            }
+          }}
+          contentContainerStyle={{
+            paddingHorizontal: compact ? 14 : 24,
+            paddingVertical: 16,
+            alignItems: "center",
+            flexGrow: 1,
+          }}
+        >
         <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 16, flex: 1 }}>
           {loading && entries.length === 0 ? (
             <View style={{ paddingVertical: 48, alignItems: "center", gap: 10 }}>
@@ -351,7 +458,8 @@ export function BotFeedPane({
             </>
           )}
         </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
 
       <FeedComposer
         colors={colors}
@@ -363,6 +471,11 @@ export function BotFeedPane({
         compact={compact}
         bottomInset={bottomInset}
         onChangeDraft={setDraft}
+        onFocusInput={() => {
+          if ((initialFollowRef.current || nearBottomRef.current) && entries.length > 0 && canPinScrollToEnd(lastUserScrollAtRef.current)) {
+            pinToBottom(false);
+          }
+        }}
         onSend={() => void handleSend()}
       />
     </View>
@@ -777,6 +890,7 @@ function FeedComposer({
   compact,
   bottomInset,
   onChangeDraft,
+  onFocusInput,
   onSend,
 }: {
   colors: Colors;
@@ -788,14 +902,18 @@ function FeedComposer({
   compact: boolean;
   bottomInset: number;
   onChangeDraft(text: string): void;
+  onFocusInput?(): void;
   onSend(): void;
 }) {
   const { t } = useT();
   const canSend = draft.trim().length > 0 && !sending;
+  const composerRef = useRef<View>(null);
 
   return (
     <View
+      ref={composerRef}
       style={{
+        flexShrink: 0,
         borderTopWidth: 1,
         borderTopColor: colors.border,
         backgroundColor: colors.surface0,
@@ -831,6 +949,10 @@ function FeedComposer({
             editable={!sending}
             placeholder={t("feed.composerPlaceholder", { name: channelName })}
             placeholderTextColor={colors.foregroundMuted}
+            onFocus={() => {
+              if (Platform.OS === "web") scrollIntoView(composerRef.current, "nearest");
+              onFocusInput?.();
+            }}
             onKeyPress={(event) => {
               if (Platform.OS !== "web" || isImeComposing(event)) return;
               const native = event.nativeEvent as { key?: string; shiftKey?: boolean };

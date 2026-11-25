@@ -17,7 +17,7 @@ import { newMessageId, rememberSent } from "../sent-attachments";
 import { stopAgent } from "../stop-agent";
 import { useCompanionIntentEnabled } from "../ui-state";
 import { measureAnchor, useMenu, type MenuEntry } from "../ui/Menu";
-import { decodeUtf8, domNode, focusWithRetries, listenForFileDrop, listenForImagePaste, pickFileHandles, surfaceIsVisible, type FileHandle } from "../web";
+import { decodeUtf8, domNode, focusWithRetries, listenForFileDrop, listenForImagePaste, pickFileHandles, scrollIntoView, surfaceIsVisible, type FileHandle } from "../web";
 import { content, ui } from "../typography";
 import type { ChatPaneProps, OutgoingMessage } from "../ChatPane";
 import { CommandMenu } from "./composer/CommandMenu";
@@ -534,8 +534,8 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
   const webInputStyle = web ? ({ lineHeight: content() * 1.4, outlineStyle: "none", outlineWidth: 0 } as object) : null;
 
   return (
-    <View ref={outerRef} collapsable={false} style={{ width: "100%", minHeight: 75, alignItems: "center", paddingHorizontal: 16, paddingBottom: 16 + bottomInset, flexShrink: 1 }}>
-      <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 12, flexShrink: 1 }}>
+    <View ref={outerRef} collapsable={false} style={{ width: "100%", minHeight: 75, alignItems: "center", paddingHorizontal: 16, paddingBottom: 16 + bottomInset, flexShrink: 0 }}>
+      <View style={{ width: "100%", maxWidth: CONTENT_MAX_WIDTH, gap: 12, flexShrink: 0 }}>
         {queue.length > 0 ? (
           <View style={{ gap: 8 }}>
             {drain === "stopped" ? <Text style={{ color: colors.foregroundMuted, fontSize: ui(12) }}>Queue paused. Send a queued message now or send a new reply to resume.</Text> : null}
@@ -600,6 +600,9 @@ function ChatComposer({ colors, bot, host, agentId, running, layout, keyboardOpe
               multiline
               scrollEnabled={inputHeight.scrollEnabled}
               editable={!!host.api}
+              onFocus={() => {
+                if (web && layout.compact) scrollIntoView(outerRef.current, "nearest");
+              }}
               onKeyPress={onKeyPress}
               style={[
                 { flexShrink: 1, width: "100%", color: colors.foreground, fontSize: content(), fontWeight: "normal", padding: 0, textAlignVertical: "top" },

@@ -5,26 +5,36 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it } from "node:test";
 import {
+  canPinScrollToEnd,
   channelInitial,
+  computePrependRestoreOffset,
+  computeVisualViewportKeyboardHeight,
   createInitialPaginationState,
   filterChannelsByCategory,
   filterFeedEntries,
   formatRelativeTimestamp,
   isEntryAppendedAtBottom,
+  isImeComposing,
+  isNearBottom,
   isPreviewOnlyEntry,
   markAgentArchived,
   mergeFeedEntry,
   partitionChannels,
   prependOlderEntries,
   resolveComposerNotice,
+  resolveContainerBottomPadding,
   resolveHeaderChatAgentId,
   resolveInitialChannel,
+  resolveKeyboardDismissMode,
   resolvePaginationFromPage,
   resolveTaskJumpTarget,
   resolveWorkflowStageLabel,
   selectSidebarChannels,
+  shouldAutoLoadOlder,
   shouldTriggerLoadOlder,
   summarizeSidebarActivity,
   truncatePreview,
@@ -553,5 +563,89 @@ describe("Wave 5 workflow & composer UI helpers", () => {
         tone: "error",
       },
     );
+  });
+});
+
+describe("Scroll bottom-pinning, prepend anchor & mobile keyboard helpers", () => {
+  it("tracks nearBottom accurately and respects post-scroll cooldown", () => {
+    assert.equal(isNearBottom(0, 400, 600), true);
+    assert.equal(isNearBottom(1340, 2000, 600), true);
+    assert.equal(isNearBottom(1200, 2000, 600), false);
+
+    assert.equal(canPinScrollToEnd(0, 1000), true);
+    assert.equal(canPinScrollToEnd(1000, 1100), false);
+    assert.equal(canPinScrollToEnd(1000, 1150), true);
+  });
+
+  it("blocks auto loadOlder during initialFollow or short viewport and restores prepend offset", () => {
+    const pagination = { hasOlder: true, nextCursor: "cur-1", loadingOlder: false };
+    assert.equal(
+      shouldAutoLoadOlder({
+        initialFollow: true,
+        pagination,
+        scrollOffsetY: 0,
+        contentHeight: 2000,
+        viewportHeight: 600,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAutoLoadOlder({
+        initialFollow: false,
+        pagination,
+        scrollOffsetY: 0,
+        contentHeight: 500,
+        viewportHeight: 600,
+      }),
+      false,
+    );
+    assert.equal(
+      shouldAutoLoadOlder({
+        initialFollow: false,
+        pagination,
+        scrollOffsetY: 20,
+        contentHeight: 2000,
+        viewportHeight: 600,
+      }),
+      true,
+    );
+
+    assert.equal(computePrependRestoreOffset(120, 1000, 1450), 570);
+    assert.equal(computePrependRestoreOffset(120, 0, 450), null);
+    assert.equal(computePrependRestoreOffset(120, 1000, 1000), null);
+  });
+
+  it("computes visualViewport keyboard height, dismiss mode, IME guard, and container padding", () => {
+    assert.equal(computeVisualViewportKeyboardHeight(844, 790, 0), 0);
+    assert.equal(computeVisualViewportKeyboardHeight(844, 520, 0), 324);
+    assert.equal(computeVisualViewportKeyboardHeight(844, 520, 24), 300);
+
+    assert.equal(resolveKeyboardDismissMode("web"), "none");
+    assert.equal(resolveKeyboardDismissMode("ios"), "interactive");
+    assert.equal(resolveKeyboardDismissMode("android"), "on-drag");
+
+    assert.equal(resolveContainerBottomPadding(0, 34), 34);
+    assert.equal(resolveContainerBottomPadding(300, 34), 300);
+
+    assert.equal(isImeComposing({ isComposing: true, keyCode: 13 }), true);
+    assert.equal(isImeComposing({ nativeEvent: { keyCode: 229 } }), true);
+    assert.equal(isImeComposing({ isComposing: false, keyCode: 13 }), false);
+  });
+
+  it("verifies FeedScreen and FeedComposer wire keyboard avoidance, scroll pinning, and flexShrink: 0", () => {
+    const screenSrc = readFileSync(join(import.meta.dirname, "../client/FeedScreen.tsx"), "utf8");
+    const composerSrc = readFileSync(join(import.meta.dirname, "../client/FeedComposer.tsx"), "utf8");
+
+    assert.match(screenSrc, /useKeyboardHeight/);
+    assert.match(screenSrc, /homeIndicatorInset/);
+    assert.match(screenSrc, /paddingBottom:\s*resolveContainerBottomPadding/);
+    assert.match(screenSrc, /keyboardShouldPersistTaps="handled"/);
+    assert.match(screenSrc, /watchWebListSize/);
+    assert.match(screenSrc, /onContentSizeChange=\{handleContentSizeChange\}/);
+    assert.match(screenSrc, /onLayout=\{handleListLayout\}/);
+
+    assert.match(composerSrc, /flexShrink:\s*0/);
+    assert.match(composerSrc, /isImeComposing/);
+    assert.match(composerSrc, /scrollWebNodeIntoView/);
   });
 });

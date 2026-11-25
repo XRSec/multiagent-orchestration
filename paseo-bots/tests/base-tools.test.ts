@@ -8,6 +8,7 @@ import {
   CODEX_BASE_TOOLS,
   providerBaseTools,
   isAgyProvider,
+  resolveModeIdForProvider,
 } from "../shared/bot-tools";
 import {
   applyProviderConfig,
@@ -36,15 +37,18 @@ function makeBot(overrides: Partial<Bot> = {}): Bot {
 
 describe("Base Tools Catalog and Permissions", () => {
   it("provides correct base tool catalogs per provider", () => {
+    expect(providerBaseTools("antigravity")).toEqual(AGY_BASE_TOOLS);
     expect(providerBaseTools("agy")).toEqual(AGY_BASE_TOOLS);
     expect(providerBaseTools("agy-acp")).toEqual(AGY_BASE_TOOLS);
     expect(providerBaseTools("claude")).toEqual(CLAUDE_BASE_TOOLS);
     expect(providerBaseTools("claude-code")).toEqual(CLAUDE_BASE_TOOLS);
     expect(providerBaseTools("codex")).toEqual(CODEX_BASE_TOOLS);
     expect(providerBaseTools("unknown")).toEqual([]);
+    expect(isAgyProvider("antigravity")).toBe(true);
     expect(isAgyProvider("agy")).toBe(true);
     expect(isAgyProvider("agy-acp")).toBe(true);
     expect(isAgyProvider("claude")).toBe(false);
+    expect(resolveModeIdForProvider("bypassPermissions", "antigravity")).toBe("full-access");
   });
 
   it("handles baseTools in BotSchema and BotProviderConfigSchema", () => {

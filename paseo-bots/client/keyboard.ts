@@ -1,5 +1,83 @@
+/**
+ * Purpose: Cross-platform keyboard height, visualViewport tracking, IME composition guard, and safe-area helpers.
+ * Context: Used by BotsSurfaceReady, BotLauncherCore, BotFeedPane, ChatStream, and Composer.
+ * Usage: Import useKeyboardHeight(), useVisualViewport(), homeIndicatorInset(), and isImeComposing().
+ * Prerequisites: React Native runtime or browser window.visualViewport on web.
+ */
+
 import { useEffect, useState } from "react";
 import { Dimensions, Keyboard, LayoutAnimation, Platform, TurboModuleRegistry, NativeModules, type KeyboardEvent } from "react-native";
+
+export interface ViewportState {
+  keyboardHeight: number;
+  viewportHeight: number;
+}
+
+export interface VisualViewportLike {
+  height: number;
+  offsetTop?: number;
+  addEventListener(type: "resize" | "scroll", listener: () => void): void;
+  removeEventListener(type: "resize" | "scroll", listener: () => void): void;
+}
+
+export interface WindowWithVisualViewport {
+  innerHeight: number;
+  visualViewport?: VisualViewportLike | null;
+  addEventListener?(type: "resize", listener: () => void): void;
+  removeEventListener?(type: "resize", listener: () => void): void;
+}
+
+/** Threshold in px to ignore mobile browser URL-bar chrome fluctuations. */
+export const WEB_KEYBOARD_MIN_HEIGHT = 80;
+
+function getWebWindow(): WindowWithVisualViewport | null {
+  if (typeof globalThis !== "undefined" && "window" in globalThis) {
+    return (globalThis as unknown as { window?: WindowWithVisualViewport }).window ?? null;
+  }
+  return null;
+}
+
+/** Computes soft-keyboard occlusion height from window.visualViewport. */
+export function computeVisualViewportState(win: WindowWithVisualViewport | null | undefined): ViewportState {
+  const vv = win?.visualViewport;
+  if (!vv) return { keyboardHeight: 0, viewportHeight: 0 };
+  const occluded = win.innerHeight - (vv.height + Math.max(0, vv.offsetTop ?? 0));
+  return {
+    keyboardHeight: occluded > WEB_KEYBOARD_MIN_HEIGHT ? occluded : 0,
+    viewportHeight: vv.height,
+  };
+}
+
+/** Tracks mobile web window.visualViewport resize and scroll for virtual keyboard height. */
+export function useVisualViewport(): ViewportState {
+  const [state, setState] = useState<ViewportState>(() => computeVisualViewportState(getWebWindow()));
+
+  useEffect(() => {
+    const win = getWebWindow();
+    const vv = win?.visualViewport;
+    if (!win || !vv) return;
+
+    const sync = () => {
+      const next = computeVisualViewportState(win);
+      setState((prev) =>
+        prev.keyboardHeight === next.keyboardHeight && prev.viewportHeight === next.viewportHeight ? prev : next,
+      );
+    };
+
+    sync();
+    vv.addEventListener("resize", sync);
+    vv.addEventListener("scroll", sync);
+    win.addEventListener?.("resize", sync);
+
+    return () => {
+      vv.removeEventListener("resize", sync);
+      vv.removeEventListener("scroll", sync);
+      win.removeEventListener?.("resize", sync);
+    };
+  }, []);
+
+  return state;
+}
 
 export type ImeLikeEvent =
   | {
@@ -44,9 +122,12 @@ function iosKeyboardHeight(event: Pick<KeyboardEvent, "endCoordinates">, screenH
  * curve; Android only reports after the fact, so the jump is eased instead.
  */
 export function useKeyboardHeight(): number {
-  const [height, setHeight] = useState(0);
+  const isWeb = Platform.OS === "web";
+  const [nativeHeight, setNativeHeight] = useState(0);
+  const webViewport = useVisualViewport();
+
   useEffect(() => {
-    if (Platform.OS === "web") return;
+    if (isWeb) return;
     const ios = Platform.OS === "ios";
     let current = 0;
     const apply = (next: number, duration: number | undefined) => {
@@ -57,7 +138,7 @@ export function useKeyboardHeight(): number {
       } else {
         LayoutAnimation.configureNext(LayoutAnimation.create(duration || 200, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity));
       }
-      setHeight(next);
+      setNativeHeight(next);
     };
     const subscriptions = ios
       ? [
@@ -69,8 +150,9 @@ export function useKeyboardHeight(): number {
           Keyboard.addListener("keyboardDidHide", () => apply(0, undefined)),
         ];
     return () => subscriptions.forEach((subscription) => subscription.remove());
-  }, []);
-  return height;
+  }, [isWeb]);
+
+  return isWeb ? webViewport.keyboardHeight : nativeHeight;
 }
 
 // ---------------------------------------------------------------- safe area

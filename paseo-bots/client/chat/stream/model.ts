@@ -482,6 +482,12 @@ export function retainLayout(previous: StreamLayout | null, next: StreamLayout):
   return { items: changed ? items : previous.items, auxiliaryFooter };
 }
 
+export const SCROLL_PIN_COOLDOWN_MS = 150;
+
+export function canPinScrollToEnd(lastUserScrollAt: number, now = Date.now(), cooldownMs = SCROLL_PIN_COOLDOWN_MS): boolean {
+  return lastUserScrollAt === 0 || now - lastUserScrollAt >= cooldownMs;
+}
+
 /** Web treats programmatic scrolling as a drag, so dismissing there blurs a composing input. */
 export function chatKeyboardDismissMode(platform: "ios" | "android" | "web"): "none" | "on-drag" | "interactive" {
   if (platform === "web") return "none";

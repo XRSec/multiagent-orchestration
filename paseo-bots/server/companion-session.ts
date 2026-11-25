@@ -29,7 +29,7 @@ import {
   type ToolFootprintDigest,
   type WorkspaceTouchpoints,
 } from "../shared/companion-intent";
-import { isGlobalAssistantBot, LONG_SESSION_SYNC_METADATA, type Bot } from "../shared/bot";
+import { isAgyProvider, isGlobalAssistantBot, LONG_SESSION_SYNC_METADATA, type Bot } from "../shared/bot";
 import { botDataPath, pluginDataPath, teamHomePath } from "./bot-home";
 import { atomicWrite, ensureRealDirectory, readRegularText } from "./files";
 import type { BotsHost } from "./host";
@@ -210,8 +210,8 @@ export function resolveCompanionModel(
   if (envModel) {
     return { provider, model: envModel, thinkingOptionId };
   }
-  if (provider === "agy") {
-    return { provider: "agy", model: "gemini-3.8-flash", thinkingOptionId };
+  if (isAgyProvider(provider)) {
+    return { provider, model: "gemini-3.8-flash", thinkingOptionId };
   }
   if (provider === "claude") {
     return { provider: "claude", model: "claude-haiku-4-5", thinkingOptionId };

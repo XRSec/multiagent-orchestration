@@ -41,8 +41,8 @@ function makeBot(patch: Partial<Bot> = {}): Bot {
 }
 
 describe("session prompt channel & workspace roots in buildAgentConfig", () => {
-  it("defaults useStaticAgyAgent to false, populating systemPrompt and omitting providerOptions.agent for agy and agy-acp", () => {
-    for (const provider of ["agy", "agy-acp"] as const) {
+  it("defaults useStaticAgyAgent to false, populating systemPrompt and omitting providerOptions.agent for antigravity, agy, and agy-acp", () => {
+    for (const provider of ["antigravity", "agy", "agy-acp"] as const) {
       const bot = makeBot({ provider });
       expect(resolveAgyAgent(bot)).toBe(bot.id);
 
@@ -208,8 +208,8 @@ describe("session prompt channel & workspace roots in buildAgentConfig", () => {
     expect(config.providerOptions?.agent).toBeUndefined();
   });
 
-  it("does not emit stray providerOptions.tools for agy when baseTools is present and useStaticAgyAgent is false", () => {
-    for (const provider of ["agy", "agy-acp"] as const) {
+  it("does not emit stray providerOptions.tools for antigravity/agy when baseTools is present and useStaticAgyAgent is false", () => {
+    for (const provider of ["antigravity", "agy", "agy-acp"] as const) {
       const bot = makeBot({
         provider,
         baseTools: ["invoke_subagent", "send_message"],

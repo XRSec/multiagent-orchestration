@@ -5,7 +5,7 @@
 export const TOOLS_MCP_NAME = "bots";
 
 export function isAgyProvider(provider: string): boolean {
-  return provider === "agy" || provider === "agy-acp";
+  return provider === "antigravity" || provider === "agy" || provider === "agy-acp";
 }
 
 export function isClaudeProvider(provider: string): boolean {
@@ -28,7 +28,7 @@ export function providerFamily(provider: string): ProviderFamily | null {
 /** The runtime's own dispatch tool: the entry the "native" engine keeps and the "paseo-bot" engine drops. */
 export const INVOKE_SUBAGENT_TOOL = "invoke_subagent";
 
-/** Native base tools available for Antigravity (agy / agy-acp) runtime. */
+/** Native base tools available for Antigravity (antigravity / agy / agy-acp) runtime. */
 export const AGY_BASE_TOOLS = [
   "read_file",
   "edit_file",

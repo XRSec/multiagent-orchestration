@@ -267,11 +267,11 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
   }, [baseMinInputHeight, promptText, syncWebInputHeight]);
 
   const onFocusInput = useCallback(() => {
-    if (isCompact && !embedded) {
+    if (isCompact) {
       setTimeout(() => {
         const node = domNode(inputWrapperRef.current);
         if (node && typeof (node as any).scrollIntoView === "function") {
-          (node as any).scrollIntoView({ behavior: "smooth", block: "center" });
+          (node as any).scrollIntoView({ behavior: "smooth", block: embedded ? "nearest" : "center" });
         }
         mainScrollRef.current?.scrollToEnd({ animated: true });
       }, 150);
@@ -279,13 +279,13 @@ export function BotLauncherCore(props: BotLauncherCoreProps) {
   }, [isCompact, embedded]);
 
   useEffect(() => {
-    if (isCompact && keyboardHeight > 0 && !embedded) {
+    if (isCompact && keyboardHeight > 0) {
       const timer = setTimeout(() => {
         mainScrollRef.current?.scrollToEnd({ animated: true });
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [isCompact, keyboardHeight, embedded]);
+  }, [isCompact, keyboardHeight]);
 
   useEffect(() => {
     if (isCompact && embedded && !props.onClose) return;

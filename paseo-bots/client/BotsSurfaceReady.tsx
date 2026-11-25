@@ -841,6 +841,7 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, open
       bots={allBots}
       compact={layout.compact}
       bottomInset={bottomInset}
+      keyboardHeight={keyboardHeight}
       onOpenTask={(agentId, botId) => {
         const targetBot = allBots.find((b) => b.id === botId);
         const botHost = resolveHost(targetBot?.hostId ?? null);
@@ -1280,6 +1281,7 @@ export function BotsSurfaceReady({ theme, layout, host, navigation, screen, open
         <PartnerSettingsModal
           open={partnerSettingsOpen}
           colors={colors}
+          compact={layout.compact}
           groups={groups}
           bots={allBots}
           localHost={localHost}

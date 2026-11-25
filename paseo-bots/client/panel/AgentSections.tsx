@@ -6,7 +6,7 @@ import { useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import { APPS_MCP_NAME } from "../../shared/apps";
 import { botMcpServers, providerBaseTools, toolGrants, type Bot, type BotProviderConfig, type FallbackModel } from "../../shared/bot";
-import { TOOLS_MCP_NAME } from "../../shared/bot-tools";
+import { isAgyProvider, TOOLS_MCP_NAME } from "../../shared/bot-tools";
 import { commandListRpc, commandRemoveRpc } from "../../shared/rpc";
 import { useAgentProfiles, useBotHost, useHostProjects, usePaseoTools, useProviders } from "../data";
 import { formatPluralCount, useT } from "../i18n";
@@ -286,7 +286,25 @@ const INLINE_ROW_STYLE = {
   paddingHorizontal: 16,
 };
 
-function InlineSelect({
+/** Resolves a provider entry by exact id or agy family alias (`antigravity` / `agy` / `agy-acp`). */
+export function findMatchingProvider<T extends { provider: string }>(
+  entries: readonly T[] | undefined,
+  providerId: string,
+): T | undefined {
+  if (!entries || !providerId) return undefined;
+  const exact = entries.find((entry) => entry.provider === providerId);
+  if (exact) return exact;
+  if (isAgyProvider(providerId)) {
+    return entries.find((entry) => isAgyProvider(entry.provider));
+  }
+  return undefined;
+}
+
+function isSameProvider(a: string, b: string): boolean {
+  return a === b || (isAgyProvider(a) && isAgyProvider(b));
+}
+
+export function InlineSelect({
   colors,
   label,
   menuTitle,
@@ -310,11 +328,13 @@ function InlineSelect({
   const tokens = nativeTokens(colors);
   const { hovered, hoverProps } = useHover();
   const selected = options.find((opt) => opt.value === value);
-  const displayText = selected?.label ?? (placeholder || value);
-  const isMuted = !selected && !!placeholder;
+  const hasUnmatchedValue = !selected && Boolean(value);
+  const displayText = selected?.label ?? (value ? label || value : placeholder || "");
+  const isMuted = !selected && !value && !!placeholder;
+  const isDisabled = Boolean(disabled || options.length === 0);
 
   const openMenu = () => {
-    if (disabled || options.length === 0) return;
+    if (isDisabled) return;
     void measureAnchor(ref).then((anchor) => {
       menu.open({
         anchor: anchor ?? { x: 0, y: 0, width: 0, height: 0 },
@@ -333,7 +353,8 @@ function InlineSelect({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${menuTitle}: ${label}`}
-        disabled={disabled || options.length === 0}
+        accessibilityState={{ disabled: isDisabled }}
+        disabled={isDisabled}
         onPress={openMenu}
         {...hoverProps}
         style={({ pressed }) => ({
@@ -346,11 +367,12 @@ function InlineSelect({
           paddingVertical: 4,
           borderRadius: 8,
           borderWidth: 1,
-          borderColor: hovered ? tokens.borderAccent : colors.border,
-          backgroundColor: pressed ? tokens.surface3 : hovered ? colors.surface2 : colors.surface1,
-          opacity: disabled ? 0.5 : 1,
+          borderColor: hasUnmatchedValue ? colors.statusWarning : hovered && !isDisabled ? tokens.borderAccent : colors.border,
+          backgroundColor: pressed && !isDisabled ? tokens.surface3 : hovered && !isDisabled ? colors.surface2 : colors.surface1,
+          opacity: isDisabled ? 0.5 : 1,
         })}
       >
+        {hasUnmatchedValue ? <Icon name="AlertCircle" size={12} color={colors.statusWarning} /> : null}
         <Text numberOfLines={1} style={{ fontSize: ui(13), color: isMuted ? colors.foregroundMuted : colors.foreground, flexShrink: 1 }}>
           {displayText}
         </Text>
@@ -573,11 +595,12 @@ export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
   const hosts = useHosts();
   const providers = useProviders(host);
   const profiles = useAgentProfiles(host);
-  const provider = providers.data?.find((entry) => entry.provider === bot.provider);
+  const provider = findMatchingProvider(providers.data, bot.provider);
+  const providerValue = provider ? provider.provider : bot.provider;
   const models = (provider?.models ?? []).filter((model) => model.isSelectable !== false);
   const model = models.find((entry) => entry.id === bot.model);
   const thinking = model?.thinkingOptions ?? models.find((entry) => entry.isDefault)?.thinkingOptions ?? [];
-  const profile = (profiles.data ?? []).find((entry) => entry.provider === bot.provider && (entry.model ?? null) === bot.model);
+  const profile = (profiles.data ?? []).find((entry) => isSameProvider(entry.provider, bot.provider) && (entry.model ?? null) === bot.model);
   const providerPlaceholder = providers.isLoading ? t("common.loading") : t("panel.chooseProvider");
   // Another host counts as in use, so it shows.
   const [advanced, setAdvanced] = useState(bot.hostId !== null);
@@ -617,7 +640,7 @@ export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
               colors={colors}
               label={provider ? (provider.label ?? provider.provider) : (bot.provider || providerPlaceholder)}
               menuTitle={t("panel.rowProvider")}
-              value={bot.provider}
+              value={providerValue}
               placeholder={providerPlaceholder}
               disabled={providers.isLoading}
               options={providerOptions}
@@ -636,10 +659,10 @@ export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
             />
             <InlineSelect
               colors={colors}
-              label={model?.label ?? (provider ? (bot.model ?? t("common.default")) : (bot.model ?? t("panel.chooseProviderFirst")))}
+              label={model?.label ?? (bot.model || (bot.provider ? t("common.default") : t("panel.chooseProviderFirst")))}
               menuTitle={t("panel.rowModel")}
-              value={provider ? (bot.model ?? "") : ""}
-              placeholder={provider ? undefined : t("panel.chooseProviderFirst")}
+              value={bot.provider ? (bot.model ?? "") : ""}
+              placeholder={bot.provider ? t("common.default") : t("panel.chooseProviderFirst")}
               disabled={!provider}
               options={primaryModelOptions}
               onValueChange={(value) => onPatch({ model: value || null, thinkingOptionId: null })}
@@ -655,12 +678,22 @@ export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
               />
             ) : null}
           </View>
-          {providers.isError ? (
+          {!host.online ? (
+            <CardNote colors={colors} text={t("panel.hostOfflineError", { label: host.label })} />
+          ) : providers.isError ? (
             <SettingsAction
               label={t("panel.providersLoadError", { label: host.label })}
               actionLabel={t("chat.retry")}
               onPress={() => void providers.refetch()}
             />
+          ) : !providers.isLoading && providerOptions.length === 0 ? (
+            <SettingsAction
+              label={t("panel.providersEmpty", { label: host.label })}
+              actionLabel={t("chat.retry")}
+              onPress={() => void providers.refetch()}
+            />
+          ) : !providers.isLoading && Boolean(bot.provider) && !provider ? (
+            <CardNote colors={colors} text={t("panel.providerUnavailable", { provider: bot.provider, label: host.label })} />
           ) : null}
         </SettingsCard>
       </SettingsSection>
@@ -690,7 +723,7 @@ export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
         <SettingsSection title={t("panel.additionalProvidersSection")} info={t("panel.additionalProvidersInfo")}>
           <SettingsCard>
             {extraProviders.map((cfg, idx) => {
-              const cfgProvider = providers.data?.find((entry) => entry.provider === cfg.provider);
+              const cfgProvider = findMatchingProvider(providers.data, cfg.provider);
               const cfgModels = (cfgProvider?.models ?? []).filter((m) => m.isSelectable !== false);
               const cfgModel = cfgModels.find((m) => m.id === cfg.model);
               const cfgThinking = cfgModel?.thinkingOptions ?? cfgModels.find((m) => m.isDefault)?.thinkingOptions ?? [];
@@ -709,7 +742,7 @@ export function ModelSection({ colors, bot, localHost, onPatch }: PanelProps) {
                       colors={colors}
                       label={cfgProvider?.label ?? cfg.provider}
                       menuTitle={t("panel.rowProvider")}
-                      value={cfg.provider}
+                      value={cfgProvider ? cfgProvider.provider : cfg.provider}
                       options={providerOptions}
                       onValueChange={(value) => {
                         const entry = providers.data?.find((candidate) => candidate.provider === value);
@@ -873,7 +906,7 @@ export function PermissionsSection({ colors, bot, localHost, onPatch }: PanelPro
   const { t } = useT();
   const host = useBotHost(bot.hostId, localHost);
   const providers = useProviders(host);
-  const provider = providers.data?.find((entry) => entry.provider === bot.provider);
+  const provider = findMatchingProvider(providers.data, bot.provider);
   const modes = provider?.modes ?? [];
   const current = modes.find((mode) => mode.id === (bot.modeId ?? provider?.defaultModeId));
   return (

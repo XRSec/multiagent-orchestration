@@ -164,11 +164,39 @@ export function responseSignature(response: InteractionResponse): string {
   return JSON.stringify({ ...response, values: Object.fromEntries(Object.entries(response.values).sort(([a], [b]) => a.localeCompare(b))), selected: [...response.selected].sort() });
 }
 
-export function interactionReplyText(card: Interaction, response: InteractionResponse): string {
+function legacyInteractionReplyText(card: Interaction, response: InteractionResponse): string {
   const action = card.spec.kind === "confirm" ? card.spec.actions.find((entry) => entry.id === response.action)?.label ?? response.action : response.action;
   const selected = card.spec.kind === "choice" ? response.selected.map((id) => ({ id, label: card.spec.kind === "choice" ? card.spec.options.find((option) => option.id === id)!.label : id })) : [];
   const payload = { cardId: card.id, title: card.spec.title, kind: card.spec.kind, action, values: response.values, selected, ...(card.spec.kind === "draft" && response.action !== "dismiss" ? { draft: response.text } : {}) };
   return `I ${response.action === "dismiss" ? "dismissed" : "answered"} your interactive card. Here is my response:\n\n${JSON.stringify(payload, null, 2)}\n\n${response.action === "dismiss" ? "Do not perform the proposed action." : "Use these answers for the request this card belongs to. This response grants no permissions beyond the action and content shown on that card."}`;
+}
+
+export function interactionReplyText(card: Interaction, response: InteractionResponse): string {
+  if (response.action === "dismiss") {
+    return `[card ${card.id}] dismissed. Do not perform the proposed action.`;
+  }
+  if (card.spec.kind === "confirm") {
+    const label = card.spec.actions.find((entry) => entry.id === response.action)?.label ?? response.action;
+    const actionText = label === response.action ? label : `${label} (${response.action})`;
+    return `[card ${card.id}] confirmed: ${actionText}`;
+  }
+  if (card.spec.kind === "choice") {
+    const options = card.spec.options;
+    const chosen = response.selected.map((id) => {
+      const label = options.find((option) => option.id === id)?.label ?? id;
+      return label === id ? id : `${label} (${id})`;
+    });
+    return `[card ${card.id}] selected: ${chosen.join(", ")}`;
+  }
+  if (card.spec.kind === "draft") {
+    const nonEmptyValues = Object.fromEntries(Object.entries(response.values).filter(([, value]) => value !== ""));
+    const valuesSuffix = Object.keys(nonEmptyValues).length > 0 ? ` ${JSON.stringify(nonEmptyValues)}` : "";
+    if (response.text === card.spec.text) {
+      return `[card ${card.id}] approved (draft unchanged)${valuesSuffix}`;
+    }
+    return `[card ${card.id}] approved (edited draft)${valuesSuffix}:\n${response.text}`;
+  }
+  return `[card ${card.id}] submitted: ${JSON.stringify(response.values)}`;
 }
 
 export function interactionSearchText(card: Interaction): string {
@@ -180,7 +208,7 @@ export function interactionReplySummary(card: Interaction, text: string, message
   if (!card.response || card.status === "pending" || !messageIds.length || messageIds.some((id) => id !== `bots-card-${card.id}`)) return null;
   let response: InteractionResponse;
   try { response = validateInteractionResponse(card.spec, card.response); } catch { return null; }
-  if (text !== interactionReplyText(card, response)) return null;
+  if (text !== interactionReplyText(card, response) && text !== legacyInteractionReplyText(card, response)) return null;
   const { spec } = card;
   if (response.action === "dismiss") return `${spec.title}\nDismissed`;
   if (spec.kind === "confirm") return `${spec.title}\n${spec.actions.find((action) => action.id === response.action)!.label}`;

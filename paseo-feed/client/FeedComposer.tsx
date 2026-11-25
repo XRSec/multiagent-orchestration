@@ -5,14 +5,16 @@
  */
 
 import { Icon, TextInput } from "@getpaseo/plugin/client/ui";
-import { useEffect, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import { Platform, Pressable, Text, View } from "react-native";
 import type { FeedChannel } from "../shared/protocol.ts";
 import {
+  isImeComposing,
   resolveComposerNotice,
   type ComposerNoticeState,
   type FeedComposerSendResult,
 } from "./feed-helpers.ts";
+import { scrollWebNodeIntoView } from "./keyboard.ts";
 import { FEED_STREAM_MAX_WIDTH, type FeedPalette } from "./styles.ts";
 
 export type FeedSendResult = FeedComposerSendResult;
@@ -22,6 +24,7 @@ export interface FeedComposerProps {
   palette: FeedPalette;
   onSend(text: string): Promise<FeedSendResult>;
   onOpenAgent(agentId: string): void;
+  onFocusInput?(): void;
   onSent?(result: FeedSendResult): void;
 }
 
@@ -94,15 +97,22 @@ export function FeedComposer({
   palette,
   onSend,
   onOpenAgent,
+  onFocusInput,
   onSent,
 }: FeedComposerProps) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [notice, setNotice] = useState<ComposerNoticeState | null>(null);
+  const composerRef = useRef<View | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setNotice(null);
   }, [channel?.kind, channel?.id]);
+
+  useEffect(() => () => {
+    if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+  }, []);
 
   if (!channel) return null;
 
@@ -135,7 +145,9 @@ export function FeedComposer({
 
   return (
     <View
+      ref={composerRef}
       style={{
+        flexShrink: 0,
         borderTopWidth: 1,
         borderTopColor: palette.border,
         backgroundColor: palette.railBg,
@@ -169,6 +181,23 @@ export function FeedComposer({
             onChangeText={setText}
             multiline
             editable={!sending}
+            onFocus={() => {
+              onFocusInput?.();
+              if (Platform.OS === "web") {
+                if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
+                focusTimerRef.current = setTimeout(() => {
+                  scrollWebNodeIntoView(composerRef.current, "nearest");
+                }, 100);
+              }
+            }}
+            onKeyPress={(event) => {
+              if (Platform.OS !== "web" || isImeComposing(event)) return;
+              const native = event.nativeEvent as { key?: string; shiftKey?: boolean };
+              if (native.key === "Enter" && !native.shiftKey) {
+                (event as { preventDefault?: () => void }).preventDefault?.();
+                void handleSubmit();
+              }
+            }}
             placeholder={
               channel.activeAgentId
                 ? `向 ${channel.name} 发送消息…`

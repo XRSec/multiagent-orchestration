@@ -993,6 +993,8 @@ export const zhCN: DeepStringRecord<typeof en> = {
     thisHost: "当前主机",
     hostOfflineError: "{{label}} 当前离线，无法获取其服务商列表",
     providersLoadError: "无法从 {{label}} 加载服务商列表。",
+    providersEmpty: "未能从 {{label}} 获取到已启用的服务商。",
+    providerUnavailable: "服务商“{{provider}}”当前在 {{label}} 上不可用。",
     agentProfileHint: "可快速填充服务商、模型、模式与思考深度",
     approvalSection: "审批策略",
     approvalInfo: "助手在询问你之前被允许执行的操作范围。同样适用于定时任务。",

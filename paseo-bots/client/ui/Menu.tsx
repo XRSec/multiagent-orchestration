@@ -1,7 +1,7 @@
 import type { PluginTheme } from "@getpaseo/plugin";
 import { Icon, Modal } from "@getpaseo/plugin/client/ui";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
-import { ActivityIndicator, Platform, Pressable, Text, View, type LayoutRectangle } from "react-native";
+import { ActivityIndicator, Platform, Pressable, ScrollView, Text, View, type LayoutRectangle } from "react-native";
 import { useT } from "../i18n";
 import { nativeTokens, useHover } from "../native";
 import { ui } from "../typography";
@@ -83,7 +83,18 @@ const dom = globalThis as unknown as {
   removeEventListener?: (type: "keydown", listener: (event: { key: string; stopPropagation(): void }) => void, capture?: boolean) => void;
 };
 
-export function MenuProvider({ colors, compact, children }: { colors: Colors; compact: boolean; children: ReactNode }) {
+export function MenuProvider({
+  colors,
+  compact,
+  inlineCompact = false,
+  children,
+}: {
+  colors: Colors;
+  compact: boolean;
+  /** Render compact sheets as an in-tree overlay rather than opening a nested Modal. */
+  inlineCompact?: boolean;
+  children: ReactNode;
+}) {
   const [spec, setSpec] = useState<MenuSpec | null>(null);
   const [origin, setOrigin] = useState<LayoutRectangle>({ x: 0, y: 0, width: 0, height: 0 });
   const root = useRef<View>(null);
@@ -113,8 +124,9 @@ export function MenuProvider({ colors, compact, children }: { colors: Colors; co
       <View ref={root} collapsable={false} style={{ flex: 1 }}>
         {children}
         {spec && !compact ? <Popover colors={colors} spec={spec} origin={origin} onClose={close} /> : null}
+        {spec && compact && inlineCompact ? <CompactSheet colors={colors} spec={spec} onClose={close} /> : null}
       </View>
-      {spec && compact ? (
+      {spec && compact && !inlineCompact ? (
         <Modal title={spec.title} open onOpenChange={(value) => !value && close()}>
           <Modal.Content contentContainerStyle={{ padding: 8, gap: 0 }}>
             <Entries colors={colors} entries={spec.entries} compact onClose={close} />
@@ -122,6 +134,68 @@ export function MenuProvider({ colors, compact, children }: { colors: Colors; co
         </Modal>
       ) : null}
     </MenuContext.Provider>
+  );
+}
+
+function CompactSheet({ colors, spec, onClose }: { colors: Colors; spec: MenuSpec; onClose(): void }) {
+  const { t } = useT();
+  const tokens = nativeTokens(colors);
+  return (
+    <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, zIndex: 1000, justifyContent: "flex-end" }}>
+      <Pressable
+        accessibilityLabel={t("common.closeMenu")}
+        onPress={onClose}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: tokens.dark ? "rgba(0, 0, 0, 0.55)" : "rgba(0, 0, 0, 0.35)",
+        }}
+      />
+      <View
+        accessibilityRole="menu"
+        style={{
+          maxHeight: "75%",
+          backgroundColor: colors.surface1,
+          borderTopLeftRadius: 16,
+          borderTopRightRadius: 16,
+          borderWidth: 1,
+          borderBottomWidth: 0,
+          borderColor: tokens.borderAccent,
+          overflow: "hidden",
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            borderBottomWidth: 1,
+            borderBottomColor: colors.border,
+          }}
+        >
+          <Text numberOfLines={1} style={{ flex: 1, minWidth: 0, fontSize: ui(15), fontWeight: "600", color: colors.foreground }}>
+            {spec.title}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("common.closeMenu")}
+            hitSlop={8}
+            onPress={onClose}
+            style={{ width: 28, height: 28, alignItems: "center", justifyContent: "center", borderRadius: 8 }}
+          >
+            <Icon name="X" size={18} color={colors.foregroundMuted} />
+          </Pressable>
+        </View>
+        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 8, gap: 0 }}>
+          <Entries colors={colors} entries={spec.entries} compact onClose={onClose} />
+        </ScrollView>
+      </View>
+    </View>
   );
 }
 
